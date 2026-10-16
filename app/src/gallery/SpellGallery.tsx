@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { findSuspects, loadEnglishSpeller, type Speller, type Suspect } from "@/lib/spell"
 import { buildCorpus, type Corpus } from "@/lib/corpus"
 import { neighbours, rankCandidates } from "@/lib/rank"
@@ -55,7 +54,7 @@ export function SpellGallery() {
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-8">
       <h1 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        맞춤법 의심 단어 갤러리 · 호버하면 1순위 후보 · 클릭하면 전체 후보(Enter로 1순위) / "사전에 추가"
+        맞춤법 의심 단어 갤러리 · 확실한 후보는 "→ 단어"로 바로 표시(클릭해 수락) · 단어 클릭하면 전체 후보 / "사전에 추가"
         <span className="ml-auto text-muted-foreground">문맥 통계: {corpusSource}</span>
         <Badge variant={total ? "secondary" : "outline"}>의심 단어 {speller ? total : "…"}</Badge>
       </h1>
@@ -94,27 +93,36 @@ function renderWithSuspects(
   return out
 }
 
+/** A top candidate backed by evidence from this book (frequency or neighbour pairs) is shown inline;
+ *  a bare dictionary look-alike with no evidence is not. */
+const CONFIDENT = 1
+
 function SuspectMark({ suspect: s, context, speller, corpus, onAdd, onReplace }: {
   suspect: Suspect; context: { prev?: string; next?: string }; speller: Speller | null; corpus: Corpus
   onAdd: (w: string) => void; onReplace: (s: Suspect, to: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [hovered, setHovered] = useState(false)
   // candidates ranked by OCR-error likelihood × how the word fits this book and its neighbours
-  const suggestions = useMemo(
-    () => ((open || hovered) && speller ? rankCandidates(s.word, context, speller.suggest, speller.correct, corpus).map((r) => r.word) : []),
-    [open, hovered, speller, corpus, s.word, context],
+  const ranked = useMemo(
+    () => (speller ? rankCandidates(s.word, context, speller.suggest, speller.correct, corpus) : []),
+    [speller, corpus, s.word, context],
   )
+  const suggestions = ranked.map((r) => r.word)
+  const top = ranked[0] && ranked[0].score >= CONFIDENT ? ranked[0].word : null
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip onOpenChange={setHovered}>
-        <TooltipTrigger render={<PopoverTrigger render={<mark data-spell className={SPELL_MARK_CLASS} />} />}>
-          {s.word}
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          {suggestions.length ? `→ ${suggestions[0]}` : "교정 후보 없음"}
-        </TooltipContent>
-      </Tooltip>
+      <PopoverTrigger render={<mark data-spell className={SPELL_MARK_CLASS} />}>{s.word}</PopoverTrigger>
+      {top && (
+        <button
+          type="button"
+          data-spell-fix
+          className="mx-0.5 rounded-sm px-0.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="클릭하면 이 후보로 바꿉니다"
+          onClick={() => onReplace(s, top)}
+        >
+          → {top}
+        </button>
+      )}
       <PopoverContent side="bottom" align="start" className="w-56 p-1">
         <div className="px-2 py-1 text-xs text-muted-foreground">“{s.word}”</div>
         {suggestions.length ? (
