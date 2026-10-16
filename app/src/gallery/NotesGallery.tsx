@@ -40,7 +40,7 @@ export function NotesGallery() {
       if (x.kind === "comment") {
         out.push(
           <mark key={"c" + x.c.id} data-comment onClick={() => setSelected(x.c.id)}
-            className={cn("cursor-pointer rounded-sm bg-mark-comment text-inherit", selected === x.c.id && "ring-2 ring-mark-comment")}>
+            className={cn("cursor-pointer rounded-sm bg-mark-italic text-inherit", selected === x.c.id && "ring-2 ring-mark-italic")}>
             {text.slice(x.at, x.at + x.len)}
           </mark>,
         )
@@ -48,8 +48,8 @@ export function NotesGallery() {
         out.push(text.slice(x.at, x.at + x.len))
         out.push(
           <Tooltip key={"n" + x.n.id}>
-            <TooltipTrigger render={<sup data-note className={cn("ml-px cursor-pointer rounded-sm px-0.5 text-[11px] font-medium", x.n.kind === "author" ? "bg-mark-note" : "bg-mark-term")} />}>
-              {x.num}
+            <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer rounded-sm bg-mark-note px-0.5 text-[11px] font-medium" />}>
+              {x.num}{x.n.kind === "translator" && <span className="opacity-60">T</span>}
             </TooltipTrigger>
             <TooltipContent side="top">{x.n.kind === "author" ? "Author's note" : "Translator's note"}: {x.n.body}</TooltipContent>
           </Tooltip>,
@@ -66,7 +66,7 @@ export function NotesGallery() {
       <div>
         <h1 className="mb-4 flex items-center gap-3 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Comments &amp; notes gallery</span>
-          <span>yellow = comment (click to open) · superscript = footnote (blue author, green translator) · hover for text</span>
+          <span>purple = comment (click to open) · blue superscript = footnote (T = translator's) · yellow stays for edits · hover for text</span>
         </h1>
         <div className="grid grid-cols-[1rem_1fr_1fr] gap-x-6">
           <div className="pt-2"><span className="block size-2 rounded-full bg-mark-note" /></div>
@@ -104,7 +104,7 @@ export function NotesGallery() {
           {notes.map((n, i) => (
             <li key={"n" + n.id} className="space-y-1 px-3 py-2">
               <div className="flex items-center gap-2">
-                <sup className={cn("rounded-sm px-0.5 text-[11px] font-medium", n.kind === "author" ? "bg-mark-note" : "bg-mark-term")}>{i + 1}</sup>
+                <sup className="rounded-sm bg-mark-note px-0.5 text-[11px] font-medium">{i + 1}{n.kind === "translator" && <span className="opacity-60">T</span>}</sup>
                 <span className="text-muted-foreground">{n.kind === "author" ? "Author's note" : "Translator's note"}</span>
                 <span className="ml-auto truncate text-muted-foreground" lang="ko">“{n.quote}”</span>
               </div>
