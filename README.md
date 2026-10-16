@@ -41,6 +41,23 @@ cd app && pnpm dev               # 화면
 
 화면은 `app/src/data/api.ts` 인터페이스만 의존한다. 지금 구현은 HTTP(`http.ts`), 나중에 Tauri 명령으로 교체.
 
+## 명령 체계와 되돌리기
+
+모든 쓰기는 `server/commands.mjs`의 명령 하나를 `execute()`로 실행한다. 한 트랜잭션 안에서 명령을 적용하고, 그 역(inverse)과 함께 `ops` 테이블에 기록하며, DB를 수정됨으로 표시한다. `undo()`는 마지막 기록의 역을 실행하고, `redo()`는 저장된 정방향을 재실행한다. 새 행동은 redo 스택을 버린다.
+
+| 명령 | 역 |
+|---|---|
+| updateSegment | updateSegment (이전 값) |
+| splitSegment | unsplit (원문·확인 상태 복원, tail id 고정) |
+| mergeWithNext | unmerge (삭제된 행을 원래 id로 복원, 미주·댓글 복귀) |
+| setNoteAnchor | setNoteAnchor (이전 앵커) |
+
+`segment_version`은 병합 시 삭제되며 복원하지 않는다(번역문 히스토리는 아직 미사용).
+
+```sh
+node --test server/      # 명령 왕복 단위 테스트
+```
+
 ## 데이터 안전
 - 에디터가 한 번이라도 쓰면 `meta.last_edit_at`이 기록되고, 이후 `pipeline.build`는 그 DB를 덮어쓰지 않는다 (다른 `--out`으로 빌드).
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
