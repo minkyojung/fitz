@@ -37,6 +37,15 @@ def migrate(path: Path) -> list[str]:
             undone INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
         """)
         done.append("ops table")
+    if "segment_box" not in tables:
+        conn.executescript("""
+          CREATE TABLE segment_box (
+            segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+            page_no INTEGER NOT NULL,
+            x0 REAL NOT NULL, y0 REAL NOT NULL, x1 REAL NOT NULL, y1 REAL NOT NULL,
+            PRIMARY KEY (segment_id, page_no));
+        """)
+        done.append("segment_box table")
     conn.commit()
     conn.close()
     return done

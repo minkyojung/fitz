@@ -55,6 +55,14 @@ CREATE TABLE segment (
   UNIQUE (chapter_id, idx)
 );
 
+-- 세그먼트가 스캔 이미지의 어디에 있는지. 쪽 크기 대비 비율(0~1)이라 DPI와 무관. 두 쪽에 걸치면 행 두 개.
+CREATE TABLE segment_box (
+  segment_id  INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  page_no     INTEGER NOT NULL,
+  x0 REAL NOT NULL, y0 REAL NOT NULL, x1 REAL NOT NULL, y1 REAL NOT NULL,
+  PRIMARY KEY (segment_id, page_no)
+);
+
 -- 주석: 저자 미주(author) + 역주(translator). 출판물에 나감.
 CREATE TABLE note (
   id            INTEGER PRIMARY KEY,
