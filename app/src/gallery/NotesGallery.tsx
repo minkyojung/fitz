@@ -40,7 +40,7 @@ export function NotesGallery() {
       if (x.kind === "comment") {
         out.push(
           <mark key={"c" + x.c.id} data-comment onClick={() => setSelected(x.c.id)}
-            className={cn("cursor-pointer rounded-sm bg-mark-comment text-inherit", selected === x.c.id && "ring-2 ring-mark-comment")}>
+            className={cn("cursor-pointer bg-mark-comment text-inherit underline decoration-mark-comment-ink decoration-2 underline-offset-4", selected === x.c.id && "decoration-[3px]")}>
             {text.slice(x.at, x.at + x.len)}
           </mark>,
         )
@@ -48,7 +48,7 @@ export function NotesGallery() {
         out.push(text.slice(x.at, x.at + x.len))
         out.push(
           <Tooltip key={"n" + x.n.id}>
-            <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer rounded-sm bg-mark-note px-0.5 text-[11px] font-medium" />}>
+            <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer bg-mark-note px-0.5 text-[11px] font-medium text-mark-note-ink underline decoration-mark-note-ink underline-offset-2" />}>
               {x.num}{x.n.kind === "translator" && <span className="opacity-60">T</span>}
             </TooltipTrigger>
             <TooltipContent side="top">{x.n.kind === "author" ? "Author's note" : "Translator's note"}: {x.n.body}</TooltipContent>
@@ -113,7 +113,7 @@ export function NotesGallery() {
           {notes.map((n, i) => (
             <li key={"n" + n.id} className="space-y-1 px-3 py-2">
               <div className="flex items-center gap-2">
-                <sup className="rounded-sm bg-mark-note px-0.5 text-[11px] font-medium">{i + 1}{n.kind === "translator" && <span className="opacity-60">T</span>}</sup>
+                <sup className="bg-mark-note px-0.5 text-[11px] font-medium text-mark-note-ink">{i + 1}{n.kind === "translator" && <span className="opacity-60">T</span>}</sup>
                 <span className="text-muted-foreground">{n.kind === "author" ? "Author's note" : "Translator's note"}</span>
                 <span className="ml-auto truncate text-muted-foreground" lang="ko">“{n.quote}”</span>
               </div>
