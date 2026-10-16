@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { IconCheck, IconMessage, IconNote } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -25,7 +25,12 @@ export function NotesGallery() {
     { id: 1, kind: "author", quote: "부와 좋은 일자리", body: "Interview with the Zemurray family, 2010." },
     { id: 2, kind: "translator", quote: "통상 임금", body: "1910년대 온두라스 농장 노동자의 일당은 약 25센트였다." },
   ]
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useState<number | null>(null) // comment id, or -noteId for a note
+  useEffect(() => {
+    if (selected === null) return
+    const el = document.querySelector(selected > 0 ? `[data-panel-comment="${selected}"]` : `[data-panel-note="${-selected}"]`)
+    el?.scrollIntoView({ block: "nearest" })
+  }, [selected])
   const open = comments.filter((c) => !c.resolved).length
 
   const mark = (text: string, side: "source" | "target") => {
@@ -50,7 +55,7 @@ export function NotesGallery() {
         out.push(text.slice(x.at, x.at + x.len))
         out.push(
           <Tooltip key={"n" + x.n.id}>
-            <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink transition-colors hover:bg-mark-note/70" />}>
+            <TooltipTrigger render={<sup data-note onClick={() => setSelected(-x.n.id)} className="ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink transition-colors hover:bg-mark-note/70" />}>
               {x.label}
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs px-2.5 py-1.5 text-[13px] leading-normal">
@@ -100,7 +105,9 @@ export function NotesGallery() {
         </div>
         <ul className="divide-y text-xs">
           {comments.map((c) => (
-            <li key={c.id} className={cn("space-y-1.5 px-3 py-2", selected === c.id && "bg-muted/60", c.resolved && "opacity-50")} onClick={() => setSelected(c.id)}>
+            <li key={c.id} data-panel-comment={c.id}
+              className={cn("space-y-1.5 border-l-2 border-transparent px-3 py-2", selected === c.id && "border-mark-comment-ink bg-muted", c.resolved && "opacity-50")}
+              onClick={() => setSelected(c.id)}>
               <div className="flex items-center gap-2">
                 <IconMessage className="size-3.5 text-muted-foreground" />
                 <span className="truncate text-muted-foreground" lang={c.side === "source" ? "en" : "ko"}>“{c.quote}”</span>
@@ -115,7 +122,9 @@ export function NotesGallery() {
             </li>
           ))}
           {notes.map((n) => (
-            <li key={"n" + n.id} className="space-y-1 px-3 py-2">
+            <li key={"n" + n.id} data-panel-note={n.id}
+              className={cn("space-y-1 border-l-2 border-transparent px-3 py-2", selected === -n.id && "border-mark-note-ink bg-muted")}
+              onClick={() => setSelected(-n.id)}>
               <div className="flex items-center gap-2">
                 <sup className="border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink">{marker(n)}</sup>
                 <span className="text-muted-foreground">{n.kind === "author" ? "Author's note" : "Translator's note"}</span>
