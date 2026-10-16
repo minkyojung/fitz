@@ -70,6 +70,9 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
   const box = row.getByRole("textbox")
   const cut = original.indexOf(" ", 40) + 1 // after a space, well inside the paragraph
   await setCaret(box, cut)
+  // ProseMirror syncs its selection from the DOM on the next key event; nudge right then left
+  await box.press("ArrowRight")
+  await box.press("ArrowLeft")
   await row.getByRole("button", { name: "커서 위치에서 분할" }).click()
 
   await expect(rows).toHaveCount(before + 1)
