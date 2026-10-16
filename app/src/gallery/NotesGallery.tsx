@@ -42,7 +42,7 @@ export function NotesGallery() {
       if (x.kind === "comment") {
         out.push(
           <mark key={"c" + x.c.id} data-comment onClick={() => setSelected(x.c.id)}
-            className={cn("cursor-pointer border-b-2 border-mark-comment bg-mark-comment/40 text-inherit box-decoration-clone transition-colors hover:bg-mark-comment/70", selected === x.c.id && "border-mark-comment-ink bg-mark-comment/70")}>
+            className={cn("cursor-pointer border-b-2 border-mark-comment bg-mark-comment/40 text-inherit box-decoration-clone transition-colors hover:bg-mark-comment/70", selected === x.c.id && "bg-mark-comment/70")}>
             {text.slice(x.at, x.at + x.len)}
           </mark>,
         )
