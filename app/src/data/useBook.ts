@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { toast } from "sonner"
 
 import { api } from "./http"
-import type { Chapter, Note, Page, Segment, SegmentPatch } from "./api"
+import type { Book, Chapter, Note, Page, Segment, SegmentPatch } from "./api"
+import { createDraftStore } from "@/lib/draftStore"
 
 export const OP_LABEL: Record<string, string> = {
   updateSegment: "단락 수정",
@@ -16,6 +17,7 @@ export type SaveState = "idle" | "saving" | "saved" | "error"
 
 /** Book-level state: chapters, the selected chapter's segments, and page images. */
 export function useBook() {
+  const [book, setBook] = useState<Book | null>(null)
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [pages, setPages] = useState<Page[]>([])
   const [chapterId, setChapterId] = useState<number | null>(null)
@@ -65,8 +67,9 @@ export function useBook() {
   )
 
   useEffect(() => {
-    Promise.all([api.listChapters(), api.listPages(), api.listUnanchoredNotes()])
-      .then(([cs, ps, ns]) => {
+    Promise.all([api.getBook(), api.listChapters(), api.listPages(), api.listUnanchoredNotes()])
+      .then(([b, cs, ps, ns]) => {
+        setBook(b)
         setChapters(cs)
         setPages(ps)
         setUnanchoredNotes(ns)
@@ -151,10 +154,12 @@ export function useBook() {
   )
 
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
+  /** Crash insurance for in-progress edits; keyed by book so other databases never collide. */
+  const drafts = useMemo(() => (book ? createDraftStore(localStorage, book.id) : null), [book])
 
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
-    unanchoredNotes, anchorNote, undo, redo, saveState,
+    unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts,
   }
 }

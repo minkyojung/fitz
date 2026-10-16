@@ -16,6 +16,7 @@ async function call<T>(method: string, body: unknown = {}): Promise<T> {
 export const pageImageUrl = (url: string) => `${BASE}${url}`
 
 export const api: Api = {
+  getBook: () => call("getBook"),
   listChapters: () => call("listChapters"),
   listSegments: (chapterId) => call("listSegments", { chapterId }),
   listPages: () => call("listPages"),

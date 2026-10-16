@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { Editor } from "@tiptap/react"
 import { IconArrowsSplit2, IconPencil, IconRowInsertBottom } from "@tabler/icons-react"
 
@@ -11,6 +11,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
+import { useDrafts } from "./DraftContext"
 import { cn } from "cn"
 import type { DocJSON, Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
@@ -64,6 +65,16 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const editorRef = useRef<Editor | null>(null)
   const closing = useRef(false)
   const clickOffset = useRef<number | null>(null)
+  const drafts = useDrafts()
+  const [, bump] = useState(0)
+  const discard = () => { drafts?.clear(s.id); bump((n) => n + 1) }
+  /** A draft is only offered while the server text is what it was based on; otherwise it is stale and dropped. */
+  const draft = !editing && drafts ? drafts.load(s.id) : null
+  const recoverable = draft && draft.baseText === s.sourceText ? draft : null
+  useEffect(() => {
+    if (draft && !recoverable) drafts?.clear(s.id) // stale: the server text moved on
+  }, [draft, recoverable, drafts, s.id])
+  const [editDoc, setEditDoc] = useState<DocJSON | null>(null)
 
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
@@ -81,20 +92,33 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     setEditing(true)
   }
 
-  /** Persist the edited doc (if changed) and leave edit mode. Guarded: blur and Enter can both fire. */
+  /** Persist the edited doc (if changed) and leave edit mode. Guarded: blur and Enter can both fire.
+   *  The draft is cleared only once the server accepted the change. */
   const commit = useCallback(
     async (doc: DocJSON) => {
       if (closing.current) return
       closing.current = true
       setEditing(false)
-      if (JSON.stringify(doc) !== JSON.stringify(s.sourceDoc)) await onPatch({ sourceDoc: doc })
+      setEditDoc(null)
+      if (JSON.stringify(doc) === JSON.stringify(s.sourceDoc)) { drafts?.clear(s.id); return }
+      const saved = await onPatch({ sourceDoc: doc })
+      if (saved) drafts?.clear(s.id)
     },
-    [onPatch, s.sourceDoc, setEditing],
+    [onPatch, s.sourceDoc, s.id, setEditing, drafts],
   )
   const cancel = useCallback(() => {
     closing.current = true
     setEditing(false)
-  }, [setEditing])
+    setEditDoc(null)
+    drafts?.clear(s.id)
+  }, [setEditing, drafts, s.id])
+  const saveDraft = useCallback((doc: DocJSON) => drafts?.save(s.id, doc, s.sourceText), [drafts, s.id, s.sourceText])
+  const recover = () => {
+    if (!recoverable) return
+    setEditDoc(recoverable.doc)
+    onSelect()
+    setEditing(true)
+  }
   /** Split at the caret. Unsaved edits are saved first so the offset refers to the stored text. */
   const splitAtCaret = async () => {
     const e = editorRef.current
@@ -145,6 +169,13 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           <Badge variant={s.kind === "paragraph" ? "outline" : "secondary"}>{KIND_LABEL[s.kind]}</Badge>
         )}
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
+        {recoverable && (
+          <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <Badge variant="destructive">저장 안 됨</Badge>
+            <Button size="xs" variant="outline" onClick={recover}>복구</Button>
+            <Button size="xs" variant="ghost" onClick={discard}>버리기</Button>
+          </span>
+        )}
         {selected && (
           <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
             {editing ? (
@@ -166,12 +197,13 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       </div>
       {editing ? (
         <SegmentEditor
-          doc={s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }}
+          doc={editDoc ?? s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }}
           caretOffset={clickOffset.current}
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
           onCommit={(doc) => void commit(doc)}
           onCancel={cancel}
           onStep={onStep}
+          onDraft={saveDraft}
           onReady={onReady}
         />
       ) : (

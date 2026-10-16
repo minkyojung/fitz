@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { EditorContent, useEditor, type Editor } from "@tiptap/react"
 import Document from "@tiptap/extension-document"
 import Paragraph from "@tiptap/extension-paragraph"
@@ -22,6 +22,8 @@ interface Props {
   onCancel: () => void
   /** Tab / Shift-Tab: commit, then continue editing the next / previous paragraph. */
   onStep?: (delta: 1 | -1) => void
+  /** Called with the current doc shortly after typing pauses (crash insurance). */
+  onDraft?: (doc: DocJSON) => void
   onReady?: (editor: Editor) => void
 }
 
@@ -29,7 +31,10 @@ interface Props {
 export const caretOffset = (editor: Editor) => editor.state.selection.from - 1
 
 /** In-place paragraph editor. Same `.reading` classes as the read view, so nothing shifts when it mounts. */
-export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel, onStep, onReady }: Props) {
+const DRAFT_DELAY = 300
+
+export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel, onStep, onDraft, onReady }: Props) {
+  const draftTimer = useRef<number | undefined>(undefined)
   const editor = useEditor({
     extensions: [
       OneParagraph,
@@ -55,7 +60,13 @@ export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel,
       attributes: { class: className ?? "", lang: "en", "aria-label": "단락 편집" },
     },
     onBlur: ({ editor }) => commit(editor),
+    onUpdate: ({ editor }) => {
+      if (!onDraft) return
+      window.clearTimeout(draftTimer.current)
+      draftTimer.current = window.setTimeout(() => onDraft(editor.getJSON() as DocJSON), DRAFT_DELAY)
+    },
   })
+  useEffect(() => () => window.clearTimeout(draftTimer.current), [])
 
   function commit(e: Editor) {
     onCommit(e.getJSON() as DocJSON)

@@ -7,6 +7,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList } from "@/features/review/ChapterList"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
+import { DraftContext } from "@/features/review/DraftContext"
 import { useReview } from "@/features/review/ReviewView"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useKeymap } from "@/lib/useKeymap"
@@ -36,6 +37,7 @@ export function App() {
   if (book.error) return <div className="p-8 text-destructive">API 연결 실패: {book.error}</div>
 
   return (
+    <DraftContext value={book.drafts}>
     <AppShell
       mode={mode}
       onModeChange={setMode}
@@ -73,6 +75,7 @@ export function App() {
         </>
       }
     />
+    </DraftContext>
   )
 }
 

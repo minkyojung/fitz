@@ -18,6 +18,10 @@ const db = openDb(DB)
 
 const routes = {
   // reads
+  getBook: () => {
+    const b = db.prepare("SELECT id, title, author FROM book ORDER BY id LIMIT 1").get()
+    return { id: b.id, title: b.title, author: b.author }
+  },
   listChapters: () =>
     db.prepare(`SELECT c.id, c.idx, c.title, c.start_page, count(s.id) n, coalesce(sum(s.verified), 0) v
                 FROM chapter c LEFT JOIN segment s ON s.chapter_id = c.id GROUP BY c.id ORDER BY c.idx`).all()

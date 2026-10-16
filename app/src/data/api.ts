@@ -6,6 +6,12 @@ export type DocJSON = { type: "doc"; content: Array<{ type: "paragraph"; content
 export type SegmentKind = "paragraph" | "heading" | "blockquote" | "caption" | "verse"
 export type SegmentStatus = "untranslated" | "draft" | "reviewed" | "final"
 
+export interface Book {
+  id: number
+  title: string
+  author: string | null
+}
+
 export interface Chapter {
   id: number
   idx: number
@@ -69,6 +75,7 @@ export interface OpRecord extends OpSummary {
 }
 
 export interface Api {
+  getBook(): Promise<Book>
   listChapters(): Promise<Chapter[]>
   listSegments(chapterId: number): Promise<Segment[]>
   listPages(): Promise<Page[]>
