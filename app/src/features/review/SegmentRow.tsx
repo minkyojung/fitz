@@ -55,9 +55,10 @@ interface Props {
   onPatch: (patch: SegmentPatch) => Promise<unknown>
   onSplit: (offset: number) => Promise<unknown>
   onMerge: () => Promise<unknown>
+  onStep?: (delta: 1 | -1) => void
 }
 
-export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, onEditingChange, onPatch, onSplit, onMerge }: Props) {
+export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, onEditingChange, onPatch, onSplit, onMerge, onStep }: Props) {
   const setEditing = onEditingChange
   const ref = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
@@ -170,6 +171,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
           onCommit={(doc) => void commit(doc)}
           onCancel={cancel}
+          onStep={onStep}
           onReady={onReady}
         />
       ) : (

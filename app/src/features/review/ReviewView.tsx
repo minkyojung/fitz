@@ -50,6 +50,18 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge }: Props)
     if (onPage) setSelectedId(onPage.id)
   }
 
+  /** Move the selection and keep editing there (Tab / Shift-Tab from inside the editor). */
+  const stepEditing = useCallback(
+    (delta: 1 | -1) => {
+      const i = segments.findIndex((s) => s.id === selectedId)
+      const next = segments[(i === -1 ? 0 : i) + delta]
+      if (!next) { setEditingId(null); return }
+      selectSegment(next)
+      setEditingId(next.id)
+    },
+    [segments, selectedId, selectSegment],
+  )
+
   const commands = {
     selectNext: () => selectByDelta(1),
     selectPrev: () => selectByDelta(-1),
@@ -70,6 +82,7 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge }: Props)
         onPatch={onPatch}
         onSplit={onSplit}
         onMerge={onMerge}
+        onStep={stepEditing}
       />
     ),
     selected,

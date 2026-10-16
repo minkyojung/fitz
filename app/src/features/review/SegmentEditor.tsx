@@ -20,6 +20,8 @@ interface Props {
   /** Called with the edited doc. The caller persists it. */
   onCommit: (doc: DocJSON) => void
   onCancel: () => void
+  /** Tab / Shift-Tab: commit, then continue editing the next / previous paragraph. */
+  onStep?: (delta: 1 | -1) => void
   onReady?: (editor: Editor) => void
 }
 
@@ -27,7 +29,7 @@ interface Props {
 export const caretOffset = (editor: Editor) => editor.state.selection.from - 1
 
 /** In-place paragraph editor. Same `.reading` classes as the read view, so nothing shifts when it mounts. */
-export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel, onReady }: Props) {
+export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel, onStep, onReady }: Props) {
   const editor = useEditor({
     extensions: [
       OneParagraph,
@@ -42,6 +44,8 @@ export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel,
             Enter: () => { commit(this.editor as Editor); return true },
             "Mod-Enter": () => { commit(this.editor as Editor); return true },
             Escape: () => { onCancel(); return true },
+            Tab: () => { commit(this.editor as Editor); onStep?.(1); return true },
+            "Shift-Tab": () => { commit(this.editor as Editor); onStep?.(-1); return true },
           }
         },
       }),
@@ -60,18 +64,23 @@ export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel,
   useEffect(() => {
     if (!editor) return
     onReady?.(editor)
-    // Focus once the view is in the document (EditorContent attaches it after this effect).
+    // Focus as soon as the view is in the document. EditorContent (a child) attaches it before this
+    // effect runs, so usually that is immediately; otherwise wait a frame or two. Keys typed right after
+    // the click must land in the editor, so never defer when not needed.
     // Single paragraph: document position = text offset + 1 (the paragraph's opening token).
     let tries = 0
     let raf = 0
     const place = () => {
       if (editor.isDestroyed) return
-      if (!editor.view.dom.isConnected && tries++ < 10) { raf = requestAnimationFrame(place); return }
+      if (!editor.view.dom.isConnected) {
+        if (tries++ < 10) raf = requestAnimationFrame(place)
+        return
+      }
       if (caretOffset == null) { editor.commands.focus("end"); return }
       const max = editor.state.doc.content.size - 1
       editor.commands.focus(Math.max(1, Math.min(caretOffset + 1, max)))
     }
-    raf = requestAnimationFrame(place)
+    place()
     return () => cancelAnimationFrame(raf)
   }, [editor, onReady, caretOffset])
 
