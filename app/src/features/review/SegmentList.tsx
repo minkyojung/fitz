@@ -9,10 +9,12 @@ interface Props {
   selectedId: number | null
   onSelect: (segment: Segment) => void
   onPatch: (id: number, patch: SegmentPatch) => Promise<unknown>
+  onSplit: (id: number, offset: number) => Promise<unknown>
+  onMerge: (id: number) => Promise<unknown>
 }
 
 /** Segments of the current chapter, grouped under the printed page they start on. */
-export function SegmentList({ segments, selectedId, onSelect, onPatch }: Props) {
+export function SegmentList({ segments, selectedId, onSelect, onPatch, onSplit, onMerge }: Props) {
   return (
     <ScrollArea className="h-full">
       <div className="px-4 py-3">
@@ -28,8 +30,11 @@ export function SegmentList({ segments, selectedId, onSelect, onPatch }: Props) 
               <SegmentRow
                 segment={s}
                 selected={s.id === selectedId}
+                hasNext={i + 1 < segments.length}
                 onSelect={() => onSelect(s)}
                 onPatch={(patch) => onPatch(s.id, patch)}
+                onSplit={(offset) => onSplit(s.id, offset)}
+                onMerge={() => onMerge(s.id)}
               />
             </Fragment>
           )

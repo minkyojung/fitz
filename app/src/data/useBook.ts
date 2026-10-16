@@ -52,10 +52,40 @@ export function useBook() {
     [refreshChapters],
   )
 
+  /** Split/merge renumber the chapter, so reload the whole list afterwards. Returns the surviving head id. */
+  const splitSegment = useCallback(
+    async (id: number, offset: number) => {
+      try {
+        const [head] = await api.splitSegment(id, offset)
+        if (chapterId !== null) await refreshSegments(chapterId)
+        void refreshChapters()
+        return head.id
+      } catch (e) {
+        toast.error("분할 실패", { description: (e as Error).message })
+        return null
+      }
+    },
+    [chapterId, refreshSegments, refreshChapters],
+  )
+  const mergeWithNext = useCallback(
+    async (id: number) => {
+      try {
+        const merged = await api.mergeWithNext(id)
+        if (chapterId !== null) await refreshSegments(chapterId)
+        void refreshChapters()
+        return merged.id
+      } catch (e) {
+        toast.error("병합 실패", { description: (e as Error).message })
+        return null
+      }
+    },
+    [chapterId, refreshSegments, refreshChapters],
+  )
+
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
 
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
-    refreshChapters, refreshSegments, updateSegment,
+    refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
   }
 }

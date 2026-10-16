@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react"
-import { IconPencil } from "@tabler/icons-react"
+import { IconArrowsSplit2, IconPencil, IconRowInsertBottom } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "cn"
@@ -21,14 +24,18 @@ const KINDS = Object.keys(KIND_LABEL) as SegmentKind[]
 interface Props {
   segment: Segment
   selected: boolean
+  hasNext: boolean
   onSelect: () => void
   onPatch: (patch: SegmentPatch) => Promise<unknown>
+  onSplit: (offset: number) => Promise<unknown>
+  onMerge: () => Promise<unknown>
 }
 
-export function SegmentRow({ segment: s, selected, onSelect, onPatch }: Props) {
+export function SegmentRow({ segment: s, selected, hasNext, onSelect, onPatch, onSplit, onMerge }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(s.sourceText)
   const ref = useRef<HTMLDivElement>(null)
+  const boxRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
@@ -42,9 +49,20 @@ export function SegmentRow({ segment: s, selected, onSelect, onPatch }: Props) {
     if (text && text !== s.sourceText) await onPatch({ sourceText: text })
     setEditing(false)
   }
+  /** Split at the caret. Unsaved edits are saved first so the offset refers to the stored text. */
+  const splitAtCaret = async () => {
+    const box = boxRef.current
+    if (!box) return
+    const offset = box.selectionStart
+    const text = draft.trim()
+    if (text !== s.sourceText) await onPatch({ sourceText: text })
+    setEditing(false)
+    await onSplit(offset)
+  }
 
   return (
-    <div
+    <ContextMenu>
+    <ContextMenuTrigger
       ref={ref}
       onClick={onSelect}
       className={cn(
@@ -79,23 +97,28 @@ export function SegmentRow({ segment: s, selected, onSelect, onPatch }: Props) {
           <Badge variant={s.kind === "paragraph" ? "outline" : "secondary"}>{KIND_LABEL[s.kind]}</Badge>
         )}
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
-        {selected && !editing && (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="ml-auto"
-            aria-label="텍스트 수정"
-            onClick={(e) => {
-              e.stopPropagation()
-              setEditing(true)
-            }}
-          >
-            <IconPencil />
-          </Button>
+        {selected && (
+          <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
+            {editing ? (
+              <Button variant="ghost" size="xs" aria-label="커서 위치에서 분할" onMouseDown={(e) => e.preventDefault()}
+                onClick={() => void splitAtCaret()}>
+                <IconArrowsSplit2 data-icon="inline-start" /> 분할
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon-xs" aria-label="텍스트 수정" onClick={() => setEditing(true)}>
+                <IconPencil />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon-xs" aria-label="다음 단락과 병합" disabled={!hasNext}
+              onClick={() => void onMerge()}>
+              <IconRowInsertBottom />
+            </Button>
+          </span>
         )}
       </div>
       {editing ? (
         <Textarea
+          ref={boxRef}
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -112,6 +135,11 @@ export function SegmentRow({ segment: s, selected, onSelect, onPatch }: Props) {
           {s.sourceText}
         </p>
       )}
-    </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent>
+      <ContextMenuItem onClick={() => { onSelect(); setEditing(true) }}>텍스트 수정</ContextMenuItem>
+      <ContextMenuItem disabled={!hasNext} onClick={() => void onMerge()}>다음 단락과 병합</ContextMenuItem>
+    </ContextMenuContent>
+    </ContextMenu>
   )
 }

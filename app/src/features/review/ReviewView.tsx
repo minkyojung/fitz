@@ -8,10 +8,12 @@ interface Props {
   pages: Page[]
   segments: Segment[]
   onPatch: (id: number, patch: SegmentPatch) => Promise<unknown>
+  onSplit: (id: number, offset: number) => Promise<unknown>
+  onMerge: (id: number) => Promise<unknown>
 }
 
 /** Review mode: page image on the left, the chapter's segments on the right, kept on the same page. */
-export function useReview({ pages, segments, onPatch }: Props) {
+export function useReview({ pages, segments, onPatch, onSplit, onMerge }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [pageNo, setPageNo] = useState<number | null>(null)
 
@@ -37,7 +39,7 @@ export function useReview({ pages, segments, onPatch }: Props) {
 
   return {
     left: <PageViewer pages={pages} pageNo={pageNo} onPageChange={changePage} />,
-    right: <SegmentList segments={segments} selectedId={selectedId} onSelect={selectSegment} onPatch={onPatch} />,
+    right: <SegmentList segments={segments} selectedId={selectedId} onSelect={selectSegment} onPatch={onPatch} onSplit={onSplit} onMerge={onMerge} />,
     selected: segments.find((s) => s.id === selectedId) ?? null,
   }
 }

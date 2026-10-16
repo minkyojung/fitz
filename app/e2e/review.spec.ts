@@ -42,3 +42,29 @@ test("page navigation follows the selected segment", async ({ page }) => {
   await expect(page.getByText("p. 12", { exact: true }).first()).toBeVisible()
   await expect(page.getByRole("img", { name: "원서 12쪽" })).toBeVisible()
 })
+
+test("split at caret and merge back restore the paragraph", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /2: Ripes/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Ripes/)
+  const before = await rows.count()
+  const row = rows.nth(1)
+  const original = (await row.locator("p").innerText()).trim()
+  await row.click()
+
+  await row.getByRole("button", { name: "텍스트 수정" }).click()
+  const box = row.getByRole("textbox")
+  const cut = original.indexOf(" ", 40) + 1 // after a space, well inside the paragraph
+  await box.evaluate((el: HTMLTextAreaElement, pos: number) => el.setSelectionRange(pos, pos), cut)
+  await row.getByRole("button", { name: "커서 위치에서 분할" }).click()
+
+  await expect(rows).toHaveCount(before + 1)
+  await expect(rows.nth(1).locator("p")).toHaveText(original.slice(0, cut).trim())
+  await expect(rows.nth(2).locator("p")).toHaveText(original.slice(cut).trim())
+
+  await rows.nth(1).click()
+  await rows.nth(1).getByRole("button", { name: "다음 단락과 병합" }).click()
+  await expect(rows).toHaveCount(before)
+  await expect(rows.nth(1).locator("p")).toHaveText(original)
+})
