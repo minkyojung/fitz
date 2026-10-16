@@ -102,7 +102,8 @@ CREATE TABLE glossary (
   id            INTEGER PRIMARY KEY,
   book_id       INTEGER NOT NULL REFERENCES book(id),
   term          TEXT NOT NULL,        -- 원어
-  translation   TEXT NOT NULL,        -- 확정 표기
+  translation   TEXT NOT NULL,        -- 확정 표기 ('' = 아직 미정, 사전 단어로만 쓰임)
+  aliases       TEXT,                 -- 허용 변형, 쉼표 구분 (예: "샘 제무레이")
   kind          TEXT NOT NULL DEFAULT 'other'
                 CHECK (kind IN ('person','place','org','work','other')),
   memo          TEXT,

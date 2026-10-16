@@ -80,3 +80,18 @@ def test_migration_adds_target_text(tmp_path: Path):
     assert "target_text" in {r[1] for r in conn.execute("PRAGMA table_info(segment)")}
     conn.close()
     assert migrate(p) == []
+
+
+def test_migration_adds_glossary_aliases(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("""
+      CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);
+      CREATE TABLE glossary (id INTEGER PRIMARY KEY, book_id INTEGER, term TEXT, translation TEXT, kind TEXT, memo TEXT);
+    """)
+    conn.commit(); conn.close()
+    assert any("aliases" in s for s in migrate(p))
+    conn = sqlite3.connect(p)
+    assert "aliases" in {r[1] for r in conn.execute("PRAGMA table_info(glossary)")}
+    conn.close()
+    assert migrate(p) == []

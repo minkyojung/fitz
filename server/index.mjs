@@ -4,7 +4,7 @@ import { createServer } from "node:http"
 import { readFile } from "node:fs/promises"
 import { resolve, basename } from "node:path"
 
-import { execute, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
+import { execute, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -43,6 +43,7 @@ const routes = {
   listUnanchoredNotes: () => db.prepare("SELECT * FROM note WHERE anchored = 0 ORDER BY id").all().map(noteRow),
   listOps: (p) => listOps(db, p),
   /** Words the person marked as correct (the book's dictionary / glossary terms). */
+  listGlossary: ({ bookId }) => listGlossary(db, { bookId }),
   listGlossaryWords: ({ bookId }) => db.prepare("SELECT term FROM glossary WHERE book_id = ? ORDER BY term").all(bookId).map((r) => r.term),
   /** Every segment's text, for the client-side language model. */
   listSourceTexts: () => db.prepare("SELECT id, source_text FROM segment").all().map((r) => ({ id: r.id, text: r.source_text })),
@@ -61,6 +62,7 @@ const routes = {
   deleteSegment: ({ id }) => execute(db, "deleteSegment", { id }),
   replaceAll: ({ query, replacement }) => replaceAll(db, { query, replacement }),
   addGlossaryWord: ({ bookId, term }) => execute(db, "addGlossaryWord", { bookId, term }),
+  setGlossaryTerm: ({ bookId, term, translation, aliases, kind }) => execute(db, "setGlossaryTerm", { bookId, term, translation, aliases, kind }),
   undo: () => undo(db),
   redo: () => redo(db),
 }

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo } from "./commands.mjs"
+import { COMMANDS, docText, execute, listGlossary, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo } from "./commands.mjs"
 
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
@@ -37,7 +37,7 @@ const snapshot = (db) => ({
   segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, target_doc, target_text, status, verified FROM segment ORDER BY id").all(),
   notes: db.prepare("SELECT id, segment_id, src_start, src_end, anchored FROM note ORDER BY id").all(),
   comments: db.prepare("SELECT id, segment_id FROM comment ORDER BY id").all(),
-  glossary: db.prepare("SELECT book_id, term, translation, kind FROM glossary ORDER BY term").all(),
+  glossary: db.prepare("SELECT book_id, term, translation, aliases, kind FROM glossary ORDER BY term").all(),
   boxes: db.prepare("SELECT * FROM segment_box ORDER BY segment_id, page_no").all(),
 })
 const opsCount = (db, undone) => db.prepare("SELECT count(*) n FROM ops WHERE undone = ?").get(undone ? 1 : 0).n
@@ -71,6 +71,7 @@ roundTrip("mergeWithNext", { id: 2 })                  // pulls segment 3 (note 
 roundTrip("setNoteAnchor", { noteId: 3, segmentId: 2, anchored: true })
 roundTrip("insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "A photo", pageNo: 4 })
 roundTrip("addGlossaryWord", { bookId: 1, term: "Zemurray" })
+roundTrip("setGlossaryTerm", { bookId: 1, term: "alpha", translation: "알파", aliases: "알파벳", kind: "person" })
 const pmDocJ = (t) => JSON.parse(pmDoc(t))
 roundTrip("updateSegment", { id: 2, targetDoc: pmDocJ("알파 베타"), status: "reviewed" })
 
@@ -297,6 +298,22 @@ test("a translation may hold several paragraphs; its text joins them with newlin
   const r = execute(db, "updateSegment", { id: 3, targetDoc: two })
   assert.equal(r.targetText, "첫째\n둘째")
   assert.throws(() => execute(db, "updateSegment", { id: 3, doc: two }), /single paragraph/)
+})
+
+test("setGlossaryTerm upgrades a dictionary word, keeps the previous row for undo, and counts occurrences", () => {
+  const db = fixture()
+  execute(db, "addGlossaryWord", { bookId: 1, term: "alpha" })
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "alpha", translation: "알파", aliases: "", kind: "person" })
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "alpha", translation: "알파2", aliases: "알파", kind: "person" })
+  const g = listGlossary(db, { bookId: 1 })
+  assert.deepEqual(g.map((x) => [x.term, x.translation, x.occurrences]), [["alpha", "알파2", 1]])
+  undo(db)
+  assert.equal(listGlossary(db, { bookId: 1 })[0].translation, "알파")
+  undo(db)
+  assert.equal(listGlossary(db, { bookId: 1 })[0].translation, "")
+  undo(db)
+  assert.equal(listGlossary(db, { bookId: 1 }).length, 0)
+  assert.throws(() => execute(db, "setGlossaryTerm", { bookId: 1, term: "x", kind: "animal" }), /bad kind/)
 })
 
 test("every command has a registered inverse", () => {

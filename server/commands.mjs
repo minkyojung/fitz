@@ -333,11 +333,35 @@ export const COMMANDS = {
     const id = db.prepare("INSERT INTO glossary(book_id, term, translation, kind) VALUES (?,?,'','other')").run(bookId, term).lastInsertRowid
     return { result: { id: Number(id), term }, forward: { bookId, term }, inverse: { name: "removeGlossaryWord", params: { bookId, term } }, segmentIds: [] }
   },
+  /** Set (or create) a glossary entry's translation, aliases and kind. Inverse restores the previous row,
+   *  or removes the entry if it did not exist. */
+  setGlossaryTerm(db, { bookId, term, translation = "", aliases = "", kind = "other" }) {
+    if (!term?.trim()) throw httpError(400, "term is required")
+    if (!["person", "place", "org", "work", "other"].includes(kind)) throw httpError(400, "bad kind")
+    const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
+    if (cur) {
+      db.prepare("UPDATE glossary SET translation = ?, aliases = ?, kind = ? WHERE id = ?").run(translation, aliases, kind, cur.id)
+    } else {
+      db.prepare("INSERT INTO glossary(book_id, term, translation, aliases, kind) VALUES (?,?,?,?,?)").run(bookId, term, translation, aliases, kind)
+    }
+    const row = glossaryRow(db, bookId, term)
+    return {
+      result: row,
+      forward: { bookId, term, translation, aliases, kind },
+      inverse: cur
+        ? { name: "setGlossaryTerm", params: { bookId, term, translation: cur.translation, aliases: cur.aliases ?? "", kind: cur.kind } }
+        : { name: "removeGlossaryWord", params: { bookId, term } },
+      segmentIds: [],
+    }
+  },
   removeGlossaryWord(db, { bookId, term }) {
     const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
     if (!cur) throw httpError(404, "not in the dictionary")
     db.prepare("DELETE FROM glossary WHERE id = ?").run(cur.id)
-    return { result: null, forward: { bookId, term }, inverse: { name: "addGlossaryWord", params: { bookId, term } }, segmentIds: [] }
+    const inverse = cur.translation || cur.aliases
+      ? { name: "setGlossaryTerm", params: { bookId, term, translation: cur.translation, aliases: cur.aliases ?? "", kind: cur.kind } }
+      : { name: "addGlossaryWord", params: { bookId, term } }
+    return { result: null, forward: { bookId, term }, inverse, segmentIds: [] }
   },
 
   setNoteAnchor(db, { noteId, segmentId, anchored }) {
@@ -434,6 +458,23 @@ export const replaceAll = (db, { query, replacement }) => {
   if (!items.length) return { segments: 0, occurrences: 0 }
   execute(db, "setDocs", { items })
   return { segments: items.length, occurrences }
+}
+
+const glossaryRow = (db, bookId, term) => {
+  const r = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
+  return r && { id: r.id, term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind }
+}
+
+/** Glossary entries with how many segments mention each term (whole word, case-insensitive). */
+export const listGlossary = (db, { bookId }) => {
+  const rows = db.prepare("SELECT * FROM glossary WHERE book_id = ? ORDER BY term COLLATE NOCASE").all(bookId)
+  if (!rows.length) return []
+  const texts = db.prepare("SELECT source_text FROM segment").all().map((r) => r.source_text)
+  return rows.map((r) => {
+    const re = new RegExp(`(^|[^A-Za-z])${r.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^A-Za-z])`, "i")
+    const occurrences = texts.reduce((n, t) => n + (re.test(t) ? 1 : 0), 0)
+    return { id: r.id, term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind, occurrences }
+  })
 }
 
 export const listOps = (db, { segmentId, limit = 50 } = {}) => {

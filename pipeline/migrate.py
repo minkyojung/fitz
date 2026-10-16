@@ -40,6 +40,10 @@ def migrate(path: Path) -> list[str]:
     if "target_text" not in cols:
         conn.execute("ALTER TABLE segment ADD COLUMN target_text TEXT")
         done.append("target_text column")
+    gcols = {r[1] for r in conn.execute("PRAGMA table_info(glossary)")}
+    if gcols and "aliases" not in gcols:
+        conn.execute("ALTER TABLE glossary ADD COLUMN aliases TEXT")
+        done.append("glossary.aliases column")
     if "segment_box" not in tables:
         conn.executescript("""
           CREATE TABLE segment_box (
