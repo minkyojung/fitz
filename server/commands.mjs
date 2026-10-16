@@ -237,6 +237,44 @@ export const COMMANDS = {
     }
   },
 
+  /** Insert a new segment after `afterIdx` in a chapter (afterIdx -1 = first). `id` is pinned on redo. */
+  insertSegment(db, { id, chapterId, afterIdx, kind, text, pageNo }) {
+    if (!KINDS.includes(kind)) throw httpError(400, "bad kind")
+    if (!text?.trim()) throw httpError(400, "text is required")
+    const ch = db.prepare("SELECT id FROM chapter WHERE id = ?").get(chapterId)
+    if (!ch) throw httpError(404, `chapter ${chapterId} not found`)
+    shiftIdx(db, chapterId, afterIdx, 1)
+    const newId = db.prepare(
+      `INSERT INTO segment(id, chapter_id, idx, kind, page_start, page_end, ocr_text, source_doc, source_text, verified)
+       VALUES (?,?,?,?,?,?,NULL,?,?,0)`,
+    ).run(id ?? null, chapterId, afterIdx + 1, kind, pageNo, pageNo, pmDoc(text), text).lastInsertRowid
+    return {
+      result: segOut(db, Number(newId)),
+      forward: { id: Number(newId), chapterId, afterIdx, kind, text, pageNo },
+      inverse: { name: "deleteSegment", params: { id: Number(newId) } },
+      segmentIds: [Number(newId)],
+    }
+  },
+
+  /** Delete a segment that has no notes or comments (only ones the editor created). Inverse re-inserts it under its id. */
+  deleteSegment(db, { id }) {
+    const cur = getSegment(db, id)
+    const attached = db.prepare("SELECT (SELECT count(*) FROM note WHERE segment_id = ?) + (SELECT count(*) FROM comment WHERE segment_id = ?) n").get(id, id).n
+    if (attached) throw httpError(400, "segment has notes or comments; merge instead")
+    db.prepare("DELETE FROM segment_version WHERE segment_id = ?").run(id)
+    db.prepare("DELETE FROM segment WHERE id = ?").run(id)
+    shiftIdx(db, cur.chapter_id, cur.idx, -1)
+    return {
+      result: null,
+      forward: { id },
+      inverse: {
+        name: "insertSegment",
+        params: { id, chapterId: cur.chapter_id, afterIdx: cur.idx - 1, kind: cur.kind, text: cur.source_text, pageNo: cur.page_start },
+      },
+      segmentIds: [id],
+    }
+  },
+
   setNoteAnchor(db, { noteId, segmentId, anchored }) {
     const cur = getNote(db, noteId)
     getSegment(db, segmentId)

@@ -68,6 +68,7 @@ roundTrip("updateSegment", { id: 2, text: "alpha BETA", kind: "blockquote", veri
 roundTrip("splitSegment", { id: 2, offset: 11 })      // "alpha beta " | "gamma delta" → note 1 moves to tail
 roundTrip("mergeWithNext", { id: 2 })                  // pulls segment 3 (note 2, comment 1) into 2
 roundTrip("setNoteAnchor", { noteId: 3, segmentId: 2, anchored: true })
+roundTrip("insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "A photo", pageNo: 4 })
 
 test("split moves a note into the tail and unsplit brings it back at the same offset", () => {
   const db = fixture()
@@ -210,6 +211,20 @@ test("split shares the parent's boxes; merge unions boxes per page; undo restore
     { segment_id: 2, page_no: 4, x0: 0.1, y0: 0.1, x1: 0.9, y1: 0.2 },
     { segment_id: 3, page_no: 4, x0: 0.1, y0: 0.25, x1: 0.8, y1: 0.4 },
   ])
+})
+
+test("insertSegment places the row after afterIdx with contiguous idx; redo keeps its id; delete refuses rows with notes", () => {
+  const db = fixture()
+  const row = execute(db, "insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "A photo", pageNo: 4 })
+  assert.deepEqual(plain(db.prepare("SELECT id, idx FROM segment WHERE chapter_id = 1 ORDER BY idx").all()),
+    [{ id: 1, idx: 0 }, { id: 2, idx: 1 }, { id: row.id, idx: 2 }, { id: 3, idx: 3 }, { id: 4, idx: 4 }])
+  assert.equal(db.prepare("SELECT ocr_text FROM segment WHERE id = ?").get(row.id).ocr_text, null)
+  undo(db)
+  assert.equal(db.prepare("SELECT count(*) n FROM segment WHERE id = ?").get(row.id).n, 0)
+  redo(db)
+  assert.equal(db.prepare("SELECT kind FROM segment WHERE id = ?").get(row.id).kind, "caption")
+  assert.throws(() => execute(db, "deleteSegment", { id: 2 }), /notes or comments/)
+  assert.throws(() => execute(db, "insertSegment", { chapterId: 1, afterIdx: 0, kind: "caption", text: "  ", pageNo: 4 }), /text is required/)
 })
 
 test("every command has a registered inverse", () => {

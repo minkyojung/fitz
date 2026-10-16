@@ -48,6 +48,8 @@ const routes = {
   splitSegment: ({ id, offset }) => execute(db, "splitSegment", { id, offset }),
   mergeWithNext: ({ id }) => execute(db, "mergeWithNext", { id }),
   anchorNote: ({ noteId, segmentId }) => execute(db, "setNoteAnchor", { noteId, segmentId, anchored: true }),
+  insertSegment: ({ chapterId, afterIdx, kind, text, pageNo }) => execute(db, "insertSegment", { chapterId, afterIdx, kind, text, pageNo }),
+  deleteSegment: ({ id }) => execute(db, "deleteSegment", { id }),
   undo: () => undo(db),
   redo: () => redo(db),
 }
