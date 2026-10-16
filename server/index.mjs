@@ -41,6 +41,10 @@ const routes = {
       .map((r) => ({ pageNo: r.page_no, pdfIndex: r.pdf_index, imageUrl: `/pages/${basename(r.image_path)}` })),
   listUnanchoredNotes: () => db.prepare("SELECT * FROM note WHERE anchored = 0 ORDER BY id").all().map(noteRow),
   listOps: (p) => listOps(db, p),
+  /** Words the person marked as correct (the book's dictionary / glossary terms). */
+  listGlossaryWords: ({ bookId }) => db.prepare("SELECT term FROM glossary WHERE book_id = ? ORDER BY term").all(bookId).map((r) => r.term),
+  /** Every segment's text, for the client-side language model. */
+  listSourceTexts: () => db.prepare("SELECT id, source_text FROM segment").all().map((r) => ({ id: r.id, text: r.source_text })),
   search: (p) => search(db, p),
 
   // writes: every one is a logged command
@@ -52,6 +56,7 @@ const routes = {
   insertSegment: ({ chapterId, afterIdx, kind, text, pageNo }) => execute(db, "insertSegment", { chapterId, afterIdx, kind, text, pageNo }),
   deleteSegment: ({ id }) => execute(db, "deleteSegment", { id }),
   replaceAll: ({ query, replacement }) => replaceAll(db, { query, replacement }),
+  addGlossaryWord: ({ bookId, term }) => execute(db, "addGlossaryWord", { bookId, term }),
   undo: () => undo(db),
   redo: () => redo(db),
 }

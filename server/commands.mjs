@@ -303,6 +303,21 @@ export const COMMANDS = {
     }
   },
 
+  /** Mark a word as correct for this book. Stored in the glossary (translation filled in later). */
+  addGlossaryWord(db, { bookId, term }) {
+    if (!term?.trim()) throw httpError(400, "term is required")
+    const cur = db.prepare("SELECT id FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
+    if (cur) throw httpError(400, "already in the dictionary")
+    const id = db.prepare("INSERT INTO glossary(book_id, term, translation, kind) VALUES (?,?,'','other')").run(bookId, term).lastInsertRowid
+    return { result: { id: Number(id), term }, forward: { bookId, term }, inverse: { name: "removeGlossaryWord", params: { bookId, term } }, segmentIds: [] }
+  },
+  removeGlossaryWord(db, { bookId, term }) {
+    const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
+    if (!cur) throw httpError(404, "not in the dictionary")
+    db.prepare("DELETE FROM glossary WHERE id = ?").run(cur.id)
+    return { result: null, forward: { bookId, term }, inverse: { name: "addGlossaryWord", params: { bookId, term } }, segmentIds: [] }
+  },
+
   setNoteAnchor(db, { noteId, segmentId, anchored }) {
     const cur = getNote(db, noteId)
     getSegment(db, segmentId)

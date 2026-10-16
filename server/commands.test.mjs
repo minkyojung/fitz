@@ -37,6 +37,7 @@ const snapshot = (db) => ({
   segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, verified FROM segment ORDER BY id").all(),
   notes: db.prepare("SELECT id, segment_id, src_start, src_end, anchored FROM note ORDER BY id").all(),
   comments: db.prepare("SELECT id, segment_id FROM comment ORDER BY id").all(),
+  glossary: db.prepare("SELECT book_id, term, translation, kind FROM glossary ORDER BY term").all(),
   boxes: db.prepare("SELECT * FROM segment_box ORDER BY segment_id, page_no").all(),
 })
 const opsCount = (db, undone) => db.prepare("SELECT count(*) n FROM ops WHERE undone = ?").get(undone ? 1 : 0).n
@@ -69,6 +70,7 @@ roundTrip("splitSegment", { id: 2, offset: 11 })      // "alpha beta " | "gamma 
 roundTrip("mergeWithNext", { id: 2 })                  // pulls segment 3 (note 2, comment 1) into 2
 roundTrip("setNoteAnchor", { noteId: 3, segmentId: 2, anchored: true })
 roundTrip("insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "A photo", pageNo: 4 })
+roundTrip("addGlossaryWord", { bookId: 1, term: "Zemurray" })
 
 test("split moves a note into the tail and unsplit brings it back at the same offset", () => {
   const db = fixture()
@@ -258,6 +260,15 @@ test("replaceAll changes every segment in one logged command; undo restores all;
   assert.deepEqual(replaceAll(db, { query: "nothing-here", replacement: "x" }), { segments: 0, occurrences: 0 })
   assert.equal(opsCount(db, false), 0)
   assert.throws(() => replaceAll(db, { query: "last one", replacement: "" }), /would empty/)
+})
+
+test("dictionary words are unique per book and removable", () => {
+  const db = fixture()
+  execute(db, "addGlossaryWord", { bookId: 1, term: "Cuyamel" })
+  assert.throws(() => execute(db, "addGlossaryWord", { bookId: 1, term: "Cuyamel" }), /already/)
+  assert.throws(() => execute(db, "addGlossaryWord", { bookId: 1, term: "  " }), /required/)
+  undo(db)
+  assert.equal(db.prepare("SELECT count(*) n FROM glossary").get().n, 0)
 })
 
 test("every command has a registered inverse", () => {
