@@ -40,7 +40,7 @@ export function NotesGallery() {
       if (x.kind === "comment") {
         out.push(
           <mark key={"c" + x.c.id} data-comment onClick={() => setSelected(x.c.id)}
-            className={cn("cursor-pointer rounded-sm bg-mark-italic text-inherit", selected === x.c.id && "ring-2 ring-mark-italic")}>
+            className={cn("cursor-pointer rounded-sm bg-mark-comment text-inherit", selected === x.c.id && "ring-2 ring-mark-comment")}>
             {text.slice(x.at, x.at + x.len)}
           </mark>,
         )
@@ -66,10 +66,19 @@ export function NotesGallery() {
       <div>
         <h1 className="mb-4 flex items-center gap-3 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Comments &amp; notes gallery</span>
-          <span>purple = comment (click to open) · blue superscript = footnote (T = translator's) · yellow stays for edits · hover for text</span>
+          <span>yellow = comment (click to open) · blue superscript = footnote (T = translator's) · edits get no colour, only an "edited" dot (hover for the original) · hover for text</span>
         </h1>
         <div className="grid grid-cols-[1rem_1fr_1fr] gap-x-6">
-          <div className="pt-2"><span className="block size-2 rounded-full bg-mark-note" /></div>
+          <div className="flex flex-col items-center gap-1.5 pt-2">
+            <span className="block size-2 rounded-full bg-mark-note" title="Reviewed" />
+            <Tooltip>
+              <TooltipTrigger render={<span data-edited className="block size-2 rounded-full border border-muted-foreground/40 bg-background" />} />
+              <TooltipContent side="right" className="max-w-xs">
+                <div className="mb-1 text-[11px] opacity-70">Edited — original OCR:</div>
+                <span className="reading text-[12px]" lang="en">…he offered a wage ten <s className="opacity-70">tirnes</s> <b>times</b> the going rate…</span>
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <p className="reading select-text text-[15px] text-muted-foreground" lang="en">{mark(SOURCE, "source")}</p>
           <div className="reading text-[15px]" lang="ko">{mark(TARGET, "target")}</div>
         </div>
