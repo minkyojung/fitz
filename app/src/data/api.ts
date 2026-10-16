@@ -96,6 +96,8 @@ export interface Api {
   mergeWithNext(id: number): Promise<Segment>
   listUnanchoredNotes(): Promise<Note[]>
   anchorNote(noteId: number, segmentId: number): Promise<Note>
+  /** New editor-created segment after `afterIdx` in the chapter (-1 = first). */
+  insertSegment(input: { chapterId: number; afterIdx: number; kind: SegmentKind; text: string; pageNo: number }): Promise<Segment>
   /** Revert / re-apply the last logged command. null when there is nothing to do. */
   undo(): Promise<OpSummary | null>
   redo(): Promise<OpSummary | null>

@@ -11,7 +11,11 @@ export const OP_LABEL: Record<string, string> = {
   splitSegment: "분할",
   mergeWithNext: "병합",
   setNoteAnchor: "미주 연결",
+  insertSegment: "단락 추가",
+  deleteSegment: "단락 삭제",
 }
+
+export const CAPTION_PLACEHOLDER = "캡션"
 
 export type SaveState = "idle" | "saving" | "saved" | "error"
 
@@ -116,6 +120,21 @@ export function useBook() {
     [mutate, chapterId, refreshSegments, refreshChapters],
   )
 
+  /** A caption placeholder for a page with photos: inserted after the last segment on or before that page. */
+  const addCaption = useCallback(
+    (pageNo: number) =>
+      mutate("캡션 추가", async () => {
+        if (chapterId === null) return null
+        const before = segments.filter((s) => s.pageStart <= pageNo)
+        const afterIdx = before.length ? before[before.length - 1].idx : -1
+        const created = await api.insertSegment({ chapterId, afterIdx, kind: "caption", text: CAPTION_PLACEHOLDER, pageNo })
+        await refreshSegments(chapterId)
+        void refreshChapters()
+        return created
+      }),
+    [mutate, chapterId, segments, refreshSegments, refreshChapters],
+  )
+
   const anchorNote = useCallback(
     (noteId: number, segmentId: number) =>
       mutate("미주 연결", async () => {
@@ -160,6 +179,6 @@ export function useBook() {
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
-    unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts,
+    unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption,
   }
 }

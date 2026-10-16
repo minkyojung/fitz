@@ -12,11 +12,13 @@ interface Props {
   onMerge: (id: number) => Promise<unknown>
   /** The page viewer moved to a page outside this chapter: switch to the chapter that owns it (if any). */
   onPageOutsideChapter: (pageNo: number) => void
+  /** Create a caption placeholder on a page; resolves to the new segment. */
+  onAddCaption: (pageNo: number) => Promise<Segment | null>
 }
 
 /** Review mode: page image on the left, the chapter's segments on the right, kept on the same page.
  *  Selection, editing and the per-segment actions are exposed as commands so buttons and keys share them. */
-export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOutsideChapter }: Props) {
+export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOutsideChapter, onAddCaption }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [pageNo, setPageNo] = useState<number | null>(null)
@@ -84,6 +86,18 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
     [segments, selectedId, selectSegment],
   )
 
+  /** Add the caption, then open it for editing so the placeholder is overwritten right away. */
+  const addCaption = useCallback(
+    async (no: number) => {
+      const created = await onAddCaption(no)
+      if (!created) return
+      setSelectedId(created.id)
+      setPageNo(no)
+      setEditingId(created.id)
+    },
+    [onAddCaption],
+  )
+
   const commands = {
     selectNext: () => selectByDelta(1),
     selectPrev: () => selectByDelta(-1),
@@ -108,6 +122,7 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
         onSplit={onSplit}
         onMerge={onMerge}
         onStep={stepEditing}
+        onAddCaption={(no) => void addCaption(no)}
       />
     ),
     selected,

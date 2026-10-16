@@ -38,6 +38,7 @@ export function App() {
       const target = chapterForPage(book.chapters, pageNo)
       if (target !== null && target !== book.chapterId) book.setChapterId(target)
     },
+    onAddCaption: book.addCaption,
   })
   const { commands } = review
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo }), [commands, book.undo, book.redo]))

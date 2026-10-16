@@ -12,6 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { useDrafts } from "./DraftContext"
+import { CAPTION_PLACEHOLDER } from "@/data/useBook"
 import { cn } from "cn"
 import type { DocJSON, Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
@@ -136,6 +137,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     <ContextMenu>
     <ContextMenuTrigger
       ref={ref}
+      data-segment={s.id}
       onClick={onSelect}
       className={cn(
         "group mb-2 rounded-md border border-transparent px-2 py-1.5",
@@ -199,6 +201,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         <SegmentEditor
           doc={editDoc ?? s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }}
           caretOffset={clickOffset.current}
+          selectAll={s.sourceText === CAPTION_PLACEHOLDER}
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
           onCommit={(doc) => void commit(doc)}
           onCancel={cancel}

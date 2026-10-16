@@ -21,7 +21,7 @@ test("review edits persist across reload", async ({ page }) => {
   await page.getByRole("button", { name: /1: Selma/ }).click()
 
   // second row = first body paragraph of chapter 1 (row 0 is the heading)
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.nth(1)).toContainText("Sam Zemurray saw his first banana")
   const row = rows.nth(1)
   await row.click()
@@ -43,7 +43,7 @@ test("review edits persist across reload", async ({ page }) => {
 
   await page.reload()
   await page.getByRole("button", { name: /1: Selma/ }).click()
-  const again = page.locator("[data-slot=scroll-area] .group").nth(1)
+  const again = page.locator("[data-segment]").nth(1)
   await expect(again).toContainText("Edited paragraph text.")
   await expect(again.getByRole("checkbox", { name: "확인됨" })).toBeChecked()
   await again.click()
@@ -62,7 +62,7 @@ test("page navigation follows the selected segment", async ({ page }) => {
 test("split at caret and merge back restore the paragraph", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /2: Ripes/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Ripes/)
   const before = await rows.count()
   const row = rows.nth(1)
@@ -110,7 +110,7 @@ test("an unanchored note can be linked to a segment", async ({ page }) => {
 test("undo restores a merge, redo reapplies it", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Fruit Jobber/)
   const before = await rows.count()
   const second = (await rows.nth(2).locator("p").innerText()).trim()
@@ -128,13 +128,13 @@ test("undo restores a merge, redo reapplies it", async ({ page }) => {
 
   await page.reload()
   await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
-  await expect(page.locator("[data-slot=scroll-area] .group")).toHaveCount(before - 1)
+  await expect(page.locator("[data-segment]")).toHaveCount(before - 1)
 })
 
 test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undoes", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /4: Brown to Green/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Brown to Green/)
   await page.locator("body").click({ position: { x: 5, y: 5 } }) // drop focus from the sidebar button
 
@@ -170,7 +170,7 @@ test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undo
 test("status bar shows saved, and save failure when the server rejects", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /5: Bananas/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Bananas/)
   const status = page.locator("footer [role=status]")
   await expect(status).toHaveText("")
@@ -194,7 +194,7 @@ test("status bar shows saved, and save failure when the server rejects", async (
 test("edits are highlighted against the OCR original and listed in history", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /6: The Octopus/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Octopus/)
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
@@ -222,7 +222,7 @@ test("edits are highlighted against the OCR original and listed in history", asy
 test("in-place editing: no layout shift, character undo inside, paragraph undo after", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /7: New Orleans/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/New Orleans/)
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
@@ -258,7 +258,7 @@ test("in-place editing: no layout shift, character undo inside, paragraph undo a
 test("clicking a word starts editing with the caret at that word; clicking another row saves and moves", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /8: The Isthmus/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Isthmus/)
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
@@ -290,7 +290,7 @@ test("clicking a word starts editing with the caret at that word; clicking anoth
 test("tab moves editing to the next paragraph, shift+tab back, each step saves", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /9: To the Collins/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Collins/)
   const t = (i: number) => rows.nth(i).locator("p")
   const [o1, o2, o3] = await Promise.all([1, 2, 3].map(async (i) => (await t(i).innerText()).trim()))
@@ -315,7 +315,7 @@ test("tab moves editing to the next paragraph, shift+tab back, each step saves",
 test("an interrupted edit is offered for recovery after reload, and discarded on demand", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Revolutin/)
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
@@ -328,7 +328,7 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   await page.reload() // "crash": the edit was never committed
 
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
-  const again = page.locator("[data-slot=scroll-area] .group").nth(1)
+  const again = page.locator("[data-segment]").nth(1)
   await expect(again.locator("p")).toHaveText(original)
   await expect(again.getByText("저장 안 됨")).toBeVisible()
   await again.getByRole("button", { name: "복구" }).click()
@@ -338,17 +338,17 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   await expect(again.getByText("저장 안 됨")).toHaveCount(0)
   await page.reload()
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
-  await expect(page.locator("[data-slot=scroll-area] .group").nth(1).getByText("저장 안 됨")).toHaveCount(0)
+  await expect(page.locator("[data-segment]").nth(1).getByText("저장 안 됨")).toHaveCount(0)
 
   // discard path
-  const row2 = page.locator("[data-slot=scroll-area] .group").nth(2)
+  const row2 = page.locator("[data-segment]").nth(2)
   await row2.locator("p").click()
   await expect(row2.getByRole("textbox")).toBeFocused()
   await page.keyboard.type("x")
   await page.waitForTimeout(500)
   await page.reload()
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
-  const row2b = page.locator("[data-slot=scroll-area] .group").nth(2)
+  const row2b = page.locator("[data-segment]").nth(2)
   await row2b.getByRole("button", { name: "버리기" }).click()
   await expect(row2b.getByText("저장 안 됨")).toHaveCount(0)
 })
@@ -356,7 +356,7 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
 test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /11: To the Isthmus/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Isthmus/)
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
@@ -384,7 +384,7 @@ test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
 test("the selected segment is outlined on the scanned page and follows the selection", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /12: The Banana War/ }).click()
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Banana War/)
   await selectRow(rows.nth(1))
 
@@ -404,7 +404,7 @@ test("the selected segment is outlined on the scanned page and follows the selec
 test("paging the scan across a chapter boundary switches the chapter; empty pages say so", async ({ page }) => {
   await page.goto("/")
   // Prologue runs to p.8; chapter 1 (Selma) starts at p.11
-  const rows = page.locator("[data-slot=scroll-area] .group")
+  const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Prologue/)
   const last = rows.last()
   await selectRow(last)
@@ -421,4 +421,37 @@ test("paging the scan across a chapter boundary switches the chapter; empty page
   await prev.click()
   await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("p. 10")
   await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("이 쪽에는 단락이 없습니다")
+})
+
+test("a caption can be added on an empty page, edited, and undone", async ({ page }) => {
+  await page.goto("/")
+  const rows = page.locator("[data-segment]")
+  await expect(rows.first()).toHaveText(/Prologue/)
+  const count = await rows.count()
+  await selectRow(rows.last())
+  const next = page.getByRole("button", { name: "다음 페이지" })
+  const notice = page.locator("[data-slot=scroll-area] [role=status]")
+  // walk forward until a blank page inside the Prologue range shows the notice (p.9/10)
+  for (let i = 0; i < 4 && !(await notice.count()); i++) await next.click()
+  await expect(notice).toContainText("이 쪽에는 단락이 없습니다")
+  const pageText = (await notice.locator("span").first().innerText()).trim()
+
+  await notice.getByRole("button", { name: "캡션 추가" }).click()
+  await expect(rows).toHaveCount(count + 1)
+  const row = rows.last()
+  await expect(row.getByRole("textbox")).toBeFocused()
+  await page.keyboard.type("Zemurray on the docks, 1910")
+  await page.keyboard.press("Enter")
+  await expect(row.locator("p")).toHaveText("Zemurray on the docks, 1910")
+  await expect(row.getByRole("button", { name: "캡션" })).toHaveAttribute("aria-pressed", "true")
+  // the new row sits under a header for the formerly empty page
+  await expect(row.locator("xpath=preceding-sibling::div[1]")).toHaveText(pageText)
+  await expect(notice).toHaveCount(0)
+  await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
+
+  await page.reload()
+  await expect(page.locator("[data-segment]")).toHaveCount(count + 1)
+  await page.keyboard.press("Meta+z") // the text edit
+  await page.keyboard.press("Meta+z") // the insert
+  await expect(page.locator("[data-segment]")).toHaveCount(count)
 })

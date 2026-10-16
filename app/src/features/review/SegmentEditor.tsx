@@ -17,6 +17,8 @@ interface Props {
   className?: string
   /** Character offset to place the caret at (computed from the click on the read view). */
   caretOffset?: number | null
+  /** Select everything on open (placeholder text meant to be overwritten). */
+  selectAll?: boolean
   /** Called with the edited doc. The caller persists it. */
   onCommit: (doc: DocJSON) => void
   onCancel: () => void
@@ -33,7 +35,7 @@ export const caretOffset = (editor: Editor) => editor.state.selection.from - 1
 /** In-place paragraph editor. Same `.reading` classes as the read view, so nothing shifts when it mounts. */
 const DRAFT_DELAY = 300
 
-export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel, onStep, onDraft, onReady }: Props) {
+export function SegmentEditor({ doc, className, caretOffset, selectAll, onCommit, onCancel, onStep, onDraft, onReady }: Props) {
   const draftTimer = useRef<number | undefined>(undefined)
   const editor = useEditor({
     extensions: [
@@ -87,13 +89,14 @@ export function SegmentEditor({ doc, className, caretOffset, onCommit, onCancel,
         if (tries++ < 10) raf = requestAnimationFrame(place)
         return
       }
+      if (selectAll) { editor.commands.focus("all"); return }
       if (caretOffset == null) { editor.commands.focus("end"); return }
       const max = editor.state.doc.content.size - 1
       editor.commands.focus(Math.max(1, Math.min(caretOffset + 1, max)))
     }
     place()
     return () => cancelAnimationFrame(raf)
-  }, [editor, onReady, caretOffset])
+  }, [editor, onReady, caretOffset, selectAll])
 
   return <EditorContent editor={editor} />
 }
