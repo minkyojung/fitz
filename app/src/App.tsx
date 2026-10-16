@@ -1,6 +1,8 @@
 import { useState } from "react"
 
 import { AppShell, type Mode } from "@/layout/AppShell"
+import { ChapterList } from "@/features/review/ChapterList"
+import { useBook } from "@/data/useBook"
 
 function Placeholder({ label }: { label: string }) {
   return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">{label}</div>
@@ -8,19 +10,24 @@ function Placeholder({ label }: { label: string }) {
 
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
+  const book = useBook()
+
+  if (book.error) return <div className="p-8 text-destructive">API 연결 실패: {book.error}</div>
+
   return (
     <AppShell
       mode={mode}
       onModeChange={setMode}
-      sidebar={<Placeholder label="장 목록" />}
+      sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} />}
       left={<Placeholder label="원서 페이지 이미지" />}
-      right={<Placeholder label="세그먼트" />}
+      right={<Placeholder label={`세그먼트 ${book.segments.length}개`} />}
       panel={<Placeholder label="댓글 · 주석 · 용어집" />}
       status={
         <>
-          <span>장 —</span>
-          <span>확인 0 / 0</span>
-          <span>미연결 미주 0</span>
+          <span>{book.chapter?.title ?? "—"}</span>
+          <span>
+            확인 {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
+          </span>
         </>
       }
     />
