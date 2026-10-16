@@ -55,7 +55,7 @@ export function SpellGallery() {
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-8">
       <h1 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        맞춤법 의심 단어 갤러리 · 호버하면 교정 후보 · 클릭하면 바꾸기 / "사전에 추가"
+        맞춤법 의심 단어 갤러리 · 호버하면 1순위 후보 · 클릭하면 전체 후보(Enter로 1순위) / "사전에 추가"
         <span className="ml-auto text-muted-foreground">문맥 통계: {corpusSource}</span>
         <Badge variant={total ? "secondary" : "outline"}>의심 단어 {speller ? total : "…"}</Badge>
       </h1>
@@ -112,14 +112,16 @@ function SuspectMark({ suspect: s, context, speller, corpus, onAdd, onReplace }:
           {s.word}
         </TooltipTrigger>
         <TooltipContent side="top">
-          {suggestions.length ? suggestions.join(" · ") : "교정 후보 없음"}
+          {suggestions.length ? `→ ${suggestions[0]}` : "교정 후보 없음"}
         </TooltipContent>
       </Tooltip>
       <PopoverContent side="bottom" align="start" className="w-56 p-1">
         <div className="px-2 py-1 text-xs text-muted-foreground">“{s.word}”</div>
         {suggestions.length ? (
-          suggestions.map((sug) => (
-            <Button key={sug} variant="ghost" size="sm" className="w-full justify-start font-normal" onClick={() => { onReplace(s, sug); setOpen(false) }}>
+          suggestions.map((sug, i) => (
+            <Button key={sug} variant="ghost" size="sm" autoFocus={i === 0}
+              className={i === 0 ? "w-full justify-start font-semibold" : "w-full justify-start font-normal"}
+              onClick={() => { onReplace(s, sug); setOpen(false) }}>
               {sug}
             </Button>
           ))
