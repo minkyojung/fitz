@@ -1,5 +1,8 @@
 import { expect, test, type Locator } from "@playwright/test"
 
+/** Select a row without starting to edit: click its header strip (the kind badge), not the text. */
+const selectRow = (row: Locator) => row.locator("[data-slot=badge], [data-slot=toggle-group]").first().click()
+
 /** Put the caret at a text offset inside a contenteditable paragraph (ProseMirror reads the DOM selection). */
 async function setCaret(editable: Locator, offset: number) {
   await editable.evaluate((el, pos: number) => {
@@ -64,9 +67,8 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
   const before = await rows.count()
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
-  await row.click()
+  await row.locator("p").click() // clicking the text starts editing in place
 
-  await row.getByRole("button", { name: "텍스트 수정" }).click()
   const box = row.getByRole("textbox")
   const cut = original.indexOf(" ", 40) + 1 // after a space, well inside the paragraph
   await setCaret(box, cut)
@@ -198,8 +200,7 @@ test("edits are highlighted against the OCR original and listed in history", asy
   const original = (await row.locator("p").innerText()).trim()
   const firstWord = original.split(" ")[0]
 
-  await row.click()
-  await row.getByRole("button", { name: "텍스트 수정" }).click()
+  await row.locator("p").click()
   await row.getByRole("textbox").fill(original.replace(firstWord, "EDITED"))
   await row.getByRole("textbox").press("Meta+Enter")
 
@@ -232,7 +233,7 @@ test("in-place editing: no layout shift, character undo inside, paragraph undo a
     })
   const before = await lineWidths("p")
 
-  await row.click()
+  await selectRow(row)
   await page.keyboard.press("Enter")
   const box = row.getByRole("textbox")
   await expect(box).toBeFocused()
@@ -252,4 +253,36 @@ test("in-place editing: no layout shift, character undo inside, paragraph undo a
   await page.keyboard.press("Meta+z") // app-level undo: the whole edit
   await expect(row.locator("p")).toHaveText(original)
   await expect(row.locator("mark[data-edit]")).toHaveCount(0)
+})
+
+test("clicking a word starts editing with the caret at that word; clicking another row saves and moves", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /8: The Isthmus/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Isthmus/)
+  const row = rows.nth(1)
+  const original = (await row.locator("p").innerText()).trim()
+  const words = original.split(" ")
+  const target = words[5]
+  // click the middle of the 6th word
+  const box = await row.locator("p").evaluate((el, w: string) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const n = walker.nextNode()!
+    const i = n.textContent!.indexOf(w); const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length)
+    const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  }, target)
+  await page.mouse.click(box.x, box.y)
+  await expect(row.getByRole("textbox")).toBeFocused()
+  await page.keyboard.type("@")
+  const typed = await row.getByRole("textbox").innerText()
+  const at = typed.indexOf("@")
+  const start = original.indexOf(target)
+  expect(at).toBeGreaterThanOrEqual(start)
+  expect(at).toBeLessThanOrEqual(start + target.length)
+
+  // clicking another row's text saves this one and starts editing there
+  await rows.nth(2).locator("p").click()
+  await expect(rows.nth(2).getByRole("textbox")).toBeFocused()
+  await expect(row.getByRole("textbox")).toHaveCount(0)
+  await expect(row.locator("p")).toContainText("@")
+  await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
 })

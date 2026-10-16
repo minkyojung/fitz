@@ -14,6 +14,28 @@ import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { cn } from "cn"
 import type { DocJSON, Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
+/** Character offset within `root`'s text content under a viewport point, or null if not over text. */
+function textOffsetAtPoint(root: HTMLElement, x: number, y: number): number | null {
+  const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null }
+  let node: Node | null = null
+  let offset = 0
+  if (doc.caretPositionFromPoint) {
+    const p = doc.caretPositionFromPoint(x, y)
+    if (p) { node = p.offsetNode; offset = p.offset }
+  } else {
+    const r = document.caretRangeFromPoint(x, y)
+    if (r) { node = r.startContainer; offset = r.startOffset }
+  }
+  if (!node || !root.contains(node)) return null
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let total = 0
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n === node) return total + offset
+    total += n.textContent?.length ?? 0
+  }
+  return null
+}
+
 export const KIND_LABEL: Record<SegmentKind, string> = {
   paragraph: "단락",
   heading: "제목",
@@ -40,13 +62,23 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const ref = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
   const closing = useRef(false)
+  const clickOffset = useRef<number | null>(null)
 
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
   }, [selected])
   useEffect(() => {
-    if (!editing) closing.current = false
+    if (!editing) { closing.current = false; clickOffset.current = null }
   }, [editing])
+
+  /** Clicking the text starts editing right there. The offset is measured on the read view before
+   *  anything scrolls, so it survives the selection's scrollIntoView. */
+  const startEditAt = (e: React.MouseEvent<HTMLParagraphElement>) => {
+    if (editing) return
+    clickOffset.current = textOffsetAtPoint(e.currentTarget, e.clientX, e.clientY)
+    onSelect()
+    setEditing(true)
+  }
 
   /** Persist the edited doc (if changed) and leave edit mode. Guarded: blur and Enter can both fire. */
   const commit = useCallback(
@@ -134,13 +166,18 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       {editing ? (
         <SegmentEditor
           doc={s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }}
+          caretOffset={clickOffset.current}
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
           onCommit={(doc) => void commit(doc)}
           onCancel={cancel}
           onReady={onReady}
         />
       ) : (
-        <p className={cn("reading text-[15px]", s.kind === "heading" && "font-semibold")} lang="en">
+        <p
+          className={cn("reading cursor-text text-[15px]", s.kind === "heading" && "font-semibold")}
+          lang="en"
+          onClick={startEditAt}
+        >
           <SourceText text={s.sourceText} ocr={s.ocrText} />
         </p>
       )}
