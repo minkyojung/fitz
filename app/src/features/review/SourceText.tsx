@@ -2,24 +2,34 @@ import { Fragment, useMemo } from "react"
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { diffText, type Piece } from "@/lib/diffText"
+import { neighbours } from "@/lib/rank"
+import type { Suspect } from "@/lib/spell"
+import { SpellMark } from "./SpellMark"
 
 interface Props {
   text: string
   ocr: string | null
+  /** Dictionary suspects in `text` (absolute offsets). */
+  suspects?: Suspect[]
+  onAcceptFix?: (suspect: Suspect, replacement: string) => void
 }
 
-/** Paragraph text with edits against the OCR original highlighted in place.
- *  Added words get a background; the removed original shows in a tooltip on hover. */
-export function SourceText({ text, ocr }: Props) {
+/** Paragraph text with two overlays computed from the text itself (never stored):
+ *  edits against the OCR original (background + tooltip) and spelling suspects (SpellMark). */
+export function SourceText({ text, ocr, suspects = [], onAcceptFix }: Props) {
   // `ocr == null` also covers responses from a server that predates the ocrText field
-  const pieces = useMemo(() => (ocr == null || ocr === text ? null : diffText(ocr, text)), [ocr, text])
-  if (!pieces) return <>{text}</>
+  const pieces = useMemo<Piece[]>(
+    () => (ocr == null || ocr === text ? [{ text, kind: "same" }] : diffText(ocr, text)),
+    [ocr, text],
+  )
 
   const out: React.ReactNode[] = []
+  let pos = 0 // absolute offset in `text` (removed pieces take no room)
   for (let i = 0; i < pieces.length; i++) {
     const p = pieces[i]
     if (p.kind === "same") {
-      out.push(<Fragment key={i}>{p.text}</Fragment>)
+      out.push(<Fragment key={i}>{withSuspects(text, pos, pos + p.text.length, suspects, onAcceptFix)}</Fragment>)
+      pos += p.text.length
       continue
     }
     // pair a removal with the addition that follows it
@@ -31,6 +41,7 @@ export function SourceText({ text, ocr }: Props) {
     } else {
       added = p
     }
+    if (added) pos += added.text.length
     out.push(
       <Tooltip key={i}>
         <TooltipTrigger
@@ -57,4 +68,19 @@ export function SourceText({ text, ocr }: Props) {
     )
   }
   return <>{out}</>
+}
+
+/** Text in [from, to) with any suspects inside it rendered as SpellMarks. */
+function withSuspects(text: string, from: number, to: number, suspects: Suspect[], onAccept?: (s: Suspect, r: string) => void) {
+  const inside = suspects.filter((s) => s.start >= from && s.end <= to)
+  if (!inside.length) return text.slice(from, to)
+  const out: React.ReactNode[] = []
+  let pos = from
+  for (const s of inside) {
+    out.push(text.slice(pos, s.start))
+    out.push(<SpellMark key={s.start} suspect={s} context={neighbours(text, s.start, s.end)} onAccept={(r) => onAccept?.(s, r)} />)
+    pos = s.end
+  }
+  out.push(text.slice(pos, to))
+  return out
 }

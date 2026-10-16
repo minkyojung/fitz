@@ -8,6 +8,8 @@ import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList } from "@/features/review/ChapterList"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
+import { SpellContext } from "@/features/review/SpellContext"
+import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useKeymap } from "@/lib/useKeymap"
@@ -44,6 +46,11 @@ export function App() {
     onAddCaption: book.addCaption,
   })
   const { commands } = review
+  const { speller, userWords } = book.spell
+  const suspectTotal = useMemo(
+    () => (speller ? book.segments.reduce((n, s) => n + findSuspects(s.sourceText, speller.correct, userWords).length, 0) : 0),
+    [speller, userWords, book.segments],
+  )
   const openFind = () => { setPanelTab("find"); setFindFocusToken((n) => n + 1) }
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind }), [commands, book.undo, book.redo]))
 
@@ -51,6 +58,7 @@ export function App() {
 
   return (
     <DraftContext value={book.drafts}>
+    <SpellContext value={book.spell}>
     <AppShell
       mode={mode}
       onModeChange={setMode}
@@ -71,6 +79,7 @@ export function App() {
             Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
           </span>
           <span>Unlinked notes {book.unanchoredNotes.length}</span>
+          <span data-suspect-total>Suspects {suspectTotal}</span>
           <span className="hidden items-center gap-3 lg:flex">
             {HINTS.map((h) => (
               <span key={h.command} className="flex items-center gap-1">
@@ -94,6 +103,7 @@ export function App() {
         </>
       }
     />
+    </SpellContext>
     </DraftContext>
   )
 }

@@ -5,6 +5,8 @@ import { toast } from "sonner"
 import { api } from "./http"
 import type { Book, Chapter, Note, Page, Segment, SegmentPatch } from "./api"
 import { createDraftStore } from "@/lib/draftStore"
+import { buildCorpus, type Corpus } from "@/lib/corpus"
+import { loadEnglishSpeller, type Speller } from "@/lib/spell"
 
 export const OP_LABEL: Record<string, string> = {
   updateSegment: "Edit paragraph",
@@ -14,6 +16,8 @@ export const OP_LABEL: Record<string, string> = {
   insertSegment: "Add paragraph",
   deleteSegment: "Delete paragraph",
   setDocs: "Replace all",
+  addGlossaryWord: "Add to dictionary",
+  removeGlossaryWord: "Remove from dictionary",
 }
 
 export const CAPTION_PLACEHOLDER = "Caption"
@@ -30,6 +34,10 @@ export function useBook() {
   const [unanchoredNotes, setUnanchoredNotes] = useState<Note[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>("idle")
+  // spelling: dictionary engine, the book's own word statistics, and words the person accepted
+  const [speller, setSpeller] = useState<Speller | null>(null)
+  const [corpus, setCorpus] = useState<Corpus>(() => buildCorpus([]))
+  const [userWords, setUserWords] = useState<ReadonlySet<string>>(new Set())
   const pending = useRef(0)
 
   /** Every write goes through here: one place owns the save indicator and the error toast. */
@@ -66,6 +74,16 @@ export function useBook() {
     [],
   )
 
+  const refreshCorpus = useCallback(
+    () => api.listSourceTexts().then((rows) => setCorpus(buildCorpus(rows.map((r) => r.text)))).catch(() => undefined),
+    [],
+  )
+  const refreshWords = useCallback(
+    (bookId: number) => api.listGlossaryWords(bookId).then((w) => setUserWords(new Set(w))).catch(() => undefined),
+    [],
+  )
+  useEffect(() => { void loadEnglishSpeller().then(setSpeller) }, [])
+
   const refreshNotes = useCallback(
     () => api.listUnanchoredNotes().then(setUnanchoredNotes).catch((e: Error) => setError(e.message)),
     [],
@@ -79,6 +97,8 @@ export function useBook() {
         setPages(ps)
         setUnanchoredNotes(ns)
         setChapterId((cur) => cur ?? cs[0]?.id ?? null)
+        void refreshCorpus()
+        void refreshWords(b.id)
       })
       .catch((e: Error) => setError(e.message))
   }, [])
@@ -94,9 +114,22 @@ export function useBook() {
         const updated = await api.updateSegment(id, patch)
         setSegments((list) => list.map((s) => (s.id === id ? updated : s)))
         void refreshChapters()
+        if (patch.sourceDoc !== undefined || patch.sourceText !== undefined) void refreshCorpus()
         return updated
       }),
-    [mutate, refreshChapters],
+    [mutate, refreshChapters, refreshCorpus],
+  )
+
+  /** "This is a real word": add it to the book's dictionary (undoable). */
+  const addWord = useCallback(
+    (term: string) =>
+      mutate("Add to dictionary", async () => {
+        if (!book) return null
+        const r = await api.addGlossaryWord(book.id, term)
+        await refreshWords(book.id)
+        return r
+      }),
+    [mutate, book, refreshWords],
   )
 
   /** Split/merge renumber the chapter, so reload the whole list afterwards. Returns the surviving head id. */
@@ -148,8 +181,9 @@ export function useBook() {
 
   /** Undo/redo may touch any table, so reload everything the screen shows. */
   const reloadAll = useCallback(async () => {
-    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null])
-  }, [chapterId, refreshChapters, refreshNotes, refreshSegments])
+    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null, refreshCorpus()])
+    if (book) await refreshWords(book.id)
+  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshCorpus, refreshWords, book])
 
   const undo = useCallback(
     () =>
@@ -187,6 +221,8 @@ export function useBook() {
   )
 
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
+  // stable identity: every row subscribes to this, so it must only change when its parts do
+  const spell = useMemo(() => ({ speller, corpus, userWords, addWord }), [speller, corpus, userWords, addWord])
   /** Crash insurance for in-progress edits; keyed by book so other databases never collide. */
   const drafts = useMemo(() => (book ? createDraftStore(localStorage, book.id) : null), [book])
 
@@ -194,5 +230,6 @@ export function useBook() {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
     unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption, replaceAll,
+    spell,
   }
 }

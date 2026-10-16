@@ -59,7 +59,7 @@ export function SegmentEditor({ doc, className, caretOffset, selectAll, onCommit
     ],
     content: doc,
     editorProps: {
-      attributes: { class: className ?? "", lang: "en", "aria-label": "Edit paragraph" },
+      attributes: { class: className ?? "", lang: "en", "aria-label": "Edit paragraph", spellcheck: "true" },
     },
     onBlur: ({ editor }) => commit(editor),
     onUpdate: ({ editor }) => {

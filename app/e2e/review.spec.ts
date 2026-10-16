@@ -1,5 +1,13 @@
 import { expect, test, type Locator } from "@playwright/test"
 
+/** The paragraph's stored text: what the read view shows minus inline spelling-fix insertions. */
+const rowText = (row: Locator) =>
+  row.locator("p").first().evaluate((el) => {
+    const clone = el.cloneNode(true) as HTMLElement
+    clone.querySelectorAll("ins[data-spell-fix]").forEach((n) => n.remove())
+    return (clone.textContent ?? "").replace(/\s+/g, " ").trim()
+  })
+
 /** Select a row without starting to edit: click its header strip (the kind badge), not the text. */
 const selectRow = (row: Locator) => row.locator("[data-slot=badge], [data-slot=toggle-group]").first().click()
 
@@ -66,7 +74,7 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
   await expect(rows.first()).toHaveText(/Ripes/)
   const before = await rows.count()
   const row = rows.nth(1)
-  const original = (await row.locator("p").innerText()).trim()
+  const original = await rowText(row)
   await row.locator("p").click() // clicking the text starts editing in place
 
   const box = row.getByRole("textbox")
@@ -113,9 +121,9 @@ test("undo restores a merge, redo reapplies it", async ({ page }) => {
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Fruit Jobber/)
   const before = await rows.count()
-  const second = (await rows.nth(2).locator("p").innerText()).trim()
+  const second = await rowText(rows.nth(2))
 
-  await rows.nth(1).click()
+  await selectRow(rows.nth(1))
   await rows.nth(1).getByRole("button", { name: "Merge with next" }).click()
   await expect(rows).toHaveCount(before - 1)
 
@@ -197,7 +205,7 @@ test("edits are highlighted against the OCR original and listed in history", asy
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Octopus/)
   const row = rows.nth(1)
-  const original = (await row.locator("p").innerText()).trim()
+  const original = await rowText(row)
   const firstWord = original.split(" ")[0]
 
   await row.locator("p").click()
@@ -224,8 +232,9 @@ test("in-place editing: no layout shift, character undo inside, paragraph undo a
   await page.getByRole("button", { name: /7: New Orleans/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/New Orleans/)
-  const row = rows.nth(1)
-  const original = (await row.locator("p").innerText()).trim()
+  // a row without spelling marks: inline fixes change the read view's flow until accepted
+  const row = rows.filter({ hasNot: page.locator("mark[data-spell]") }).nth(1)
+  const original = await rowText(row)
   const lineWidths = (sel: string) =>
     row.locator(sel).first().evaluate((el) => {
       const r = document.createRange(); r.selectNodeContents(el)
@@ -260,15 +269,24 @@ test("clicking a word starts editing with the caret at that word; clicking anoth
   await page.getByRole("button", { name: /8: The Isthmus/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Isthmus/)
-  const row = rows.nth(1)
-  const original = (await row.locator("p").innerText()).trim()
+  // pin the two rows by id: filtered locators are live and would shift once marks come and go
+  const candidate = rows.filter({ hasNot: page.locator("mark[data-spell]") }).nth(1)
+  const row = page.locator(`[data-segment="${await candidate.getAttribute("data-segment")}"]`)
+  const nextRow = page.locator(`[data-segment="${await rows.nth(2).getAttribute("data-segment")}"]`)
+  await row.scrollIntoViewIfNeeded()
+  const original = await rowText(row)
   const words = original.split(" ")
   const target = words[5]
-  // click the middle of the 6th word
+  // click the middle of the 6th word (search every text node; marks may split the paragraph)
   const box = await row.locator("p").evaluate((el, w: string) => {
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const n = walker.nextNode()!
-    const i = n.textContent!.indexOf(w); const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length)
-    const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.textContent!.indexOf(w)
+      if (i === -1) continue
+      const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length)
+      const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+    }
+    throw new Error("word not found: " + w)
   }, target)
   await page.mouse.click(box.x, box.y)
   await expect(row.getByRole("textbox")).toBeFocused()
@@ -280,8 +298,8 @@ test("clicking a word starts editing with the caret at that word; clicking anoth
   expect(at).toBeLessThanOrEqual(start + target.length)
 
   // clicking another row's text saves this one and starts editing there
-  await rows.nth(2).locator("p").click()
-  await expect(rows.nth(2).getByRole("textbox")).toBeFocused()
+  await nextRow.locator("p").click()
+  await expect(nextRow.getByRole("textbox")).toBeFocused()
   await expect(row.getByRole("textbox")).toHaveCount(0)
   await expect(row.locator("p")).toContainText("@")
   await expect(page.locator("footer [role=status]")).toHaveText("Saved")
@@ -293,7 +311,7 @@ test("tab moves editing to the next paragraph, shift+tab back, each step saves",
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Collins/)
   const t = (i: number) => rows.nth(i).locator("p")
-  const [o1, o2, o3] = await Promise.all([1, 2, 3].map(async (i) => (await t(i).innerText()).trim()))
+  const [o1, o2, o3] = await Promise.all([1, 2, 3].map((i) => rowText(rows.nth(i))))
 
   await t(1).click()
   await expect(rows.nth(1).getByRole("textbox")).toBeFocused()
@@ -318,7 +336,7 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Revolutin/)
   const row = rows.nth(1)
-  const original = (await row.locator("p").innerText()).trim()
+  const original = await rowText(row)
 
   await row.locator("p").click()
   await expect(row.getByRole("textbox")).toBeFocused()
@@ -359,7 +377,7 @@ test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Isthmus/)
   const row = rows.nth(1)
-  const original = (await row.locator("p").innerText()).trim()
+  const original = await rowText(row)
 
   await page.route("**/api/updateSegment", (r) => r.abort())
   await row.locator("p").click()
@@ -486,4 +504,55 @@ test("find lists hits across the book, jumps to one, and replace-all is a single
   await page.keyboard.press("Meta+z")
   await find.fill("Zemurray")
   await expect(status).toContainText(`${hitCount} paragraphs`)
+})
+
+test("spelling: suspects are marked, a confident fix is accepted inline, a name is added to the dictionary", async ({ page }) => {
+  await page.goto("/")
+  await expect(page.locator("[data-segment]").first()).toHaveText(/Prologue/)
+  // make an OCR-style error: turn a sentence-initial "It was" into "Tt was"
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("Meta+f")
+  const find = page.getByRole("textbox", { name: "Find", exact: true })
+  await find.fill("It was a brisk night")
+  await page.getByRole("tabpanel").getByRole("button", { name: /Prologue/ }).first().click()
+  const row = page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })
+  await expect(row).toContainText("It was a brisk night")
+  const original = await rowText(row)
+  await row.locator("p").click()
+  await expect(row.getByRole("textbox")).toBeFocused()
+  await page.keyboard.press("Meta+ArrowUp")
+  await page.keyboard.press("Shift+ArrowRight")
+  await page.keyboard.press("Shift+ArrowRight")
+  await page.keyboard.type("Tt")
+  await page.keyboard.press("Enter")
+  await expect.poll(() => rowText(row)).toContain("Tt was a brisk")
+
+  // the suspect is struck and the contextual fix "It" is offered inline
+  const mark = row.locator("mark[data-spell]", { hasText: "Tt" })
+  await expect(mark).toBeVisible()
+  await expect(row.locator("[data-suspects]")).toContainText("Suspects")
+  await expect(row.locator("[data-spell-fix]")).toHaveText("It")
+  await row.locator("[data-spell-fix]").click()
+  await expect.poll(() => rowText(row)).toBe(original)
+  await expect(row.locator("mark[data-spell]", { hasText: "Tt" })).toHaveCount(0)
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
+
+  // a name with no evidence gets no inline fix; add it to the dictionary and it stays gone after reload
+  await page.getByRole("button", { name: /9: To the Collins/ }).click()
+  const rows = page.locator("[data-segment]")
+  await expect(rows.first()).toHaveText(/Collins/)
+  const name = rows.locator("mark[data-spell]", { hasText: "Hondurefio" }).first()
+  await expect(name).toBeVisible()
+  await expect(page.locator("footer [data-suspect-total]")).not.toHaveText("Suspects 0")
+  await name.click()
+  await page.getByRole("option", { name: "Add to dictionary" }).click()
+  await expect(rows.locator("mark[data-spell]", { hasText: "Hondurefio" })).toHaveCount(0)
+  await page.reload()
+  await page.getByRole("button", { name: /9: To the Collins/ }).click()
+  await expect(page.locator("[data-segment]").first()).toHaveText(/Collins/)
+  await expect(page.locator("[data-segment]").first()).toBeVisible()
+  await expect(page.locator("mark[data-spell]", { hasText: "Hondurefio" })).toHaveCount(0)
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("Meta+z") // removes the dictionary word again
+  await expect(page.locator("mark[data-spell]", { hasText: "Hondurefio" }).first()).toBeVisible()
 })

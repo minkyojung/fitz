@@ -111,6 +111,11 @@ export interface Api {
   undo(): Promise<OpSummary | null>
   redo(): Promise<OpSummary | null>
   listOps(segmentId: number): Promise<OpRecord[]>
+  /** Words the person marked as correct for this book. */
+  listGlossaryWords(bookId: number): Promise<string[]>
+  addGlossaryWord(bookId: number, term: string): Promise<{ id: number; term: string }>
+  /** Every segment's plain text (for the client-side language model). */
+  listSourceTexts(): Promise<{ id: number; text: string }[]>
   /** Literal, case-sensitive search across the whole book. */
   search(query: string): Promise<SearchHit[]>
   /** Replace every occurrence in the book as one undoable step. */

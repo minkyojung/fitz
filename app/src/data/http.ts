@@ -30,5 +30,8 @@ export const api: Api = {
   redo: () => call("redo"),
   listOps: (segmentId) => call("listOps", { segmentId }),
   search: (query) => call("search", { query }),
+  listGlossaryWords: (bookId) => call("listGlossaryWords", { bookId }),
+  addGlossaryWord: (bookId, term) => call("addGlossaryWord", { bookId, term }),
+  listSourceTexts: () => call("listSourceTexts"),
   replaceAll: (query, replacement) => call("replaceAll", { query, replacement }),
 }

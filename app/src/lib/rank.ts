@@ -13,10 +13,12 @@ export interface Ranked {
 const HUNSPELL_FLOOR = 0.15 // a dictionary candidate with no confusion evidence
 const BIGRAM_WEIGHT = 3
 
+/** `hunspellSuggest` may be null for a cheap pass (confusion-table candidates only); Hunspell's own
+ *  suggester costs tens of milliseconds per word, so it is reserved for an opened popover. */
 export function rankCandidates(
   word: string,
   context: { prev?: string; next?: string },
-  hunspellSuggest: (w: string) => string[],
+  hunspellSuggest: ((w: string) => string[]) | null,
   correct: (w: string) => boolean,
   corpus: Corpus,
   limit = 5,
@@ -33,7 +35,7 @@ export function rankCandidates(
     if (score > (scores.get(cand) ?? 0)) scores.set(cand, score)
   }
   for (const c of confusionCandidates(word)) consider(c.word, c.weight)
-  for (const s of hunspellSuggest(word)) consider(s, HUNSPELL_FLOOR)
+  if (hunspellSuggest) for (const s of hunspellSuggest(word)) consider(s, HUNSPELL_FLOOR)
   return [...scores].map(([w, score]) => ({ word: w, score })).sort((a, b) => b.score - a.score).slice(0, limit)
 }
 

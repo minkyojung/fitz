@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Editor } from "@tiptap/react"
 import { IconArrowsSplit2, IconPencil, IconRowInsertBottom } from "@tabler/icons-react"
 
@@ -13,6 +13,9 @@ import { SourceText } from "./SourceText"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { useDrafts } from "./DraftContext"
 import { CAPTION_PLACEHOLDER } from "@/data/useBook"
+import { useSpell } from "./SpellContext"
+import { findSuspects, type Suspect } from "@/lib/spell"
+import { replaceRangeInDoc } from "@/lib/docText"
 import { cn } from "cn"
 import type { DocJSON, Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
@@ -67,6 +70,19 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const closing = useRef(false)
   const clickOffset = useRef<number | null>(null)
   const drafts = useDrafts()
+  const spell = useSpell()
+  // dictionary suspects, recomputed whenever the text, the dictionary or the person's words change
+  const speller = spell?.speller ?? null
+  const userWords = spell?.userWords
+  const suspects = useMemo<Suspect[]>(
+    () => (speller && userWords && !editing ? findSuspects(s.sourceText, speller.correct, userWords) : []),
+    [speller, userWords, s.sourceText, editing],
+  )
+  /** Accept a spelling fix without opening the editor: a normal (undoable) text edit. */
+  const acceptFix = (sp: Suspect, replacement: string) => {
+    const doc = s.sourceDoc ?? { type: "doc" as const, content: [{ type: "paragraph" as const, content: [{ type: "text" as const, text: s.sourceText }] }] }
+    void onPatch({ sourceDoc: replaceRangeInDoc(doc, sp.start, sp.end, replacement) })
+  }
   const [, bump] = useState(0)
   const discard = () => { drafts?.clear(s.id); bump((n) => n + 1) }
   /** A draft is only offered while the server text is what it was based on; otherwise it is stale and dropped. */
@@ -140,13 +156,13 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       data-segment={s.id}
       onClick={onSelect}
       className={cn(
-        "group mb-2 rounded-md border border-transparent px-2 py-1.5",
+        "group mb-2 scroll-mt-8 rounded-md border border-transparent px-2 py-1.5", // scroll-mt clears the sticky page header
         "hover:bg-muted/50",
         selected && "border-border bg-muted/60",
         s.verified && !selected && "opacity-60",
       )}
     >
-      <div className="mb-1 flex h-6 items-center gap-1.5 text-xs">
+      <div className="mb-1 flex min-h-6 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
         <label className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
           <Checkbox checked={s.verified} onCheckedChange={(v) => void onPatch({ verified: v })} aria-label="Verified" />
           <span className="text-muted-foreground">Verify</span>
@@ -171,6 +187,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           <Badge variant={s.kind === "paragraph" ? "outline" : "secondary"}>{KIND_LABEL[s.kind]}</Badge>
         )}
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
+        {suspects.length > 0 && <span data-suspects className="text-muted-foreground tabular-nums">Suspects {suspects.length}</span>}
         {recoverable && (
           <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
@@ -215,7 +232,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           lang="en"
           onClick={startEditAt}
         >
-          <SourceText text={s.sourceText} ocr={s.ocrText} />
+          <SourceText text={s.sourceText} ocr={s.ocrText} suspects={suspects} onAcceptFix={acceptFix} />
         </p>
       )}
     </ContextMenuTrigger>
