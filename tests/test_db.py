@@ -35,10 +35,23 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 2
+    assert len(steps) == 3
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
     conn.close()
     assert db.has_user_edits(p)
     assert migrate(p) == []  # idempotent
+
+
+def test_migration_adds_ops_table(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);")
+    conn.commit(); conn.close()
+    assert any("ops" in s for s in migrate(p))
+    conn = sqlite3.connect(p)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(ops)")}
+    assert {"name", "params", "inverse_name", "inverse_params", "segment_ids", "undone"} <= cols
+    conn.close()
+    assert migrate(p) == []

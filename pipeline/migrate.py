@@ -29,6 +29,14 @@ def migrate(path: Path) -> list[str]:
         if touched:
             conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('last_edit_at', datetime('now'))")
         done.append(f"ocr_text column ({touched} edited rows left without original)")
+    if "ops" not in tables:
+        conn.executescript("""
+          CREATE TABLE ops (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, params TEXT NOT NULL,
+            inverse_name TEXT NOT NULL, inverse_params TEXT NOT NULL, segment_ids TEXT NOT NULL,
+            undone INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        """)
+        done.append("ops table")
     conn.commit()
     conn.close()
     return done

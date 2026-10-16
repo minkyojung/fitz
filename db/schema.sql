@@ -101,6 +101,18 @@ CREATE TABLE glossary (
 );
 -- 용어 출현 위치는 저장하지 않고 source_text 검색으로 파생
 
+-- 명령 기록. 모든 쓰기는 한 행을 남기고, undo는 inverse를, redo는 정방향을 재실행한다.
+CREATE TABLE ops (
+  id             INTEGER PRIMARY KEY,          -- 실행 순서
+  name           TEXT NOT NULL,                -- 정방향 명령
+  params         TEXT NOT NULL,                -- 정방향 인자 JSON (생성된 id가 고정되어 재실행 가능)
+  inverse_name   TEXT NOT NULL,
+  inverse_params TEXT NOT NULL,
+  segment_ids    TEXT NOT NULL,                -- 영향받은 세그먼트 id JSON (이력 조회용)
+  undone         INTEGER NOT NULL DEFAULT 0,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- 번역문 버전 히스토리 (저장 시마다 스냅샷)
 CREATE TABLE segment_version (
   id            INTEGER PRIMARY KEY,
