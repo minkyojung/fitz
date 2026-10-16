@@ -147,3 +147,27 @@ test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undo
   await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
   await page.keyboard.press("Escape")
 })
+
+test("status bar shows saved, and save failure when the server rejects", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /5: Bananas/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Bananas/)
+  const status = page.locator("footer [role=status]")
+  await expect(status).toHaveText("")
+
+  await rows.nth(1).click()
+  await rows.nth(1).getByRole("checkbox").click()
+  await expect(status).toHaveText("저장됨")
+
+  await page.route("**/api/updateSegment", (r) => r.abort())
+  await rows.nth(2).click()
+  await rows.nth(2).getByRole("checkbox").click()
+  await expect(status).toHaveText("저장 실패")
+  await expect(rows.nth(2).getByRole("checkbox")).not.toBeChecked()
+
+  await page.unroute("**/api/updateSegment")
+  await rows.nth(2).getByRole("checkbox").click()
+  await expect(status).toHaveText("저장됨")
+  await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
+})

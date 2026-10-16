@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { toast } from "sonner"
 
@@ -12,6 +12,8 @@ const OP_LABEL: Record<string, string> = {
   setNoteAnchor: "미주 연결",
 }
 
+export type SaveState = "idle" | "saving" | "saved" | "error"
+
 /** Book-level state: chapters, the selected chapter's segments, and page images. */
 export function useBook() {
   const [chapters, setChapters] = useState<Chapter[]>([])
@@ -20,6 +22,33 @@ export function useBook() {
   const [segments, setSegments] = useState<Segment[]>([])
   const [unanchoredNotes, setUnanchoredNotes] = useState<Note[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>("idle")
+  const pending = useRef(0)
+
+  /** Every write goes through here: one place owns the save indicator and the error toast. */
+  const mutate = useCallback(async <T,>(label: string, fn: () => Promise<T>): Promise<T | null> => {
+    pending.current += 1
+    setSaveState("saving")
+    try {
+      const out = await fn()
+      if (--pending.current === 0) setSaveState("saved")
+      return out
+    } catch (e) {
+      --pending.current
+      setSaveState("error")
+      toast.error(`${label} 실패`, { description: (e as Error).message })
+      return null
+    }
+  }, [])
+
+  // warn before closing the window while a write is in flight
+  useEffect(() => {
+    const guard = (e: BeforeUnloadEvent) => {
+      if (pending.current > 0) e.preventDefault()
+    }
+    window.addEventListener("beforeunload", guard)
+    return () => window.removeEventListener("beforeunload", guard)
+  }, [])
 
   const refreshChapters = useCallback(
     () => api.listChapters().then(setChapters).catch((e: Error) => setError(e.message)),
@@ -52,61 +81,46 @@ export function useBook() {
 
   /** Persist a change, then replace the row in place and refresh chapter counts. */
   const updateSegment = useCallback(
-    async (id: number, patch: SegmentPatch) => {
-      try {
+    (id: number, patch: SegmentPatch) =>
+      mutate("저장", async () => {
         const updated = await api.updateSegment(id, patch)
         setSegments((list) => list.map((s) => (s.id === id ? updated : s)))
         void refreshChapters()
         return updated
-      } catch (e) {
-        toast.error("저장 실패", { description: (e as Error).message })
-        return null
-      }
-    },
-    [refreshChapters],
+      }),
+    [mutate, refreshChapters],
   )
 
   /** Split/merge renumber the chapter, so reload the whole list afterwards. Returns the surviving head id. */
   const splitSegment = useCallback(
-    async (id: number, offset: number) => {
-      try {
+    (id: number, offset: number) =>
+      mutate("분할", async () => {
         const [head] = await api.splitSegment(id, offset)
         if (chapterId !== null) await refreshSegments(chapterId)
         void refreshChapters()
         return head.id
-      } catch (e) {
-        toast.error("분할 실패", { description: (e as Error).message })
-        return null
-      }
-    },
-    [chapterId, refreshSegments, refreshChapters],
+      }),
+    [mutate, chapterId, refreshSegments, refreshChapters],
   )
   const mergeWithNext = useCallback(
-    async (id: number) => {
-      try {
+    (id: number) =>
+      mutate("병합", async () => {
         const merged = await api.mergeWithNext(id)
         if (chapterId !== null) await refreshSegments(chapterId)
         void refreshChapters()
         return merged.id
-      } catch (e) {
-        toast.error("병합 실패", { description: (e as Error).message })
-        return null
-      }
-    },
-    [chapterId, refreshSegments, refreshChapters],
+      }),
+    [mutate, chapterId, refreshSegments, refreshChapters],
   )
 
   const anchorNote = useCallback(
-    async (noteId: number, segmentId: number) => {
-      try {
+    (noteId: number, segmentId: number) =>
+      mutate("미주 연결", async () => {
         await api.anchorNote(noteId, segmentId)
         await refreshNotes()
         toast.success("미주를 연결했습니다")
-      } catch (e) {
-        toast.error("연결 실패", { description: (e as Error).message })
-      }
-    },
-    [refreshNotes],
+      }),
+    [mutate, refreshNotes],
   )
 
   /** Undo/redo may touch any table, so reload everything the screen shows. */
@@ -114,33 +128,33 @@ export function useBook() {
     await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null])
   }, [chapterId, refreshChapters, refreshNotes, refreshSegments])
 
-  const undo = useCallback(async () => {
-    try {
-      const op = await api.undo()
-      if (!op) return
-      await reloadAll()
-      toast("되돌렸습니다", { description: OP_LABEL[op.name] ?? op.name })
-    } catch (e) {
-      toast.error("되돌리기 실패", { description: (e as Error).message })
-    }
-  }, [reloadAll])
+  const undo = useCallback(
+    () =>
+      mutate("되돌리기", async () => {
+        const op = await api.undo()
+        if (!op) return
+        await reloadAll()
+        toast("되돌렸습니다", { description: OP_LABEL[op.name] ?? op.name })
+      }),
+    [mutate, reloadAll],
+  )
 
-  const redo = useCallback(async () => {
-    try {
-      const op = await api.redo()
-      if (!op) return
-      await reloadAll()
-      toast("다시 실행했습니다", { description: OP_LABEL[op.name] ?? op.name })
-    } catch (e) {
-      toast.error("다시 실행 실패", { description: (e as Error).message })
-    }
-  }, [reloadAll])
+  const redo = useCallback(
+    () =>
+      mutate("다시 실행", async () => {
+        const op = await api.redo()
+        if (!op) return
+        await reloadAll()
+        toast("다시 실행했습니다", { description: OP_LABEL[op.name] ?? op.name })
+      }),
+    [mutate, reloadAll],
+  )
 
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
 
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
-    unanchoredNotes, anchorNote, undo, redo,
+    unanchoredNotes, anchorNote, undo, redo, saveState,
   }
 }

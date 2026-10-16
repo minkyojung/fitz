@@ -7,8 +7,15 @@ import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList } from "@/features/review/ChapterList"
 import { NotesPanel } from "@/features/review/NotesPanel"
 import { useReview } from "@/features/review/ReviewView"
-import { useBook } from "@/data/useBook"
+import { useBook, type SaveState } from "@/data/useBook"
 import { useKeymap } from "@/lib/useKeymap"
+
+const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
+  idle: { text: "", className: "" },
+  saving: { text: "저장 중…", className: "text-muted-foreground" },
+  saved: { text: "저장됨", className: "text-muted-foreground" },
+  error: { text: "저장 실패", className: "text-destructive font-medium" },
+}
 
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
@@ -34,7 +41,10 @@ export function App() {
             확인 {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
           </span>
           <span>미연결 미주 {book.unanchoredNotes.length}</span>
-          <span className="ml-auto flex items-center gap-1">
+          <span className={`ml-auto ${SAVE_LABEL[book.saveState].className}`} role="status" aria-live="polite">
+            {SAVE_LABEL[book.saveState].text}
+          </span>
+          <span className="flex items-center gap-1">
             <Button variant="ghost" size="icon-xs" aria-label="되돌리기" onClick={() => void book.undo()}>
               <IconArrowBackUp />
             </Button>
