@@ -26,6 +26,8 @@ function fixture() {
              (2, 3, 'author', 'zeta', 8, 12, 1),
              (3, 4, 'author', NULL, NULL, NULL, 0);
     INSERT INTO comment(id, segment_id, side, body) VALUES (1, 3, 'source', 'hmm');
+    INSERT INTO segment_box(segment_id, page_no, x0, y0, x1, y1)
+      VALUES (2, 3, 0.1, 0.5, 0.9, 0.9), (2, 4, 0.1, 0.1, 0.9, 0.2), (3, 4, 0.1, 0.25, 0.8, 0.4), (4, 5, 0.1, 0.1, 0.9, 0.3);
   `)
   return db
 }
@@ -35,6 +37,7 @@ const snapshot = (db) => ({
   segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, verified FROM segment ORDER BY id").all(),
   notes: db.prepare("SELECT id, segment_id, src_start, src_end, anchored FROM note ORDER BY id").all(),
   comments: db.prepare("SELECT id, segment_id FROM comment ORDER BY id").all(),
+  boxes: db.prepare("SELECT * FROM segment_box ORDER BY segment_id, page_no").all(),
 })
 const opsCount = (db, undone) => db.prepare("SELECT count(*) n FROM ops WHERE undone = ?").get(undone ? 1 : 0).n
 
@@ -186,6 +189,27 @@ test("split and merge of a marked paragraph round-trip through the db with marks
   assert.ok(merged.content[0].content.some((n) => n.marks?.[0]?.type === "italic"))
   undo(db); undo(db)
   assert.deepEqual(JSON.parse(db.prepare("SELECT source_doc FROM segment WHERE id = 2").get().source_doc), ITALIC_DOC)
+})
+
+test("split shares the parent's boxes; merge unions boxes per page; undo restores both", () => {
+  const db = fixture()
+  const [, tail] = execute(db, "splitSegment", { id: 2, offset: 11 })
+  assert.deepEqual(plain(tail.boxes), plain(db.prepare("SELECT page_no pageNo, x0, y0, x1, y1 FROM segment_box WHERE segment_id = 2 ORDER BY page_no").all()))
+  undo(db)
+  assert.equal(db.prepare("SELECT count(*) n FROM segment_box WHERE segment_id = ?").get(tail.id).n, 0)
+
+  const merged = execute(db, "mergeWithNext", { id: 2 })
+  // page 4: union of (0.1,0.1,0.9,0.2) and (0.1,0.25,0.8,0.4); page 3 untouched
+  assert.deepEqual(plain(merged.boxes), [
+    { pageNo: 3, x0: 0.1, y0: 0.5, x1: 0.9, y1: 0.9 },
+    { pageNo: 4, x0: 0.1, y0: 0.1, x1: 0.9, y1: 0.4 },
+  ])
+  undo(db)
+  assert.deepEqual(plain(db.prepare("SELECT segment_id, page_no, x0, y0, x1, y1 FROM segment_box WHERE segment_id IN (2,3) ORDER BY segment_id, page_no").all()), [
+    { segment_id: 2, page_no: 3, x0: 0.1, y0: 0.5, x1: 0.9, y1: 0.9 },
+    { segment_id: 2, page_no: 4, x0: 0.1, y0: 0.1, x1: 0.9, y1: 0.2 },
+    { segment_id: 3, page_no: 4, x0: 0.1, y0: 0.25, x1: 0.8, y1: 0.4 },
+  ])
 })
 
 test("every command has a registered inverse", () => {

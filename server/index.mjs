@@ -4,7 +4,7 @@ import { createServer } from "node:http"
 import { readFile } from "node:fs/promises"
 import { resolve, basename } from "node:path"
 
-import { execute, listOps, noteRow, openDb, redo, segRow, undo } from "./commands.mjs"
+import { execute, listOps, noteRow, openDb, redo, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -26,8 +26,16 @@ const routes = {
     db.prepare(`SELECT c.id, c.idx, c.title, c.start_page, count(s.id) n, coalesce(sum(s.verified), 0) v
                 FROM chapter c LEFT JOIN segment s ON s.chapter_id = c.id GROUP BY c.id ORDER BY c.idx`).all()
       .map((r) => ({ id: r.id, idx: r.idx, title: r.title, startPage: r.start_page, segmentCount: r.n, verifiedCount: r.v })),
-  listSegments: ({ chapterId }) =>
-    db.prepare("SELECT * FROM segment WHERE chapter_id = ? ORDER BY idx").all(chapterId).map(segRow),
+  listSegments: ({ chapterId }) => {
+    const boxes = new Map()
+    for (const b of db.prepare(`SELECT b.* FROM segment_box b JOIN segment s ON s.id = b.segment_id
+                                WHERE s.chapter_id = ? ORDER BY b.page_no`).all(chapterId)) {
+      if (!boxes.has(b.segment_id)) boxes.set(b.segment_id, [])
+      boxes.get(b.segment_id).push({ pageNo: b.page_no, x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 })
+    }
+    return db.prepare("SELECT * FROM segment WHERE chapter_id = ? ORDER BY idx").all(chapterId)
+      .map((r) => ({ ...segRow(r), boxes: boxes.get(r.id) ?? [] }))
+  },
   listPages: () =>
     db.prepare("SELECT page_no, pdf_index, image_path FROM page ORDER BY pdf_index").all()
       .map((r) => ({ pageNo: r.page_no, pdfIndex: r.pdf_index, imageUrl: `/pages/${basename(r.image_path)}` })),

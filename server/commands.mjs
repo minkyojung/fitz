@@ -71,6 +71,29 @@ export const noteRow = (r) => ({
   bodySource: r.body_source, anchored: r.anchored === 1,
 })
 
+/** Boxes of one segment: { pageNo, x0, y0, x1, y1 }[] */
+const boxesOf = (db, id) =>
+  db.prepare("SELECT page_no, x0, y0, x1, y1 FROM segment_box WHERE segment_id = ? ORDER BY page_no").all(id)
+    .map((b) => ({ pageNo: b.page_no, x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }))
+const setBoxes = (db, id, boxes) => {
+  db.prepare("DELETE FROM segment_box WHERE segment_id = ?").run(id)
+  const ins = db.prepare("INSERT INTO segment_box(segment_id, page_no, x0, y0, x1, y1) VALUES (?,?,?,?,?,?)")
+  for (const b of boxes) ins.run(id, b.pageNo, b.x0, b.y0, b.x1, b.y1)
+}
+/** Per-page union of two box lists. */
+const unionBoxes = (a, b) => {
+  const byPage = new Map()
+  for (const x of [...a, ...b]) {
+    const cur = byPage.get(x.pageNo)
+    byPage.set(x.pageNo, cur
+      ? { pageNo: x.pageNo, x0: Math.min(cur.x0, x.x0), y0: Math.min(cur.y0, x.y0), x1: Math.max(cur.x1, x.x1), y1: Math.max(cur.y1, x.y1) }
+      : { ...x })
+  }
+  return [...byPage.values()].sort((p, q) => p.pageNo - q.pageNo)
+}
+/** Segment row for the API, boxes included. */
+export const segOut = (db, id) => ({ ...segRow(getSegment(db, id)), boxes: boxesOf(db, id) })
+
 const getSegment = (db, id) => {
   const r = db.prepare("SELECT * FROM segment WHERE id = ?").get(id)
   if (!r) throw httpError(404, `segment ${id} not found`)
@@ -106,7 +129,7 @@ export const COMMANDS = {
     db.prepare(`UPDATE segment SET source_text = ?, source_doc = ?, kind = ?, verified = ?, updated_at = datetime('now')
                 WHERE id = ?`).run(nextText, nextDoc, next.kind, next.verified ? 1 : 0, id)
     return {
-      result: segRow(getSegment(db, id)),
+      result: segOut(db, id),
       forward: { id, doc: JSON.parse(nextDoc), text: nextText, ...next },
       inverse: {
         name: "updateSegment",
@@ -131,8 +154,9 @@ export const COMMANDS = {
     // notes whose anchor lies in the tail move with it
     db.prepare("UPDATE note SET segment_id = ?, src_start = src_start - ?, src_end = src_end - ? WHERE segment_id = ? AND src_start >= ?")
       .run(newTailId, offset, offset, id, offset)
+    setBoxes(db, newTailId, boxesOf(db, id)) // both halves point at the parent's area (an intended approximation)
     return {
-      result: [segRow(getSegment(db, id)), segRow(getSegment(db, newTailId))],
+      result: [segOut(db, id), segOut(db, newTailId)],
       forward: { id, offset, tailId: Number(newTailId) },
       inverse: {
         name: "unsplit",
@@ -152,7 +176,7 @@ export const COMMANDS = {
     setText(db, headId, text, ", verified = ?, page_end = ?").run(text, JSON.stringify(doc), verified ? 1 : 0, pageEnd, headId)
     shiftIdx(db, head.chapter_id, tail.idx, -1)
     return {
-      result: segRow(getSegment(db, headId)),
+      result: segOut(db, headId),
       forward: { headId, tailId, doc, text, verified, pageEnd, offset },
       inverse: { name: "splitSegment", params: { id: headId, offset, tailId } },
       segmentIds: [headId, tailId],
@@ -168,29 +192,32 @@ export const COMMANDS = {
     const shift = cur.source_text.length + 1
     const movedNoteIds = db.prepare("SELECT id FROM note WHERE segment_id = ?").all(next.id).map((r) => r.id)
     const movedCommentIds = db.prepare("SELECT id FROM comment WHERE segment_id = ?").all(next.id).map((r) => r.id)
+    const headBoxes = boxesOf(db, id)
+    const nextBoxes = boxesOf(db, next.id)
     db.prepare("UPDATE note SET segment_id = ?, src_start = src_start + ?, src_end = src_end + ? WHERE segment_id = ?").run(id, shift, shift, next.id)
     db.prepare("UPDATE comment SET segment_id = ? WHERE segment_id = ?").run(id, next.id)
     db.prepare("DELETE FROM segment_version WHERE segment_id = ?").run(next.id)
     db.prepare("DELETE FROM segment WHERE id = ?").run(next.id)
     setText(db, id, text, ", page_end = ?, verified = 0").run(text, JSON.stringify(mergedDoc), next.page_end, id)
     shiftIdx(db, cur.chapter_id, next.idx, -1) // close the gap
+    setBoxes(db, id, unionBoxes(headBoxes, nextBoxes))
     return {
-      result: segRow(getSegment(db, id)),
+      result: segOut(db, id),
       forward: { id },
       inverse: {
         name: "unmerge",
         params: {
           headId: id,
-          head: { doc: JSON.parse(cur.source_doc), text: cur.source_text, pageEnd: cur.page_end, verified: cur.verified === 1 },
+          head: { doc: JSON.parse(cur.source_doc), text: cur.source_text, pageEnd: cur.page_end, verified: cur.verified === 1, boxes: headBoxes },
           next: { ...next }, // full row, restored under its original id
-          movedNoteIds, movedCommentIds, shift,
+          nextBoxes, movedNoteIds, movedCommentIds, shift,
         },
       },
       segmentIds: [id, next.id],
     }
   },
 
-  unmerge(db, { headId, head, next, movedNoteIds, movedCommentIds, shift }) {
+  unmerge(db, { headId, head, next, nextBoxes = [], movedNoteIds, movedCommentIds, shift }) {
     const cur = getSegment(db, headId)
     shiftIdx(db, cur.chapter_id, cur.idx, 1)
     const cols = Object.keys(next)
@@ -200,9 +227,11 @@ export const COMMANDS = {
     for (const nid of movedNoteIds) noteBack.run(next.id, shift, shift, nid)
     const commentBack = db.prepare("UPDATE comment SET segment_id = ? WHERE id = ?")
     for (const cid of movedCommentIds) commentBack.run(next.id, cid)
+    if (head.boxes) setBoxes(db, headId, head.boxes)
+    setBoxes(db, next.id, nextBoxes)
     return {
-      result: segRow(getSegment(db, headId)),
-      forward: { headId, head, next, movedNoteIds, movedCommentIds, shift },
+      result: segOut(db, headId),
+      forward: { headId, head, next, nextBoxes, movedNoteIds, movedCommentIds, shift },
       inverse: { name: "mergeWithNext", params: { id: headId } },
       segmentIds: [headId, next.id],
     }
