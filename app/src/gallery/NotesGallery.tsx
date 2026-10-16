@@ -53,7 +53,7 @@ export function NotesGallery() {
             <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink transition-colors hover:bg-mark-note/70" />}>
               {x.label}
             </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-sm px-3 py-2 text-[12px] leading-relaxed">
+            <TooltipContent side="top" className="max-w-xs px-2.5 py-1.5 text-[13px] leading-normal">
               <span className="reading" lang={x.n.kind === "author" ? "en" : "ko"}>{x.n.body}</span>
             </TooltipContent>
           </Tooltip>,
