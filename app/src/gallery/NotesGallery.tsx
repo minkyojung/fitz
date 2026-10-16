@@ -106,7 +106,7 @@ export function NotesGallery() {
         <ul className="divide-y text-xs">
           {comments.map((c) => (
             <li key={c.id} data-panel-comment={c.id}
-              className={cn("space-y-1.5 border-l-2 border-transparent px-3 py-2", selected === c.id && "border-mark-comment-ink bg-muted", c.resolved && "opacity-50")}
+              className={cn("space-y-1.5 border-l-2 border-transparent px-3 py-2", selected === c.id && "border-mark-comment bg-muted", c.resolved && "opacity-50")}
               onClick={() => setSelected(c.id)}>
               <div className="flex items-center gap-2">
                 <IconMessage className="size-3.5 text-muted-foreground" />
@@ -123,7 +123,7 @@ export function NotesGallery() {
           ))}
           {notes.map((n) => (
             <li key={"n" + n.id} data-panel-note={n.id}
-              className={cn("space-y-1 border-l-2 border-transparent px-3 py-2", selected === -n.id && "border-mark-note-ink bg-muted")}
+              className={cn("space-y-1 border-l-2 border-transparent px-3 py-2", selected === -n.id && "border-mark-note bg-muted")}
               onClick={() => setSelected(-n.id)}>
               <div className="flex items-center gap-2">
                 <sup className="border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink">{marker(n)}</sup>
