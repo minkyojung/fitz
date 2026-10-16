@@ -6,6 +6,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { findSuspects, loadEnglishSpeller, type Speller, type Suspect } from "@/lib/spell"
+import { buildCorpus, type Corpus } from "@/lib/corpus"
+import { neighbours, rankCandidates } from "@/lib/rank"
+import { api } from "@/data/http"
 
 const INITIAL = [
   "Sam Zemurray spoke with no accent, except when he swore, which was all the time. He was a big man, six foot three, rangy, nothing but muscle and bone, with the wingspan of a condor, hooded eyes, and a crisp, no-nonsense manner.",
@@ -20,7 +23,25 @@ export function SpellGallery() {
   const [speller, setSpeller] = useState<Speller | null>(null)
   const [paras, setParas] = useState(INITIAL)
   const [userWords, setUserWords] = useState<Set<string>>(new Set())
+  const [corpus, setCorpus] = useState<Corpus>(() => buildCorpus(INITIAL))
+  const [corpusSource, setCorpusSource] = useState("예문 4개")
   useEffect(() => { void loadEnglishSpeller().then(setSpeller) }, [])
+  // Language model from the whole book when the API is up; falls back to the sample paragraphs.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      try {
+        const chapters = await api.listChapters()
+        const texts: string[] = []
+        for (const c of chapters) for (const s of await api.listSegments(c.id)) texts.push(s.sourceText)
+        if (!live) return
+        const c = buildCorpus(texts)
+        setCorpus(c)
+        setCorpusSource(`책 전체 ${c.total.toLocaleString()}단어`)
+      } catch { /* no server: keep the sample corpus */ }
+    })()
+    return () => { live = false }
+  }, [])
 
   const suspects = useMemo(
     () => (speller ? paras.map((p) => findSuspects(p, speller.correct, userWords)) : paras.map(() => [])),
@@ -35,7 +56,8 @@ export function SpellGallery() {
     <div className="mx-auto max-w-3xl space-y-3 p-8">
       <h1 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         맞춤법 의심 단어 갤러리 · 호버하면 교정 후보 · 클릭하면 바꾸기 / "사전에 추가"
-        <Badge variant={total ? "secondary" : "outline"} className="ml-auto">의심 단어 {speller ? total : "…"}</Badge>
+        <span className="ml-auto text-muted-foreground">문맥 통계: {corpusSource}</span>
+        <Badge variant={total ? "secondary" : "outline"}>의심 단어 {speller ? total : "…"}</Badge>
       </h1>
       {paras.map((text, i) => (
         <div key={i} className="rounded-md border border-border bg-muted/40 px-2 py-1.5">
@@ -45,7 +67,7 @@ export function SpellGallery() {
             {suspects[i].length > 0 && <span className="ml-auto text-muted-foreground tabular-nums">의심 {suspects[i].length}</span>}
           </div>
           <p className="reading text-[15px]" lang="en">
-            {renderWithSuspects(text, suspects[i], speller, addWord, (s, to) => replace(i, s, to))}
+            {renderWithSuspects(text, suspects[i], speller, corpus, addWord, (s, to) => replace(i, s, to))}
           </p>
         </div>
       ))}
@@ -58,29 +80,30 @@ export const SPELL_MARK_CLASS =
   "rounded-sm bg-mark-warning/50 text-inherit underline decoration-destructive/70 decoration-dotted decoration-2 underline-offset-4 cursor-pointer"
 
 function renderWithSuspects(
-  text: string, suspects: Suspect[], speller: Speller | null,
+  text: string, suspects: Suspect[], speller: Speller | null, corpus: Corpus,
   onAdd: (w: string) => void, onReplace: (s: Suspect, to: string) => void,
 ) {
   const out: React.ReactNode[] = []
   let pos = 0
   suspects.forEach((s, i) => {
     out.push(text.slice(pos, s.start))
-    out.push(<SuspectMark key={i} suspect={s} speller={speller} onAdd={onAdd} onReplace={onReplace} />)
+    out.push(<SuspectMark key={i} suspect={s} context={neighbours(text, s.start, s.end)} speller={speller} corpus={corpus} onAdd={onAdd} onReplace={onReplace} />)
     pos = s.end
   })
   out.push(text.slice(pos))
   return out
 }
 
-function SuspectMark({ suspect: s, speller, onAdd, onReplace }: {
-  suspect: Suspect; speller: Speller | null; onAdd: (w: string) => void; onReplace: (s: Suspect, to: string) => void
+function SuspectMark({ suspect: s, context, speller, corpus, onAdd, onReplace }: {
+  suspect: Suspect; context: { prev?: string; next?: string }; speller: Speller | null; corpus: Corpus
+  onAdd: (w: string) => void; onReplace: (s: Suspect, to: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
-  // suggestions are computed on demand (hover or click), never for every suspect up front
+  // candidates ranked by OCR-error likelihood × how the word fits this book and its neighbours
   const suggestions = useMemo(
-    () => ((open || hovered) && speller ? speller.suggest(s.word) : []),
-    [open, hovered, speller, s.word],
+    () => ((open || hovered) && speller ? rankCandidates(s.word, context, speller.suggest, speller.correct, corpus).map((r) => r.word) : []),
+    [open, hovered, speller, corpus, s.word, context],
   )
   return (
     <Popover open={open} onOpenChange={setOpen}>
