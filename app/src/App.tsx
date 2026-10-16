@@ -11,6 +11,7 @@ import { DraftContext } from "@/features/review/DraftContext"
 import { useReview } from "@/features/review/ReviewView"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useKeymap } from "@/lib/useKeymap"
+import { chapterForPage } from "@/lib/pages"
 import { KEYMAP, chordLabel } from "@/lib/keymap"
 
 const HINTS: { command: keyof typeof KEYMAP; label: string }[] = [
@@ -30,7 +31,14 @@ const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
   const book = useBook()
-  const review = useReview({ pages: book.pages, segments: book.segments, onPatch: book.updateSegment, onSplit: book.splitSegment, onMerge: book.mergeWithNext })
+  const review = useReview({
+    pages: book.pages, segments: book.segments,
+    onPatch: book.updateSegment, onSplit: book.splitSegment, onMerge: book.mergeWithNext,
+    onPageOutsideChapter: (pageNo) => {
+      const target = chapterForPage(book.chapters, pageNo)
+      if (target !== null && target !== book.chapterId) book.setChapterId(target)
+    },
+  })
   const { commands } = review
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo }), [commands, book.undo, book.redo]))
 

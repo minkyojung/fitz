@@ -400,3 +400,25 @@ test("the selected segment is outlined on the scanned page and follows the selec
   await page.keyboard.press("ArrowDown")
   await expect.poll(async () => (await mark.boundingBox())!.y).not.toBe(m1!.y)
 })
+
+test("paging the scan across a chapter boundary switches the chapter; empty pages say so", async ({ page }) => {
+  await page.goto("/")
+  // Prologue runs to p.8; chapter 1 (Selma) starts at p.11
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Prologue/)
+  const last = rows.last()
+  await selectRow(last)
+  const lastPage = Number((await page.locator("[data-slot=resizable-panel]").first().getByText(/^p\. \d+$/).innerText()).replace("p. ", ""))
+
+  const next = page.getByRole("button", { name: "다음 페이지" })
+  for (let p = lastPage; p < 11; p++) await next.click()
+  await expect(page.locator("[data-slot=resizable-panel]").first().getByText("p. 11", { exact: true })).toBeVisible()
+  await expect(rows.first()).toHaveText(/Selma/)
+  await expect(page.locator("footer")).toContainText("1: Selma")
+
+  // p.9 / p.10 are blank pages between chapters
+  const prev = page.getByRole("button", { name: "이전 페이지" })
+  await prev.click()
+  await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("p. 10")
+  await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("이 쪽에는 단락이 없습니다")
+})

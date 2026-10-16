@@ -6,6 +6,8 @@ import type { Segment, SegmentPatch } from "@/data/api"
 
 interface Props {
   segments: Segment[]
+  /** Page shown in the viewer; used to say when it has no segments. */
+  pageNo: number | null
   selectedId: number | null
   editingId: number | null
   onSelect: (segment: Segment) => void
@@ -17,9 +19,16 @@ interface Props {
 }
 
 /** Segments of the current chapter, grouped under the printed page they start on. */
-export function SegmentList({ segments, selectedId, editingId, onSelect, onEditingChange, onPatch, onSplit, onMerge, onStep }: Props) {
+export function SegmentList({ segments, pageNo, selectedId, editingId, onSelect, onEditingChange, onPatch, onSplit, onMerge, onStep }: Props) {
+  const pageIsEmpty = pageNo !== null && !segments.some((s) => s.pageStart <= pageNo && pageNo <= s.pageEnd)
   return (
     <ScrollArea className="h-full">
+      {pageIsEmpty && (
+        <div role="status" className="sticky top-0 z-20 flex items-center gap-2 border-b bg-background px-4 py-2 text-xs">
+          <span className="tabular-nums">p. {pageNo}</span>
+          <span className="text-muted-foreground">이 쪽에는 단락이 없습니다.</span>
+        </div>
+      )}
       <div className="px-4 py-3">
         {segments.map((s, i) => {
           const newPage = i === 0 || segments[i - 1].pageStart !== s.pageStart
