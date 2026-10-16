@@ -12,7 +12,7 @@ function Placeholder({ label }: { label: string }) {
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
   const book = useBook()
-  const review = useReview({ pages: book.pages, segments: book.segments })
+  const review = useReview({ pages: book.pages, segments: book.segments, onPatch: book.updateSegment })
 
   if (book.error) return <div className="p-8 text-destructive">API 연결 실패: {book.error}</div>
 

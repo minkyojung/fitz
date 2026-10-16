@@ -2,15 +2,16 @@ import { useEffect, useState } from "react"
 
 import { PageViewer } from "./PageViewer"
 import { SegmentList } from "./SegmentList"
-import type { Page, Segment } from "@/data/api"
+import type { Page, Segment, SegmentPatch } from "@/data/api"
 
 interface Props {
   pages: Page[]
   segments: Segment[]
+  onPatch: (id: number, patch: SegmentPatch) => Promise<unknown>
 }
 
 /** Review mode: page image on the left, the chapter's segments on the right, kept on the same page. */
-export function useReview({ pages, segments }: Props) {
+export function useReview({ pages, segments, onPatch }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [pageNo, setPageNo] = useState<number | null>(null)
 
@@ -36,7 +37,7 @@ export function useReview({ pages, segments }: Props) {
 
   return {
     left: <PageViewer pages={pages} pageNo={pageNo} onPageChange={changePage} />,
-    right: <SegmentList segments={segments} selectedId={selectedId} onSelect={selectSegment} />,
+    right: <SegmentList segments={segments} selectedId={selectedId} onSelect={selectSegment} onPatch={onPatch} />,
     selected: segments.find((s) => s.id === selectedId) ?? null,
   }
 }

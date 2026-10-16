@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 
+import { toast } from "sonner"
+
 import { api } from "./http"
-import type { Chapter, Page, Segment } from "./api"
+import type { Chapter, Page, Segment, SegmentPatch } from "./api"
 
 /** Book-level state: chapters, the selected chapter's segments, and page images. */
 export function useBook() {
@@ -34,7 +36,26 @@ export function useBook() {
     if (chapterId !== null) void refreshSegments(chapterId)
   }, [chapterId, refreshSegments])
 
+  /** Persist a change, then replace the row in place and refresh chapter counts. */
+  const updateSegment = useCallback(
+    async (id: number, patch: SegmentPatch) => {
+      try {
+        const updated = await api.updateSegment(id, patch)
+        setSegments((list) => list.map((s) => (s.id === id ? updated : s)))
+        void refreshChapters()
+        return updated
+      } catch (e) {
+        toast.error("저장 실패", { description: (e as Error).message })
+        return null
+      }
+    },
+    [refreshChapters],
+  )
+
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
 
-  return { chapters, pages, chapter, chapterId, setChapterId, segments, error, refreshChapters, refreshSegments }
+  return {
+    chapters, pages, chapter, chapterId, setChapterId, segments, error,
+    refreshChapters, refreshSegments, updateSegment,
+  }
 }
