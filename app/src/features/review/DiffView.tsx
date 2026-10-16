@@ -19,11 +19,11 @@ export function DiffView({ before, after, className }: Props) {
         p.kind === "same" ? (
           <span key={i}>{p.text}</span>
         ) : p.kind === "removed" ? (
-          <del key={i} className="rounded-sm bg-mark-warning/60 px-0.5 text-destructive line-through decoration-destructive/60">
+          <del key={i} className="bg-mark-warning/50 px-0.5 line-through opacity-80">
             {p.text}
           </del>
         ) : (
-          <ins key={i} className="rounded-sm bg-mark-term px-0.5 no-underline">
+          <ins key={i} className="bg-mark-term/60 px-0.5 no-underline">
             {p.text}
           </ins>
         ),

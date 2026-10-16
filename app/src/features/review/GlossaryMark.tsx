@@ -12,8 +12,8 @@ export function GlossaryMark({ entry, children }: { entry: GlossaryEntry; childr
           <mark
             data-term={entry.term}
             className={cn(
-              "bg-transparent text-inherit underline underline-offset-4 decoration-2",
-              agreed ? "decoration-mark-term" : "decoration-dotted decoration-muted-foreground/50",
+              "border-b-2 bg-transparent text-inherit box-decoration-clone transition-colors",
+              agreed ? "border-mark-term hover:bg-mark-term/40" : "border-dotted border-muted-foreground/40 hover:bg-muted",
             )}
           />
         }

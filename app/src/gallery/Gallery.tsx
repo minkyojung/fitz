@@ -4,6 +4,7 @@ import { TranslateGallery } from "./TranslateGallery"
 import { BilingualGallery } from "./BilingualGallery"
 import { NotesGallery } from "./NotesGallery"
 import { SourceText } from "@/features/review/SourceText"
+import { EditedDot } from "@/features/review/EditedDot"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { IconChevronRight } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
@@ -36,9 +37,10 @@ function Row({ title, ocr, text }: (typeof CASES)[number]) {
         <span className="text-muted-foreground">확인</span>
         <Badge variant="outline">단락</Badge>
         <span className="ml-auto text-muted-foreground">{title}</span>
+        <EditedDot ocr={ocr} text={text} />
       </div>
       <p className="reading text-[15px]" lang="en">
-        <SourceText text={text} ocr={ocr} />
+        <SourceText text={text} />
       </p>
     </div>
   )

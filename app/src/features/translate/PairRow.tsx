@@ -4,6 +4,7 @@ import type { Editor } from "@tiptap/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SourceText } from "@/features/review/SourceText"
+import { EditedDot } from "@/features/review/EditedDot"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
 import { useDrafts } from "@/features/review/DraftContext"
 import { useSpell } from "@/features/review/SpellContext"
@@ -93,9 +94,10 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelec
     >
       <div className="flex flex-col items-center gap-1.5 pt-2">
         <span className={cn("block size-2 rounded-full", STATUS_DOT[s.status])} title={STATUS_LABEL[s.status]} data-status={s.status} />
+        <EditedDot ocr={s.ocrText} text={s.sourceText} />
         {missing.length > 0 && (
           <Tooltip>
-            <TooltipTrigger render={<span data-term-missing className="block size-2 rounded-full bg-mark-warning ring-1 ring-destructive/50" />} />
+            <TooltipTrigger render={<span data-term-missing className="block size-2 rounded-full bg-mark-warning ring-1 ring-mark-warning-ink/60" />} />
             <TooltipContent side="right">
               Glossary: {missing.map((e) => `${e.term} → ${e.translation}`).join(", ")} not found in the translation
             </TooltipContent>
@@ -103,7 +105,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelec
         )}
       </div>
       <p className={cn("reading select-text text-[15px] text-muted-foreground", s.kind === "heading" && "font-semibold text-foreground")} lang="en">
-        <SourceText text={s.sourceText} ocr={s.ocrText} terms={terms} />
+        <SourceText text={s.sourceText} terms={terms} />
       </p>
       <div className="min-w-0">
         {recoverable && !editing && (

@@ -11,9 +11,9 @@ import { useSpell } from "./SpellContext"
 const CONFIDENT = 1
 
 export const SPELL_STRUCK_CLASS =
-  "rounded-sm bg-mark-warning/60 px-0.5 text-destructive line-through decoration-destructive/60 cursor-pointer"
+  "cursor-pointer border-b-2 border-mark-warning bg-mark-warning/40 text-inherit line-through decoration-mark-warning-ink box-decoration-clone transition-colors hover:bg-mark-warning/70"
 export const SPELL_MARK_CLASS =
-  "rounded-sm bg-mark-warning/50 text-inherit underline decoration-destructive/70 decoration-dotted decoration-2 underline-offset-4 cursor-pointer"
+  "cursor-pointer border-b-2 border-mark-warning bg-mark-warning/40 text-inherit box-decoration-clone transition-colors hover:bg-mark-warning/70"
 
 interface Props {
   suspect: Suspect
@@ -52,7 +52,7 @@ export function SpellMark({ suspect: s, context, onAccept }: Props) {
             data-spell-fix
             role="button"
             tabIndex={0}
-            className="cursor-pointer rounded-sm bg-mark-term px-0.5 no-underline hover:brightness-95"
+            className="cursor-pointer border-b-2 border-mark-term bg-mark-term/40 px-0.5 no-underline transition-colors hover:bg-mark-term/70"
             title="Click to accept this fix"
             onClick={(e) => { e.stopPropagation(); onAccept(top) }}
             onKeyDown={(e) => e.key === "Enter" && onAccept(top)}

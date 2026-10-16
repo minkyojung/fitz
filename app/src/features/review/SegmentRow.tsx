@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/context-menu"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
+import { EditedDot } from "./EditedDot"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { useDrafts } from "./DraftContext"
 import { CAPTION_PLACEHOLDER } from "@/data/useBook"
@@ -191,6 +192,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         )}
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
         {suspects.length > 0 && <span data-suspects className="text-muted-foreground tabular-nums">Suspects {suspects.length}</span>}
+        <EditedDot ocr={s.ocrText} text={s.sourceText} />
         {recoverable && (
           <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
@@ -235,7 +237,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           lang="en"
           onClick={startEditAt}
         >
-          <SourceText text={s.sourceText} ocr={s.ocrText} suspects={suspects} onAcceptFix={acceptFix} terms={terms} />
+          <SourceText text={s.sourceText} suspects={suspects} onAcceptFix={acceptFix} terms={terms} />
         </p>
       )}
     </ContextMenuTrigger>

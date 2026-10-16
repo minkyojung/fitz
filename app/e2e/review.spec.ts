@@ -212,9 +212,11 @@ test("edits are highlighted against the OCR original and listed in history", asy
   await row.getByRole("textbox").fill(original.replace(firstWord, "EDITED"))
   await row.getByRole("textbox").press("Meta+Enter")
 
-  const mark = row.locator("mark[data-edit]")
-  await expect(mark).toHaveText("EDITED")
-  await expect(mark).toHaveAttribute("aria-label", `Original: ${firstWord}`)
+  const dot = row.locator("[data-edited]")
+  await expect(dot).toBeVisible()
+  await dot.hover()
+  await expect(page.getByText("Edited — original OCR")).toBeVisible()
+  await expect(page.locator("[data-slot=tooltip-content] del, [role=tooltip] del").last()).toContainText(firstWord)
 
   const history = page.getByRole("list", { name: "History of this paragraph" })
   await expect(history.getByRole("button", { name: /Edit paragraph/ })).toHaveCount(1)
@@ -223,7 +225,7 @@ test("edits are highlighted against the OCR original and listed in history", asy
   await expect(history.locator("ins")).toContainText("EDITED")
 
   await page.keyboard.press("Meta+z")
-  await expect(row.locator("mark[data-edit]")).toHaveCount(0)
+  await expect(row.locator("[data-edited]")).toHaveCount(0)
   await expect(history.getByText("Undone")).toBeVisible()
 })
 
