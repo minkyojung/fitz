@@ -76,7 +76,7 @@ export function BilingualGallery() {
         {rows.map((r, i) => {
           const dim = focusMode && active !== null && active !== i
           return (
-            <div key={i} className={cn("col-span-3 grid grid-cols-subgrid border-b border-border/60 py-3 transition-opacity", dim && "opacity-30")}>
+            <div key={i} className={cn("col-span-3 grid grid-cols-subgrid border-b border-border/30 py-3 transition-opacity", dim && "opacity-30")}>
               <div className="pt-2"><span className={cn("block size-2 rounded-full", DOT[r.status])} title={r.status} /></div>
               <p className={cn("reading text-[15px] text-muted-foreground", r.kind === "heading" && "font-semibold text-foreground")} lang="en">{r.source}</p>
               <div
