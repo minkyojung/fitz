@@ -12,6 +12,7 @@ export const KEYMAP: Record<string, Chord[]> = {
   toggleVerified: [{ key: " " }],
   startEdit: [{ key: "Enter" }],
   cancelEdit: [{ key: "Escape" }],
+  find: [{ key: "f", meta: true }],
   undo: [{ key: "z", meta: true }],
   redo: [{ key: "z", meta: true, shift: true }],
 }

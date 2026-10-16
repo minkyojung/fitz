@@ -12,18 +12,22 @@ interface Props {
   onMerge: (id: number) => Promise<unknown>
   /** The page viewer moved to a page outside this chapter: switch to the chapter that owns it (if any). */
   onPageOutsideChapter: (pageNo: number) => void
+  /** Make `chapterId` the current chapter (no-op if it already is). */
+  onSelectChapter: (chapterId: number) => void
   /** Create a caption placeholder on a page; resolves to the new segment. */
   onAddCaption: (pageNo: number) => Promise<Segment | null>
 }
 
 /** Review mode: page image on the left, the chapter's segments on the right, kept on the same page.
  *  Selection, editing and the per-segment actions are exposed as commands so buttons and keys share them. */
-export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOutsideChapter, onAddCaption }: Props) {
+export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOutsideChapter, onSelectChapter, onAddCaption }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [pageNo, setPageNo] = useState<number | null>(null)
   /** Page to land on once the next chapter's segments arrive (set when paging across a chapter boundary). */
   const [pendingPage, setPendingPage] = useState<number | null>(null)
+  /** Segment to select once its chapter's segments arrive (jump from search). */
+  const [pendingSegmentId, setPendingSegmentId] = useState<number | null>(null)
 
   // A different chapter arrived (or a page is pending): land on the pending page's first segment,
   // else the chapter's first segment. Reloads of the same chapter (split/merge/undo) keep the selection;
@@ -32,6 +36,16 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
   useEffect(() => {
     const first = segments[0]
     if (!first) return
+    if (pendingSegmentId !== null) {
+      const target = segments.find((s) => s.id === pendingSegmentId)
+      if (!target) return // its chapter has not loaded yet
+      shownChapter.current = first.chapterId
+      setPendingSegmentId(null)
+      setSelectedId(target.id)
+      setPageNo(target.pageStart)
+      setEditingId(null)
+      return
+    }
     const sameChapter = first.chapterId === shownChapter.current
     if (sameChapter && pendingPage === null) {
       if (selectedId !== null && !segments.some((s) => s.id === selectedId)) setSelectedId(null) // selection vanished (merge)
@@ -43,7 +57,7 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
     setPageNo(pendingPage ?? first.pageStart)
     setPendingPage(null)
     setEditingId(null)
-  }, [segments, selectedId, pendingPage])
+  }, [segments, selectedId, pendingPage, pendingSegmentId])
 
   const selected = segments.find((s) => s.id === selectedId) ?? null
 
@@ -98,6 +112,15 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
     [onAddCaption],
   )
 
+  /** Select a segment anywhere in the book (switches chapter first if needed). */
+  const jumpTo = useCallback(
+    (segmentId: number, chapterId: number) => {
+      setPendingSegmentId(segmentId)
+      onSelectChapter(chapterId)
+    },
+    [onSelectChapter],
+  )
+
   const commands = {
     selectNext: () => selectByDelta(1),
     selectPrev: () => selectByDelta(-1),
@@ -128,5 +151,6 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
     selected,
     editing: editingId !== null,
     commands,
+    jumpTo,
   }
 }

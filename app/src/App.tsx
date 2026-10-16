@@ -30,6 +30,8 @@ const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
 
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
+  const [panelTab, setPanelTab] = useState("history")
+  const [findFocusToken, setFindFocusToken] = useState(0)
   const book = useBook()
   const review = useReview({
     pages: book.pages, segments: book.segments,
@@ -38,10 +40,12 @@ export function App() {
       const target = chapterForPage(book.chapters, pageNo)
       if (target !== null && target !== book.chapterId) book.setChapterId(target)
     },
+    onSelectChapter: book.setChapterId,
     onAddCaption: book.addCaption,
   })
   const { commands } = review
-  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo }), [commands, book.undo, book.redo]))
+  const openFind = () => { setPanelTab("find"); setFindFocusToken((n) => n + 1) }
+  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind }), [commands, book.undo, book.redo]))
 
   if (book.error) return <div className="p-8 text-destructive">API 연결 실패: {book.error}</div>
 
@@ -53,7 +57,13 @@ export function App() {
       sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} />}
       left={review.left}
       right={review.right}
-      panel={<ReviewPanel notes={book.unanchoredNotes} segments={book.segments} selected={review.selected} onAnchor={book.anchorNote} />}
+      panel={
+        <ReviewPanel
+          notes={book.unanchoredNotes} segments={book.segments} selected={review.selected} onAnchor={book.anchorNote}
+          onJump={review.jumpTo} onReplaceAll={book.replaceAll}
+          tab={panelTab} onTabChange={setPanelTab} findFocusToken={findFocusToken}
+        />
+      }
       status={
         <>
           <span>{book.chapter?.title ?? "—"}</span>

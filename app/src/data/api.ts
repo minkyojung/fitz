@@ -62,6 +62,15 @@ export interface Note {
   anchored: boolean
 }
 
+export interface SearchHit {
+  segmentId: number
+  chapterId: number
+  chapterTitle: string
+  pageStart: number
+  count: number
+  snippet: string
+}
+
 export interface SegmentPatch {
   sourceText?: string
   /** Wins over sourceText; the server derives the text from it so marks survive. */
@@ -102,4 +111,8 @@ export interface Api {
   undo(): Promise<OpSummary | null>
   redo(): Promise<OpSummary | null>
   listOps(segmentId: number): Promise<OpRecord[]>
+  /** Literal, case-sensitive search across the whole book. */
+  search(query: string): Promise<SearchHit[]>
+  /** Replace every occurrence in the book as one undoable step. */
+  replaceAll(query: string, replacement: string): Promise<{ segments: number; occurrences: number }>
 }

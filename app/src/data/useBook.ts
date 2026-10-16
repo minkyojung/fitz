@@ -13,6 +13,7 @@ export const OP_LABEL: Record<string, string> = {
   setNoteAnchor: "미주 연결",
   insertSegment: "단락 추가",
   deleteSegment: "단락 삭제",
+  setDocs: "모두 바꾸기",
 }
 
 export const CAPTION_PLACEHOLDER = "캡션"
@@ -172,6 +173,19 @@ export function useBook() {
     [mutate, reloadAll],
   )
 
+  const replaceAll = useCallback(
+    (query: string, replacement: string) =>
+      mutate("모두 바꾸기", async () => {
+        const r = await api.replaceAll(query, replacement)
+        if (r.segments) {
+          await reloadAll()
+          toast(`${r.segments}개 단락에서 ${r.occurrences}곳을 바꿨습니다`, { description: "⌘Z로 한 번에 되돌릴 수 있습니다" })
+        }
+        return r
+      }),
+    [mutate, reloadAll],
+  )
+
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
   /** Crash insurance for in-progress edits; keyed by book so other databases never collide. */
   const drafts = useMemo(() => (book ? createDraftStore(localStorage, book.id) : null), [book])
@@ -179,6 +193,6 @@ export function useBook() {
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
-    unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption,
+    unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption, replaceAll,
   }
 }

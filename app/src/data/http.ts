@@ -29,4 +29,6 @@ export const api: Api = {
   undo: () => call("undo"),
   redo: () => call("redo"),
   listOps: (segmentId) => call("listOps", { segmentId }),
+  search: (query) => call("search", { query }),
+  replaceAll: (query, replacement) => call("replaceAll", { query, replacement }),
 }

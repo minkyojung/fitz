@@ -455,3 +455,35 @@ test("a caption can be added on an empty page, edited, and undone", async ({ pag
   await page.keyboard.press("Meta+z") // the insert
   await expect(page.locator("[data-segment]")).toHaveCount(count)
 })
+
+test("find lists hits across the book, jumps to one, and replace-all is a single undo step", async ({ page }) => {
+  await page.goto("/")
+  await expect(page.locator("[data-segment]").first()).toHaveText(/Prologue/)
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("Meta+f")
+  const find = page.getByLabel("찾을 말")
+  await expect(find).toBeFocused()
+  await find.fill("Zemurray")
+  const status = page.locator("[data-slot=tabs-content][data-state=active], [role=tabpanel]").locator("[role=status]").first()
+  await expect(status).toContainText(/\d+개 단락, \d+곳/)
+  const hitCount = Number((await status.innerText()).match(/(\d+)개 단락/)![1])
+  expect(hitCount).toBeGreaterThan(5)
+
+  // jump to a hit in a later chapter
+  const hit = page.getByRole("tabpanel").getByRole("button", { name: /13: King Fish/ }).first()
+  await hit.click()
+  await expect(page.locator("footer")).toContainText("13: King Fish")
+  await expect(page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })).toContainText("Zemurray")
+
+  // replace all, then undo in one step
+  await page.getByLabel("바꿀 말").fill("ZEMURRAY")
+  await page.getByRole("button", { name: /모두 바꾸기/ }).click()
+  await expect(status).toContainText("일치하는 곳이 없습니다")
+  await find.fill("ZEMURRAY")
+  // the book already had a few all-caps occurrences, so at least every replaced segment shows up
+  await expect.poll(async () => Number((await status.innerText()).match(/(\d+)개 단락/)?.[1] ?? 0)).toBeGreaterThanOrEqual(hitCount)
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("Meta+z")
+  await find.fill("Zemurray")
+  await expect(status).toContainText(`${hitCount}개 단락`)
+})
