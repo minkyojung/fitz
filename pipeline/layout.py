@@ -26,6 +26,9 @@ GAP_FACTOR = 1.5
 OPENER_GAP = 60.0
 
 
+Box = list[float]  # [x0, y0, x1, y1] as fractions of the page (0..1), DPI-independent
+
+
 @dataclass
 class Para:
     kind: str  # paragraph | heading
@@ -34,10 +37,19 @@ class Para:
     page_end: int = 0
     starts_new: bool = True  # first line looked like a paragraph start
     ends: bool = True  # last line looked like a paragraph end
+    boxes: dict[int, Box] = field(default_factory=dict)  # page_no → union of its lines on that page
 
     @property
     def text(self) -> str:
         return join_lines(self.lines)
+
+    def add_line(self, line: Line, page: Page) -> None:
+        self.lines.append(line.text)
+        box = [line.x0 / page.width, line.y0 / page.height, line.x1 / page.width, line.y1 / page.height]
+        cur = self.boxes.get(page.printed_no)
+        self.boxes[page.printed_no] = box if cur is None else [
+            min(cur[0], box[0]), min(cur[1], box[1]), max(cur[2], box[2]), max(cur[3], box[3])
+        ]
 
 
 def _mode(values: list[float], bucket: float = 2.0) -> float:
@@ -62,7 +74,9 @@ def page_paragraphs(page: Page) -> list[Para]:
         title = lines[0]
         centre = (title.x0 + title.x1) / 2
         if abs(centre - page.width / 2) < page.width * 0.15:
-            paras.append(Para("heading", [title.text], page.printed_no, page.printed_no))
+            heading = Para("heading", [], page.printed_no, page.printed_no)
+            heading.add_line(title, page)
+            paras.append(heading)
             body = lines[1:]
     if not body:
         return paras
@@ -83,7 +97,7 @@ def page_paragraphs(page: Page) -> list[Para]:
                 cur.ends = prev.x1 < right - SHORT_LINE_MIN if prev else True
                 paras.append(cur)
             cur = Para(kind, [], page.printed_no, page.printed_no, starts_new=indented[i] or gap)
-        cur.lines.append(l.text)
+        cur.add_line(l, page)
         prev = l
     assert cur is not None and prev is not None
     cur.ends = prev.x1 < right - SHORT_LINE_MIN
@@ -118,6 +132,7 @@ def merge_across_pages(per_page: list[list[Para]]) -> list[Para]:
                 last.lines.extend(p.lines)
                 last.page_end = p.page_end
                 last.ends = p.ends
+                last.boxes.update(p.boxes)  # a paragraph spanning pages keeps one box per page
             else:
                 out.append(p)
     return out

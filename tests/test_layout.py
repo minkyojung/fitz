@@ -69,3 +69,23 @@ def test_one_line_dialogue_paragraphs_are_not_a_blockquote():
     paras = page_paragraphs(p)
     assert [q.kind for q in paras] == ["paragraph"] * 4
     assert paras[3].text == "He had never seen one before and wanted to try."
+
+
+def test_paragraph_box_is_the_union_of_its_lines_normalized_to_the_page():
+    p = _page(1, [
+        (30, 100, 320, "First para line one"),
+        (16, 114, 200, "ends short."),
+        (30, 128, 320, "Second."),
+    ])
+    paras = page_paragraphs(p)
+    x0, y0, x1, y1 = paras[0].boxes[1]
+    assert (round(x0 * 360), round(y0 * 568), round(x1 * 360), round(y1 * 568)) == (16, 100, 320, 124)
+    assert set(paras[1].boxes) == {1}
+
+
+def test_paragraph_across_pages_has_a_box_per_page():
+    a = _page(1, [(30, 100, 320, "Starts here and"), (16, 114, 320, "runs off the page")])
+    b = _page(2, [(16, 40, 320, "onto the next one."), (30, 54, 200, "New para.")])
+    merged = merge_across_pages([page_paragraphs(a), page_paragraphs(b)])
+    assert set(merged[0].boxes) == {1, 2}
+    assert round(merged[0].boxes[2][1] * 568) == 40

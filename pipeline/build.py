@@ -8,13 +8,14 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from rapidfuzz import fuzz
 
 from . import db, images
 from .junk import is_junk, is_photo_page
-from .layout import merge_across_pages, page_paragraphs
+from .layout import Box, merge_across_pages, page_paragraphs
 from .notes import anchor_quote, parse_notes
 from .pdf import assign_printed_numbers, read_pages, strip_running_head
 from .toc import parse_toc
@@ -23,6 +24,37 @@ TITLE = "The Fish That Ate the Whale"
 AUTHOR = "Rich Cohen"
 TOC_PDF_PAGES = (13, 14)
 BACK_MATTER = {"notes", "bibliography", "index"}  # not translated as body
+
+
+@dataclass
+class SegmentRow:
+    kind: str
+    page_start: int
+    page_end: int
+    text: str
+    boxes: dict[int, Box]
+
+
+def chapter_segments(by_pdf: dict, start_page: int, end_page: int, offset: int, title: str) -> tuple[list[SegmentRow], int]:
+    """Paragraph rows for one chapter (printed pages start_page..end_page-1). The TOC title is the
+    canonical heading; a detected opener line only lends its box. Returns (rows, junk_dropped)."""
+    start_pdf, end_pdf = start_page + offset, end_page + offset - 1
+    per_page = [page_paragraphs(by_pdf[i]) for i in range(start_pdf, end_pdf + 1) if i in by_pdf]
+    paras = merge_across_pages(per_page)
+    heading = re.sub(r"^\d{1,2}:\s*", "", title)
+    rows = [SegmentRow("heading", start_page, start_page, heading, {})]
+    junk = 0
+    for para in paras:
+        text = para.text
+        if para.kind == "heading" or fuzz.ratio(text.lower(), heading.lower()) > 80:
+            if not rows[0].boxes:
+                rows[0].boxes = dict(para.boxes)
+            continue
+        if is_junk(text):
+            junk += 1
+            continue
+        rows.append(SegmentRow(para.kind, para.page_start, para.page_end, text, dict(para.boxes)))
+    return rows, junk
 
 
 def build(pdf: Path, out: Path, with_images: bool) -> dict:
@@ -59,35 +91,30 @@ def build(pdf: Path, out: Path, with_images: bool) -> dict:
     )
 
     # body segments per chapter
-    seg_rows: list[tuple] = []  # (chapter_idx, seg_idx, kind, page_start, page_end, text)
     chapter_ids: dict[str, int] = {}
     stats_hyphen = 0
     junk_dropped = 0
+    boxes_total = 0
     for ci, ch in enumerate(body_chapters):
         nxt = body_chapters[ci + 1].page if ci + 1 < len(body_chapters) else notes_entry.page
-        start_pdf, end_pdf = ch.page + offset, nxt + offset - 1
-        per_page = [page_paragraphs(by_pdf[i]) for i in range(start_pdf, end_pdf + 1) if i in by_pdf]
-        paras = merge_across_pages(per_page)
+        rows, junk = chapter_segments(by_pdf, ch.page, nxt, offset, ch.title)
+        junk_dropped += junk
         cid = conn.execute(
             "INSERT INTO chapter(book_id, idx, title, start_page) VALUES (?,?,?,?)", (book_id, ci, ch.title, ch.page)
         ).lastrowid
         chapter_ids[_norm(ch.title)] = cid
-        heading = re.sub(r"^\d{1,2}:\s*", "", ch.title)
-        rows: list[tuple[str, int, int, str]] = [("heading", ch.page, ch.page, heading)]
-        for para in paras:
-            text = para.text
-            if para.kind == "heading" or fuzz.ratio(text.lower(), heading.lower()) > 80:
-                continue  # the TOC title is canonical
-            if is_junk(text):
-                junk_dropped += 1
-                continue
-            stats_hyphen += len(re.findall(r"\w- \w", text))
-            rows.append((para.kind, para.page_start, para.page_end, text))
-        conn.executemany(
-            "INSERT INTO segment(chapter_id, idx, kind, page_start, page_end, ocr_text, source_doc, source_text)"
-            " VALUES (?,?,?,?,?,?,?,?)",
-            [(cid, si, k, ps, pe, t, db.pm_doc(t), t) for si, (k, ps, pe, t) in enumerate(rows)],
-        )
+        for si, r in enumerate(rows):
+            stats_hyphen += len(re.findall(r"\w- \w", r.text))
+            sid = conn.execute(
+                "INSERT INTO segment(chapter_id, idx, kind, page_start, page_end, ocr_text, source_doc, source_text)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (cid, si, r.kind, r.page_start, r.page_end, r.text, db.pm_doc(r.text), r.text),
+            ).lastrowid
+            conn.executemany(
+                "INSERT INTO segment_box(segment_id, page_no, x0, y0, x1, y1) VALUES (?,?,?,?,?,?)",
+                [(sid, pg, *box) for pg, box in r.boxes.items()],
+            )
+            boxes_total += bool(r.boxes)
 
     # notes
     note_pages = [by_pdf[i] for i in range(notes_entry.page + offset, notes_end + offset) if i in by_pdf]
@@ -130,6 +157,7 @@ def build(pdf: Path, out: Path, with_images: bool) -> dict:
         "photo_pages_dropped": photo_pages,
         "junk_dropped": junk_dropped,
         "residual_hyphen_breaks": stats_hyphen,
+        "segments_with_boxes": boxes_total,
         "notes_parsed": len(entries),
         "notes_anchored": anchored,
         "notes_anchor_rate": round(anchored / len(entries), 3) if entries else None,
