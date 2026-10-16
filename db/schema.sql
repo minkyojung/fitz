@@ -5,6 +5,12 @@
 
 PRAGMA foreign_keys = ON;
 
+-- 책 단위 메타. last_edit_at 이 있으면 사람이 손댄 DB → 빌드가 덮어쓰지 않는다.
+CREATE TABLE meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+
 CREATE TABLE book (
   id          INTEGER PRIMARY KEY,
   title       TEXT NOT NULL,
@@ -38,6 +44,7 @@ CREATE TABLE segment (
                 CHECK (kind IN ('paragraph','heading','blockquote','caption','verse')),
   page_start    INTEGER NOT NULL,     -- 원서 페이지 앵커
   page_end      INTEGER NOT NULL,
+  ocr_text      TEXT,                 -- 파이프라인이 뽑은 원문. 이후 불변. NULL = 원본 복원 불가(마이그레이션 전 수정)
   source_doc    TEXT NOT NULL,        -- ProseMirror JSON (이탤릭 mark 포함)
   source_text   TEXT NOT NULL,        -- 평문. 검색/앵커 매칭용 (source_doc에서 파생)
   target_doc    TEXT,                 -- ProseMirror JSON (댓글/주석 mark 포함). NULL = 미번역

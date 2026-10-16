@@ -84,9 +84,9 @@ def build(pdf: Path, out: Path, with_images: bool) -> dict:
             stats_hyphen += len(re.findall(r"\w- \w", text))
             rows.append((para.kind, para.page_start, para.page_end, text))
         conn.executemany(
-            "INSERT INTO segment(chapter_id, idx, kind, page_start, page_end, source_doc, source_text)"
-            " VALUES (?,?,?,?,?,?,?)",
-            [(cid, si, k, ps, pe, db.pm_doc(t), t) for si, (k, ps, pe, t) in enumerate(rows)],
+            "INSERT INTO segment(chapter_id, idx, kind, page_start, page_end, ocr_text, source_doc, source_text)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            [(cid, si, k, ps, pe, t, db.pm_doc(t), t) for si, (k, ps, pe, t) in enumerate(rows)],
         )
 
     # notes
@@ -159,7 +159,10 @@ def main() -> None:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--no-images", action="store_true")
     a = ap.parse_args()
-    print(json.dumps(build(a.pdf, a.out, not a.no_images), indent=2))
+    try:
+        print(json.dumps(build(a.pdf, a.out, not a.no_images), indent=2))
+    except db.EditedDatabaseError as e:
+        raise SystemExit(f"refused: {e}")
 
 
 if __name__ == "__main__":
