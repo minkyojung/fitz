@@ -1,4 +1,17 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator } from "@playwright/test"
+
+/** Put the caret at a text offset inside a contenteditable paragraph (ProseMirror reads the DOM selection). */
+async function setCaret(editable: Locator, offset: number) {
+  await editable.evaluate((el, pos: number) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode(), left = pos
+    while (node && left > (node.textContent?.length ?? 0)) { left -= node.textContent!.length; node = walker.nextNode() }
+    if (!node) throw new Error("offset beyond text")
+    const range = document.createRange(); range.setStart(node, left); range.collapse(true)
+    const sel = window.getSelection()!; sel.removeAllRanges(); sel.addRange(range)
+    el.dispatchEvent(new Event("selectionchange"))
+  }, offset)
+}
 
 test("review edits persist across reload", async ({ page }) => {
   await page.goto("/")
@@ -56,7 +69,7 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
   await row.getByRole("button", { name: "텍스트 수정" }).click()
   const box = row.getByRole("textbox")
   const cut = original.indexOf(" ", 40) + 1 // after a space, well inside the paragraph
-  await box.evaluate((el: HTMLTextAreaElement, pos: number) => el.setSelectionRange(pos, pos), cut)
+  await setCaret(box, cut)
   await row.getByRole("button", { name: "커서 위치에서 분할" }).click()
 
   await expect(rows).toHaveCount(before + 1)
@@ -200,4 +213,34 @@ test("edits are highlighted against the OCR original and listed in history", asy
   await page.keyboard.press("Meta+z")
   await expect(row.locator("mark[data-edit]")).toHaveCount(0)
   await expect(history.getByText("되돌려짐")).toBeVisible()
+})
+
+test("in-place editing: no layout shift, character undo inside, paragraph undo after", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /7: New Orleans/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/New Orleans/)
+  const row = rows.nth(1)
+  const original = (await row.locator("p").innerText()).trim()
+  const heightBefore = (await row.boundingBox())!.height
+
+  await row.click()
+  await page.keyboard.press("Enter")
+  const box = row.getByRole("textbox")
+  await expect(box).toBeFocused()
+  expect(Math.abs((await row.boundingBox())!.height - heightBefore)).toBeLessThan(2)
+
+  await page.keyboard.press("End")
+  await page.keyboard.type(" EXTRA")
+  await expect(box).toHaveText(original + " EXTRA")
+  await page.keyboard.press("Meta+z") // editor-level undo: characters only
+  await expect(box).toHaveText(original)
+  await page.keyboard.type(" AGAIN")
+  await page.keyboard.press("Enter") // commit
+  await expect(row.getByRole("textbox")).toHaveCount(0)
+  await expect(row.locator("p")).toHaveText(original + " AGAIN")
+
+  await page.keyboard.press("Meta+z") // app-level undo: the whole edit
+  await expect(row.locator("p")).toHaveText(original)
+  await expect(row.locator("mark[data-edit]")).toHaveCount(0)
 })

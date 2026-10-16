@@ -1,5 +1,8 @@
 /** Data interface the UI depends on. Implementations: http.ts (dev server), later a Tauri binding. */
 
+/** ProseMirror document JSON (single paragraph of text nodes, optional marks). */
+export type DocJSON = { type: "doc"; content: Array<{ type: "paragraph"; content?: Array<{ type: "text"; text: string; marks?: Array<{ type: string }> }> }> }
+
 export type SegmentKind = "paragraph" | "heading" | "blockquote" | "caption" | "verse"
 export type SegmentStatus = "untranslated" | "draft" | "reviewed" | "final"
 
@@ -20,6 +23,7 @@ export interface Segment {
   pageStart: number
   pageEnd: number
   sourceText: string
+  sourceDoc: DocJSON
   /** OCR original, immutable. null when the row was edited before originals were kept. */
   ocrText: string | null
   verified: boolean
@@ -44,6 +48,8 @@ export interface Note {
 
 export interface SegmentPatch {
   sourceText?: string
+  /** Wins over sourceText; the server derives the text from it so marks survive. */
+  sourceDoc?: DocJSON
   kind?: SegmentKind
   verified?: boolean
 }

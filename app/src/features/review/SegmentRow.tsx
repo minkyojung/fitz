@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef } from "react"
+import type { Editor } from "@tiptap/react"
 import { IconArrowsSplit2, IconPencil, IconRowInsertBottom } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -7,11 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
+import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { cn } from "cn"
-import type { Segment, SegmentKind, SegmentPatch } from "@/data/api"
+import type { DocJSON, Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
 export const KIND_LABEL: Record<SegmentKind, string> = {
   paragraph: "단락",
@@ -36,32 +37,43 @@ interface Props {
 
 export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, onEditingChange, onPatch, onSplit, onMerge }: Props) {
   const setEditing = onEditingChange
-  const [draft, setDraft] = useState(s.sourceText)
   const ref = useRef<HTMLDivElement>(null)
-  const boxRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<Editor | null>(null)
+  const closing = useRef(false)
 
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
   }, [selected])
   useEffect(() => {
-    if (!editing) setDraft(s.sourceText)
-  }, [s.sourceText, editing])
+    if (!editing) closing.current = false
+  }, [editing])
 
-  const commit = async () => {
-    const text = draft.trim()
-    if (text && text !== s.sourceText) await onPatch({ sourceText: text })
+  /** Persist the edited doc (if changed) and leave edit mode. Guarded: blur and Enter can both fire. */
+  const commit = useCallback(
+    async (doc: DocJSON) => {
+      if (closing.current) return
+      closing.current = true
+      setEditing(false)
+      if (JSON.stringify(doc) !== JSON.stringify(s.sourceDoc)) await onPatch({ sourceDoc: doc })
+    },
+    [onPatch, s.sourceDoc, setEditing],
+  )
+  const cancel = useCallback(() => {
+    closing.current = true
     setEditing(false)
-  }
+  }, [setEditing])
   /** Split at the caret. Unsaved edits are saved first so the offset refers to the stored text. */
   const splitAtCaret = async () => {
-    const box = boxRef.current
-    if (!box) return
-    const offset = box.selectionStart
-    const text = draft.trim()
-    if (text !== s.sourceText) await onPatch({ sourceText: text })
+    const e = editorRef.current
+    if (!e) return
+    const offset = caretOffset(e)
+    const doc = e.getJSON() as DocJSON
+    closing.current = true
     setEditing(false)
+    if (JSON.stringify(doc) !== JSON.stringify(s.sourceDoc)) await onPatch({ sourceDoc: doc })
     await onSplit(offset)
   }
+  const onReady = useCallback((e: Editor) => { editorRef.current = e }, [])
 
   return (
     <ContextMenu>
@@ -120,18 +132,12 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         )}
       </div>
       {editing ? (
-        <Textarea
-          ref={boxRef}
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => void commit()}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") { setDraft(s.sourceText); setEditing(false) }
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void commit()
-          }}
-          className="reading min-h-24 text-[15px]"
-          lang="en"
+        <SegmentEditor
+          doc={s.sourceDoc}
+          className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
+          onCommit={(doc) => void commit(doc)}
+          onCancel={cancel}
+          onReady={onReady}
         />
       ) : (
         <p className={cn("reading text-[15px]", s.kind === "heading" && "font-semibold")} lang="en">
