@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react"
 import type { PanelImperativeHandle } from "react-resizable-panels"
 
-import { Sidebar, SidebarContent, SidebarHeader, SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Sidebar, SidebarContent, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger } from "@/components/ui/sidebar"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -25,6 +25,9 @@ interface AppShellProps {
   leftCollapsed?: boolean
 }
 
+/** The sidebar provider writes its open state to a cookie; read it back so the choice survives reloads. */
+const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.cookie)
+
 /** Fixed frame: sidebar | [tabs / left+right+panel / status]. Content is injected per mode. */
 export function AppShell({ mode, onModeChange, sidebar, left, right, panel, status, leftCollapsed = false }: AppShellProps) {
   const leftRef = useRef<PanelImperativeHandle>(null)
@@ -35,13 +38,15 @@ export function AppShell({ mode, onModeChange, sidebar, left, right, panel, stat
     if (!leftCollapsed && p.isCollapsed()) p.expand()
   }, [leftCollapsed])
   return (
-    <SidebarProvider style={{ "--sidebar-width": "15rem" } as React.CSSProperties}>
+    <SidebarProvider defaultOpen={sidebarDefaultOpen()} style={{ "--sidebar-width": "15rem" } as React.CSSProperties}>
       <Sidebar collapsible="offcanvas">
         <SidebarHeader className="border-b px-3 py-2 text-xs font-medium">The Fish That Ate the Whale</SidebarHeader>
         <SidebarContent>{sidebar}</SidebarContent>
+        <SidebarRail />
       </Sidebar>
       <SidebarInset className="h-svh overflow-hidden">
-        <header className="flex h-9 shrink-0 items-center border-b px-2">
+        <header className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+          <SidebarTrigger aria-label="Toggle chapters" title="Toggle chapters (⌘B)" />
           <Tabs value={mode} onValueChange={(v) => onModeChange(v as Mode)}>
             <TabsList>
               {MODES.map((m) => (
