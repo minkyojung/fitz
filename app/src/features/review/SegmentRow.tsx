@@ -39,11 +39,11 @@ function textOffsetAtPoint(root: HTMLElement, x: number, y: number): number | nu
 }
 
 export const KIND_LABEL: Record<SegmentKind, string> = {
-  paragraph: "단락",
-  heading: "제목",
-  blockquote: "인용",
-  caption: "캡션",
-  verse: "운문",
+  paragraph: "Paragraph",
+  heading: "Heading",
+  blockquote: "Quote",
+  caption: "Caption",
+  verse: "Verse",
 }
 const KINDS = Object.keys(KIND_LABEL) as SegmentKind[]
 
@@ -148,8 +148,8 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     >
       <div className="mb-1 flex h-6 items-center gap-1.5 text-xs">
         <label className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <Checkbox checked={s.verified} onCheckedChange={(v) => void onPatch({ verified: v })} aria-label="확인됨" />
-          <span className="text-muted-foreground">확인</span>
+          <Checkbox checked={s.verified} onCheckedChange={(v) => void onPatch({ verified: v })} aria-label="Verified" />
+          <span className="text-muted-foreground">Verify</span>
         </label>
         {selected ? (
           <ToggleGroup
@@ -173,24 +173,24 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
         {recoverable && (
           <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <Badge variant="destructive">저장 안 됨</Badge>
-            <Button size="xs" variant="outline" onClick={recover}>복구</Button>
-            <Button size="xs" variant="ghost" onClick={discard}>버리기</Button>
+            <Badge variant="destructive">Unsaved</Badge>
+            <Button size="xs" variant="outline" onClick={recover}>Recover</Button>
+            <Button size="xs" variant="ghost" onClick={discard}>Discard</Button>
           </span>
         )}
         {selected && (
           <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
             {editing ? (
-              <Button variant="ghost" size="xs" aria-label="커서 위치에서 분할" onMouseDown={(e) => e.preventDefault()}
+              <Button variant="ghost" size="xs" aria-label="Split at caret" onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void splitAtCaret()}>
-                <IconArrowsSplit2 data-icon="inline-start" /> 분할
+                <IconArrowsSplit2 data-icon="inline-start" /> Split
               </Button>
             ) : (
-              <Button variant="ghost" size="icon-xs" aria-label="텍스트 수정" onClick={() => setEditing(true)}>
+              <Button variant="ghost" size="icon-xs" aria-label="Edit text" onClick={() => setEditing(true)}>
                 <IconPencil />
               </Button>
             )}
-            <Button variant="ghost" size="icon-xs" aria-label="다음 단락과 병합" disabled={!hasNext}
+            <Button variant="ghost" size="icon-xs" aria-label="Merge with next" disabled={!hasNext}
               onClick={() => void onMerge()}>
               <IconRowInsertBottom />
             </Button>
@@ -220,8 +220,8 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       )}
     </ContextMenuTrigger>
     <ContextMenuContent>
-      <ContextMenuItem onClick={() => { onSelect(); setEditing(true) }}>텍스트 수정</ContextMenuItem>
-      <ContextMenuItem disabled={!hasNext} onClick={() => void onMerge()}>다음 단락과 병합</ContextMenuItem>
+      <ContextMenuItem onClick={() => { onSelect(); setEditing(true) }}>Edit text</ContextMenuItem>
+      <ContextMenuItem disabled={!hasNext} onClick={() => void onMerge()}>Merge with next</ContextMenuItem>
     </ContextMenuContent>
     </ContextMenu>
   )

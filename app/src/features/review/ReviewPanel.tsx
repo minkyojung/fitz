@@ -12,7 +12,7 @@ interface Props {
   onAnchor: (noteId: number, segmentId: number) => Promise<unknown>
   onJump: (segmentId: number, chapterId: number) => void
   onReplaceAll: (query: string, replacement: string) => Promise<unknown>
-  /** Controlled tab so ⌘F can open "찾기". */
+  /** Controlled tab so ⌘F can open "Find". */
   tab: string
   onTabChange: (tab: string) => void
   findFocusToken: number
@@ -22,10 +22,10 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
   return (
     <Tabs value={tab} onValueChange={(v) => onTabChange(v as string)} className="flex h-full flex-col gap-0">
       <TabsList className="m-2 shrink-0 self-start">
-        <TabsTrigger value="history">기록</TabsTrigger>
-        <TabsTrigger value="find">찾기</TabsTrigger>
+        <TabsTrigger value="history">History</TabsTrigger>
+        <TabsTrigger value="find">Find</TabsTrigger>
         <TabsTrigger value="notes">
-          미연결 미주
+          Unlinked notes
           {notes.length > 0 && <Badge variant="destructive" className="ml-1">{notes.length}</Badge>}
         </TabsTrigger>
       </TabsList>

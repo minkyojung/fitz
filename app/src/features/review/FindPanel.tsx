@@ -38,16 +38,16 @@ export function FindPanel({ refreshKey, onJump, onReplaceAll, focusToken }: Prop
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-2 border-b p-2">
-        <Input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="찾을 말" aria-label="찾을 말" />
+        <Input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find" aria-label="Find" />
         <div className="flex gap-2">
-          <Input value={replacement} onChange={(e) => setReplacement(e.target.value)} placeholder="바꿀 말" aria-label="바꿀 말" />
+          <Input value={replacement} onChange={(e) => setReplacement(e.target.value)} placeholder="Replace with" aria-label="Replace with" />
           <Button size="sm" variant="outline" disabled={!query || !hits.length} onClick={() => void onReplaceAll(query, replacement)}>
-            모두 바꾸기{total ? ` (${total})` : ""}
+            Replace all{total ? ` (${total})` : ""}
           </Button>
         </div>
         {query && (
           <p className="text-xs text-muted-foreground tabular-nums" role="status">
-            {hits.length ? `${hits.length}개 단락, ${total}곳` : "일치하는 곳이 없습니다"}
+            {hits.length ? `${hits.length} paragraphs, ${total} matches` : "No matches"}
           </p>
         )}
       </div>
@@ -58,7 +58,7 @@ export function FindPanel({ refreshKey, onJump, onReplaceAll, focusToken }: Prop
               <button type="button" className="w-full px-3 py-2 text-left hover:bg-muted/50" onClick={() => onJump(h.segmentId, h.chapterId)}>
                 <div className="mb-0.5 flex gap-2 text-muted-foreground">
                   <span className="truncate">{h.chapterTitle}</span>
-                  <span className="ml-auto shrink-0 tabular-nums">p. {h.pageStart}{h.count > 1 ? ` · ${h.count}곳` : ""}</span>
+                  <span className="ml-auto shrink-0 tabular-nums">p. {h.pageStart}{h.count > 1 ? ` · ${h.count}×` : ""}</span>
                 </div>
                 <p className="reading text-[13px]" lang="en">…{h.snippet}…</p>
               </button>

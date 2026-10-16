@@ -59,7 +59,7 @@ export function SegmentEditor({ doc, className, caretOffset, selectAll, onCommit
     ],
     content: doc,
     editorProps: {
-      attributes: { class: className ?? "", lang: "en", "aria-label": "단락 편집" },
+      attributes: { class: className ?? "", lang: "en", "aria-label": "Edit paragraph" },
     },
     onBlur: ({ editor }) => commit(editor),
     onUpdate: ({ editor }) => {

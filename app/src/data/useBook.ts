@@ -7,16 +7,16 @@ import type { Book, Chapter, Note, Page, Segment, SegmentPatch } from "./api"
 import { createDraftStore } from "@/lib/draftStore"
 
 export const OP_LABEL: Record<string, string> = {
-  updateSegment: "단락 수정",
-  splitSegment: "분할",
-  mergeWithNext: "병합",
-  setNoteAnchor: "미주 연결",
-  insertSegment: "단락 추가",
-  deleteSegment: "단락 삭제",
-  setDocs: "모두 바꾸기",
+  updateSegment: "Edit paragraph",
+  splitSegment: "Split",
+  mergeWithNext: "Merge",
+  setNoteAnchor: "Link note",
+  insertSegment: "Add paragraph",
+  deleteSegment: "Delete paragraph",
+  setDocs: "Replace all",
 }
 
-export const CAPTION_PLACEHOLDER = "캡션"
+export const CAPTION_PLACEHOLDER = "Caption"
 
 export type SaveState = "idle" | "saving" | "saved" | "error"
 
@@ -43,7 +43,7 @@ export function useBook() {
     } catch (e) {
       --pending.current
       setSaveState("error")
-      toast.error(`${label} 실패`, { description: (e as Error).message })
+      toast.error(`${label} failed`, { description: (e as Error).message })
       return null
     }
   }, [])
@@ -90,7 +90,7 @@ export function useBook() {
   /** Persist a change, then replace the row in place and refresh chapter counts. */
   const updateSegment = useCallback(
     (id: number, patch: SegmentPatch) =>
-      mutate("저장", async () => {
+      mutate("Save", async () => {
         const updated = await api.updateSegment(id, patch)
         setSegments((list) => list.map((s) => (s.id === id ? updated : s)))
         void refreshChapters()
@@ -102,7 +102,7 @@ export function useBook() {
   /** Split/merge renumber the chapter, so reload the whole list afterwards. Returns the surviving head id. */
   const splitSegment = useCallback(
     (id: number, offset: number) =>
-      mutate("분할", async () => {
+      mutate("Split", async () => {
         const [head] = await api.splitSegment(id, offset)
         if (chapterId !== null) await refreshSegments(chapterId)
         void refreshChapters()
@@ -112,7 +112,7 @@ export function useBook() {
   )
   const mergeWithNext = useCallback(
     (id: number) =>
-      mutate("병합", async () => {
+      mutate("Merge", async () => {
         const merged = await api.mergeWithNext(id)
         if (chapterId !== null) await refreshSegments(chapterId)
         void refreshChapters()
@@ -124,7 +124,7 @@ export function useBook() {
   /** A caption placeholder for a page with photos: inserted after the last segment on or before that page. */
   const addCaption = useCallback(
     (pageNo: number) =>
-      mutate("캡션 추가", async () => {
+      mutate("Add caption", async () => {
         if (chapterId === null) return null
         const before = segments.filter((s) => s.pageStart <= pageNo)
         const afterIdx = before.length ? before[before.length - 1].idx : -1
@@ -138,10 +138,10 @@ export function useBook() {
 
   const anchorNote = useCallback(
     (noteId: number, segmentId: number) =>
-      mutate("미주 연결", async () => {
+      mutate("Link note", async () => {
         await api.anchorNote(noteId, segmentId)
         await refreshNotes()
-        toast.success("미주를 연결했습니다")
+        toast.success("Note linked")
       }),
     [mutate, refreshNotes],
   )
@@ -153,33 +153,33 @@ export function useBook() {
 
   const undo = useCallback(
     () =>
-      mutate("되돌리기", async () => {
+      mutate("Undo", async () => {
         const op = await api.undo()
         if (!op) return
         await reloadAll()
-        toast("되돌렸습니다", { description: OP_LABEL[op.name] ?? op.name })
+        toast("Undone", { description: OP_LABEL[op.name] ?? op.name })
       }),
     [mutate, reloadAll],
   )
 
   const redo = useCallback(
     () =>
-      mutate("다시 실행", async () => {
+      mutate("Redo", async () => {
         const op = await api.redo()
         if (!op) return
         await reloadAll()
-        toast("다시 실행했습니다", { description: OP_LABEL[op.name] ?? op.name })
+        toast("Redone", { description: OP_LABEL[op.name] ?? op.name })
       }),
     [mutate, reloadAll],
   )
 
   const replaceAll = useCallback(
     (query: string, replacement: string) =>
-      mutate("모두 바꾸기", async () => {
+      mutate("Replace all", async () => {
         const r = await api.replaceAll(query, replacement)
         if (r.segments) {
           await reloadAll()
-          toast(`${r.segments}개 단락에서 ${r.occurrences}곳을 바꿨습니다`, { description: "⌘Z로 한 번에 되돌릴 수 있습니다" })
+          toast(`Replaced ${r.occurrences} matches in ${r.segments} paragraphs`, { description: "⌘Z undoes all of them at once" })
         }
         return r
       }),

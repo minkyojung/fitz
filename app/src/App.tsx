@@ -15,17 +15,17 @@ import { chapterForPage } from "@/lib/pages"
 import { KEYMAP, chordLabel } from "@/lib/keymap"
 
 const HINTS: { command: keyof typeof KEYMAP; label: string }[] = [
-  { command: "selectNext", label: "이동" },
-  { command: "toggleVerified", label: "확인" },
-  { command: "startEdit", label: "수정" },
-  { command: "undo", label: "되돌리기" },
+  { command: "selectNext", label: "Move" },
+  { command: "toggleVerified", label: "Verify" },
+  { command: "startEdit", label: "Edit" },
+  { command: "undo", label: "Undo" },
 ]
 
 const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
   idle: { text: "", className: "" },
-  saving: { text: "저장 중…", className: "text-muted-foreground" },
-  saved: { text: "저장됨", className: "text-muted-foreground" },
-  error: { text: "저장 실패", className: "text-destructive font-medium" },
+  saving: { text: "Saving…", className: "text-muted-foreground" },
+  saved: { text: "Saved", className: "text-muted-foreground" },
+  error: { text: "Save failed", className: "text-destructive font-medium" },
 }
 
 export function App() {
@@ -47,7 +47,7 @@ export function App() {
   const openFind = () => { setPanelTab("find"); setFindFocusToken((n) => n + 1) }
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind }), [commands, book.undo, book.redo]))
 
-  if (book.error) return <div className="p-8 text-destructive">API 연결 실패: {book.error}</div>
+  if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
 
   return (
     <DraftContext value={book.drafts}>
@@ -68,9 +68,9 @@ export function App() {
         <>
           <span>{book.chapter?.title ?? "—"}</span>
           <span>
-            확인 {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
+            Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
           </span>
-          <span>미연결 미주 {book.unanchoredNotes.length}</span>
+          <span>Unlinked notes {book.unanchoredNotes.length}</span>
           <span className="hidden items-center gap-3 lg:flex">
             {HINTS.map((h) => (
               <span key={h.command} className="flex items-center gap-1">
@@ -84,10 +84,10 @@ export function App() {
             {SAVE_LABEL[book.saveState].text}
           </span>
           <span className="flex items-center gap-1">
-            <Button variant="ghost" size="icon-xs" aria-label="되돌리기" onClick={() => void book.undo()}>
+            <Button variant="ghost" size="icon-xs" aria-label="Undo" onClick={() => void book.undo()}>
               <IconArrowBackUp />
             </Button>
-            <Button variant="ghost" size="icon-xs" aria-label="다시 실행" onClick={() => void book.redo()}>
+            <Button variant="ghost" size="icon-xs" aria-label="Redo" onClick={() => void book.redo()}>
               <IconArrowForwardUp />
             </Button>
           </span>

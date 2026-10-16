@@ -29,21 +29,21 @@ export function PageViewer({ pages, pageNo, onPageChange, highlight }: Props) {
     <div className="flex h-full flex-col">
       <div className="flex h-8 shrink-0 items-center justify-center gap-1 border-b text-xs">
         <Button variant="ghost" size="icon-sm" disabled={pageNo === null || pageNo <= first}
-          onClick={() => pageNo !== null && onPageChange(pageNo - 1)} aria-label="이전 페이지">
+          onClick={() => pageNo !== null && onPageChange(pageNo - 1)} aria-label="Previous page">
           <IconChevronLeft />
         </Button>
         <span className="w-24 text-center tabular-nums">
           {pageNo === null ? "—" : `p. ${pageNo}`}
         </span>
         <Button variant="ghost" size="icon-sm" disabled={pageNo === null || pageNo >= last}
-          onClick={() => pageNo !== null && onPageChange(pageNo + 1)} aria-label="다음 페이지">
+          onClick={() => pageNo !== null && onPageChange(pageNo + 1)} aria-label="Next page">
           <IconChevronRight />
         </Button>
       </div>
       <ScrollArea className="min-h-0 flex-1 bg-muted/40">
         {page ? (
           <div className="relative mx-auto w-fit">
-            <img src={pageImageUrl(page.imageUrl)} alt={`원서 ${page.pageNo}쪽`} className="block max-w-full" />
+            <img src={pageImageUrl(page.imageUrl)} alt={`Book page ${page.pageNo}`} className="block max-w-full" />
             {highlight && highlight.pageNo === page.pageNo && (
               <div
                 ref={markRef}
@@ -60,7 +60,7 @@ export function PageViewer({ pages, pageNo, onPageChange, highlight }: Props) {
             )}
           </div>
         ) : (
-          <div className="p-8 text-center text-xs text-muted-foreground">페이지 없음</div>
+          <div className="p-8 text-center text-xs text-muted-foreground">No page</div>
         )}
       </ScrollArea>
     </div>

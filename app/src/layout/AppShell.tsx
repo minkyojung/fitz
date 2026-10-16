@@ -7,9 +7,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 export type Mode = "review" | "translate" | "export"
 
 const MODES: { value: Mode; label: string }[] = [
-  { value: "review", label: "검수" },
-  { value: "translate", label: "번역" },
-  { value: "export", label: "내보내기" },
+  { value: "review", label: "Review" },
+  { value: "translate", label: "Translate" },
+  { value: "export", label: "Export" },
 ]
 
 interface AppShellProps {

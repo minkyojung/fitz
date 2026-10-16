@@ -27,7 +27,7 @@ export function ChapterList({ chapters, selectedId, onSelect }: Props) {
                   {c.verifiedCount}/{c.segmentCount}
                 </span>
               </span>
-              <Progress value={pct} aria-label={`${c.title} 검수 진행률`} />
+              <Progress value={pct} aria-label={`${c.title} review progress`} />
             </SidebarMenuButton>
           </SidebarMenuItem>
         )

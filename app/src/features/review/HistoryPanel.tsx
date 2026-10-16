@@ -16,7 +16,7 @@ interface Props {
 
 const time = (iso: string) => {
   const d = new Date(iso.replace(" ", "T") + "Z")
-  return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
 }
 
 /** Cumulative diff against the OCR original, then the command log for this segment, each text edit expandable. */
@@ -29,21 +29,21 @@ export function HistoryPanel({ segment, refreshKey }: Props) {
     return () => { live = false }
   }, [segment, refreshKey])
 
-  if (!segment) return <p className="p-3 text-xs text-muted-foreground">단락을 선택하세요.</p>
+  if (!segment) return <p className="p-3 text-xs text-muted-foreground">Select a paragraph.</p>
   return (
     <ScrollArea className="h-full">
       <div className="border-b px-3 py-2">
-        <div className="mb-1 text-xs font-medium">원문 대비 지금</div>
+        <div className="mb-1 text-xs font-medium">Now vs. original</div>
         {segment.ocrText === null ? (
-          <p className="text-xs text-muted-foreground">원문 없음 (원본 보관 전에 수정됨)</p>
+          <p className="text-xs text-muted-foreground">No original (edited before originals were kept)</p>
         ) : (
           <DiffView before={segment.ocrText} after={segment.sourceText} />
         )}
       </div>
       {ops.length === 0 ? (
-        <p className="p-3 text-xs text-muted-foreground">기록 없음</p>
+        <p className="p-3 text-xs text-muted-foreground">No history</p>
       ) : (
-        <ul className="divide-y text-xs" aria-label="이 단락의 기록">
+        <ul className="divide-y text-xs" aria-label="History of this paragraph">
           {ops.map((o) => (
             <li key={o.id} className={o.undone ? "text-muted-foreground" : ""}>
               {o.before !== null && o.after !== null ? (
@@ -52,7 +52,7 @@ export function HistoryPanel({ segment, refreshKey }: Props) {
                     <IconChevronRight className="size-3 transition-transform group-data-[panel-open]:rotate-90" />
                     <span className="tabular-nums">{time(o.createdAt)}</span>
                     <span className={o.undone ? "line-through" : ""}>{OP_LABEL[o.name] ?? o.name}</span>
-                    {o.undone && <span className="ml-auto">되돌려짐</span>}
+                    {o.undone && <span className="ml-auto">Undone</span>}
                   </CollapsibleTrigger>
                   <CollapsibleContent className="px-3 pb-2 pl-8">
                     <DiffView before={o.before} after={o.after} />
@@ -62,7 +62,7 @@ export function HistoryPanel({ segment, refreshKey }: Props) {
                 <div className="flex gap-2 px-3 py-2 pl-8">
                   <span className="tabular-nums">{time(o.createdAt)}</span>
                   <span className={o.undone ? "line-through" : ""}>{OP_LABEL[o.name] ?? o.name}</span>
-                  {o.undone && <span className="ml-auto">되돌려짐</span>}
+                  {o.undone && <span className="ml-auto">Undone</span>}
                 </div>
               )}
             </li>

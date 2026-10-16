@@ -12,7 +12,7 @@ interface Props {
 /** Unified, word-level diff of a paragraph: removed words struck through in red, added words on green. */
 export function DiffView({ before, after, className }: Props) {
   const pieces = useMemo(() => diffText(before, after), [before, after])
-  if (before === after) return <p className={cn("reading text-[13px] text-muted-foreground", className)} lang="en">변경 없음</p>
+  if (before === after) return <p className={cn("reading text-[13px] text-muted-foreground", className)} lang="en">No changes</p>
   return (
     <p className={cn("reading text-[13px]", className)} lang="en">
       {pieces.map((p, i) =>

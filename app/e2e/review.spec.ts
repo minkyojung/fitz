@@ -27,15 +27,15 @@ test("review edits persist across reload", async ({ page }) => {
   await row.click()
 
   // verify
-  await row.getByRole("checkbox", { name: "확인됨" }).click()
-  await expect(row.getByRole("checkbox", { name: "확인됨" })).toBeChecked()
+  await row.getByRole("checkbox", { name: "Verified" }).click()
+  await expect(row.getByRole("checkbox", { name: "Verified" })).toBeChecked()
   await expect(page.getByRole("button", { name: /1: Selma/ })).toContainText("1/15")
 
   // kind
-  await row.getByRole("button", { name: "인용" }).click()
+  await row.getByRole("button", { name: "Quote" }).click()
 
   // text edit
-  await row.getByRole("button", { name: "텍스트 수정" }).click()
+  await row.getByRole("button", { name: "Edit text" }).click()
   const box = row.getByRole("textbox")
   await box.fill("Edited paragraph text.")
   await box.press("Meta+Enter")
@@ -45,18 +45,18 @@ test("review edits persist across reload", async ({ page }) => {
   await page.getByRole("button", { name: /1: Selma/ }).click()
   const again = page.locator("[data-segment]").nth(1)
   await expect(again).toContainText("Edited paragraph text.")
-  await expect(again.getByRole("checkbox", { name: "확인됨" })).toBeChecked()
+  await expect(again.getByRole("checkbox", { name: "Verified" })).toBeChecked()
   await again.click()
-  await expect(again.getByRole("button", { name: "인용" })).toHaveAttribute("aria-pressed", "true")
+  await expect(again.getByRole("button", { name: "Quote" })).toHaveAttribute("aria-pressed", "true")
 })
 
 test("page navigation follows the selected segment", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("button", { name: /1: Selma/ }).click()
   await expect(page.getByText("p. 11", { exact: true }).first()).toBeVisible()
-  await page.getByRole("button", { name: "다음 페이지" }).click()
+  await page.getByRole("button", { name: "Next page" }).click()
   await expect(page.getByText("p. 12", { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole("img", { name: "원서 12쪽" })).toBeVisible()
+  await expect(page.getByRole("img", { name: "Book page 12" })).toBeVisible()
 })
 
 test("split at caret and merge back restore the paragraph", async ({ page }) => {
@@ -75,14 +75,14 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
   // ProseMirror syncs its selection from the DOM on the next key event; nudge right then left
   await box.press("ArrowRight")
   await box.press("ArrowLeft")
-  await row.getByRole("button", { name: "커서 위치에서 분할" }).click()
+  await row.getByRole("button", { name: "Split at caret" }).click()
 
   await expect(rows).toHaveCount(before + 1)
   await expect(rows.nth(1).locator("p")).toHaveText(original.slice(0, cut).trim())
   await expect(rows.nth(2).locator("p")).toHaveText(original.slice(cut).trim())
 
   await rows.nth(1).click()
-  await rows.nth(1).getByRole("button", { name: "다음 단락과 병합" }).click()
+  await rows.nth(1).getByRole("button", { name: "Merge with next" }).click()
   await expect(rows).toHaveCount(before)
   await expect(rows.nth(1).locator("p")).toHaveText(original)
 })
@@ -90,21 +90,21 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
 test("an unanchored note can be linked to a segment", async ({ page }) => {
   await page.goto("/")
   const panel = page.locator("[data-slot=resizable-panel]").last()
-  await panel.getByRole("tab", { name: /미연결 미주/ }).click()
-  await expect(panel.getByRole("button", { name: "연결" }).first()).toBeVisible()
-  const before = await panel.getByRole("button", { name: "연결" }).count()
+  await panel.getByRole("tab", { name: /Unlinked notes/ }).click()
+  await expect(panel.getByRole("button", { name: "Link" }).first()).toBeVisible()
+  const before = await panel.getByRole("button", { name: "Link" }).count()
   expect(before).toBeGreaterThan(0)
-  await expect(page.locator("footer")).toContainText(`미연결 미주 ${before}`)
+  await expect(page.locator("footer")).toContainText(`Unlinked notes ${before}`)
 
-  await panel.getByRole("button", { name: "연결" }).first().click()
+  await panel.getByRole("button", { name: "Link" }).first().click()
   const dialog = page.getByRole("dialog")
-  await dialog.getByPlaceholder(/단락/).fill("Zemurray")
+  await dialog.getByPlaceholder(/[Pp]aragraph/).fill("Zemurray")
   await dialog.getByRole("option").first().click()
 
-  await expect(panel.getByRole("button", { name: "연결" })).toHaveCount(before - 1)
-  await expect(page.locator("footer")).toContainText(`미연결 미주 ${before - 1}`)
+  await expect(panel.getByRole("button", { name: "Link" })).toHaveCount(before - 1)
+  await expect(page.locator("footer")).toContainText(`Unlinked notes ${before - 1}`)
   await page.reload()
-  await expect(page.locator("footer")).toContainText(`미연결 미주 ${before - 1}`)
+  await expect(page.locator("footer")).toContainText(`Unlinked notes ${before - 1}`)
 })
 
 test("undo restores a merge, redo reapplies it", async ({ page }) => {
@@ -116,14 +116,14 @@ test("undo restores a merge, redo reapplies it", async ({ page }) => {
   const second = (await rows.nth(2).locator("p").innerText()).trim()
 
   await rows.nth(1).click()
-  await rows.nth(1).getByRole("button", { name: "다음 단락과 병합" }).click()
+  await rows.nth(1).getByRole("button", { name: "Merge with next" }).click()
   await expect(rows).toHaveCount(before - 1)
 
-  await page.getByRole("button", { name: "되돌리기" }).click()
+  await page.getByRole("button", { name: "Undo" }).click()
   await expect(rows).toHaveCount(before)
   await expect(rows.nth(2).locator("p")).toHaveText(second)
 
-  await page.getByRole("button", { name: "다시 실행" }).click()
+  await page.getByRole("button", { name: "Redo" }).click()
   await expect(rows).toHaveCount(before - 1)
 
   await page.reload()
@@ -177,17 +177,17 @@ test("status bar shows saved, and save failure when the server rejects", async (
 
   await rows.nth(1).click()
   await rows.nth(1).getByRole("checkbox").click()
-  await expect(status).toHaveText("저장됨")
+  await expect(status).toHaveText("Saved")
 
   await page.route("**/api/updateSegment", (r) => r.abort())
   await rows.nth(2).click()
   await rows.nth(2).getByRole("checkbox").click()
-  await expect(status).toHaveText("저장 실패")
+  await expect(status).toHaveText("Save failed")
   await expect(rows.nth(2).getByRole("checkbox")).not.toBeChecked()
 
   await page.unroute("**/api/updateSegment")
   await rows.nth(2).getByRole("checkbox").click()
-  await expect(status).toHaveText("저장됨")
+  await expect(status).toHaveText("Saved")
   await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
 })
 
@@ -206,17 +206,17 @@ test("edits are highlighted against the OCR original and listed in history", asy
 
   const mark = row.locator("mark[data-edit]")
   await expect(mark).toHaveText("EDITED")
-  await expect(mark).toHaveAttribute("aria-label", `원문: ${firstWord}`)
+  await expect(mark).toHaveAttribute("aria-label", `Original: ${firstWord}`)
 
-  const history = page.getByRole("list", { name: "이 단락의 기록" })
-  await expect(history.getByRole("button", { name: /단락 수정/ })).toHaveCount(1)
-  await history.getByRole("button", { name: /단락 수정/ }).click()
+  const history = page.getByRole("list", { name: "History of this paragraph" })
+  await expect(history.getByRole("button", { name: /Edit paragraph/ })).toHaveCount(1)
+  await history.getByRole("button", { name: /Edit paragraph/ }).click()
   await expect(history.locator("del")).toContainText(firstWord)
   await expect(history.locator("ins")).toContainText("EDITED")
 
   await page.keyboard.press("Meta+z")
   await expect(row.locator("mark[data-edit]")).toHaveCount(0)
-  await expect(history.getByText("되돌려짐")).toBeVisible()
+  await expect(history.getByText("Undone")).toBeVisible()
 })
 
 test("in-place editing: no layout shift, character undo inside, paragraph undo after", async ({ page }) => {
@@ -284,7 +284,7 @@ test("clicking a word starts editing with the caret at that word; clicking anoth
   await expect(rows.nth(2).getByRole("textbox")).toBeFocused()
   await expect(row.getByRole("textbox")).toHaveCount(0)
   await expect(row.locator("p")).toContainText("@")
-  await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 })
 
 test("tab moves editing to the next paragraph, shift+tab back, each step saves", async ({ page }) => {
@@ -309,7 +309,7 @@ test("tab moves editing to the next paragraph, shift+tab back, each step saves",
   await expect(rows.nth(2).getByRole("textbox")).toBeFocused()
   await expect(t(3)).toHaveText(o3)
   await page.keyboard.press("Escape")
-  await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 })
 
 test("an interrupted edit is offered for recovery after reload, and discarded on demand", async ({ page }) => {
@@ -330,15 +330,15 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
   const again = page.locator("[data-segment]").nth(1)
   await expect(again.locator("p")).toHaveText(original)
-  await expect(again.getByText("저장 안 됨")).toBeVisible()
-  await again.getByRole("button", { name: "복구" }).click()
+  await expect(again.getByText("Unsaved")).toBeVisible()
+  await again.getByRole("button", { name: "Recover" }).click()
   await expect(again.getByRole("textbox")).toHaveText(original + " DRAFT")
   await page.keyboard.press("Enter")
   await expect(again.locator("p")).toHaveText(original + " DRAFT")
-  await expect(again.getByText("저장 안 됨")).toHaveCount(0)
+  await expect(again.getByText("Unsaved")).toHaveCount(0)
   await page.reload()
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
-  await expect(page.locator("[data-segment]").nth(1).getByText("저장 안 됨")).toHaveCount(0)
+  await expect(page.locator("[data-segment]").nth(1).getByText("Unsaved")).toHaveCount(0)
 
   // discard path
   const row2 = page.locator("[data-segment]").nth(2)
@@ -349,8 +349,8 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   await page.reload()
   await page.getByRole("button", { name: /10: Revolutin/ }).click()
   const row2b = page.locator("[data-segment]").nth(2)
-  await row2b.getByRole("button", { name: "버리기" }).click()
-  await expect(row2b.getByText("저장 안 됨")).toHaveCount(0)
+  await row2b.getByRole("button", { name: "Discard" }).click()
+  await expect(row2b.getByText("Unsaved")).toHaveCount(0)
 })
 
 test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
@@ -368,17 +368,17 @@ test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
   await page.keyboard.type(" KEEP")
   await page.waitForTimeout(500)
   await page.keyboard.press("Enter")
-  await expect(page.locator("footer [role=status]")).toHaveText("저장 실패")
+  await expect(page.locator("footer [role=status]")).toHaveText("Save failed")
   await expect(row.locator("p")).toHaveText(original)
-  await expect(row.getByText("저장 안 됨")).toBeVisible()
+  await expect(row.getByText("Unsaved")).toBeVisible()
 
   await page.unroute("**/api/updateSegment")
-  await row.getByRole("button", { name: "복구" }).click()
+  await row.getByRole("button", { name: "Recover" }).click()
   await expect(row.getByRole("textbox")).toBeFocused()
   await expect(row.getByRole("textbox")).toHaveText(original + " KEEP")
   await page.keyboard.press("Enter")
   await expect(row.locator("p")).toHaveText(original + " KEEP")
-  await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 })
 
 test("the selected segment is outlined on the scanned page and follows the selection", async ({ page }) => {
@@ -390,7 +390,7 @@ test("the selected segment is outlined on the scanned page and follows the selec
 
   const mark = page.getByTestId("segment-highlight")
   await expect(mark).toBeVisible()
-  const img = page.getByRole("img", { name: /원서 \d+쪽/ })
+  const img = page.getByRole("img", { name: /Book page \d+/ })
   const [m1, i] = await Promise.all([mark.boundingBox(), img.boundingBox()])
   expect(m1!.x).toBeGreaterThanOrEqual(i!.x - 1)
   expect(m1!.x + m1!.width).toBeLessThanOrEqual(i!.x + i!.width + 1)
@@ -410,17 +410,17 @@ test("paging the scan across a chapter boundary switches the chapter; empty page
   await selectRow(last)
   const lastPage = Number((await page.locator("[data-slot=resizable-panel]").first().getByText(/^p\. \d+$/).innerText()).replace("p. ", ""))
 
-  const next = page.getByRole("button", { name: "다음 페이지" })
+  const next = page.getByRole("button", { name: "Next page" })
   for (let p = lastPage; p < 11; p++) await next.click()
   await expect(page.locator("[data-slot=resizable-panel]").first().getByText("p. 11", { exact: true })).toBeVisible()
   await expect(rows.first()).toHaveText(/Selma/)
   await expect(page.locator("footer")).toContainText("1: Selma")
 
   // p.9 / p.10 are blank pages between chapters
-  const prev = page.getByRole("button", { name: "이전 페이지" })
+  const prev = page.getByRole("button", { name: "Previous page" })
   await prev.click()
   await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("p. 10")
-  await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("이 쪽에는 단락이 없습니다")
+  await expect(page.locator("[data-slot=scroll-area] [role=status]")).toContainText("No paragraphs on this page")
 })
 
 test("a caption can be added on an empty page, edited, and undone", async ({ page }) => {
@@ -429,25 +429,25 @@ test("a caption can be added on an empty page, edited, and undone", async ({ pag
   await expect(rows.first()).toHaveText(/Prologue/)
   const count = await rows.count()
   await selectRow(rows.last())
-  const next = page.getByRole("button", { name: "다음 페이지" })
+  const next = page.getByRole("button", { name: "Next page" })
   const notice = page.locator("[data-slot=scroll-area] [role=status]")
   // walk forward until a blank page inside the Prologue range shows the notice (p.9/10)
   for (let i = 0; i < 4 && !(await notice.count()); i++) await next.click()
-  await expect(notice).toContainText("이 쪽에는 단락이 없습니다")
+  await expect(notice).toContainText("No paragraphs on this page")
   const pageText = (await notice.locator("span").first().innerText()).trim()
 
-  await notice.getByRole("button", { name: "캡션 추가" }).click()
+  await notice.getByRole("button", { name: "Add caption" }).click()
   await expect(rows).toHaveCount(count + 1)
   const row = rows.last()
   await expect(row.getByRole("textbox")).toBeFocused()
   await page.keyboard.type("Zemurray on the docks, 1910")
   await page.keyboard.press("Enter")
   await expect(row.locator("p")).toHaveText("Zemurray on the docks, 1910")
-  await expect(row.getByRole("button", { name: "캡션" })).toHaveAttribute("aria-pressed", "true")
+  await expect(row.getByRole("button", { name: "Caption" })).toHaveAttribute("aria-pressed", "true")
   // the new row sits under a header for the formerly empty page
   await expect(row.locator("xpath=preceding-sibling::div[1]")).toHaveText(pageText)
   await expect(notice).toHaveCount(0)
-  await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
   await page.reload()
   await expect(page.locator("[data-segment]")).toHaveCount(count + 1)
@@ -461,12 +461,12 @@ test("find lists hits across the book, jumps to one, and replace-all is a single
   await expect(page.locator("[data-segment]").first()).toHaveText(/Prologue/)
   await page.locator("body").click({ position: { x: 5, y: 5 } })
   await page.keyboard.press("Meta+f")
-  const find = page.getByLabel("찾을 말")
+  const find = page.getByRole("textbox", { name: "Find", exact: true })
   await expect(find).toBeFocused()
   await find.fill("Zemurray")
   const status = page.locator("[data-slot=tabs-content][data-state=active], [role=tabpanel]").locator("[role=status]").first()
-  await expect(status).toContainText(/\d+개 단락, \d+곳/)
-  const hitCount = Number((await status.innerText()).match(/(\d+)개 단락/)![1])
+  await expect(status).toContainText(/\d+ paragraphs, \d+ matches/)
+  const hitCount = Number((await status.innerText()).match(/(\d+) paragraphs/)![1])
   expect(hitCount).toBeGreaterThan(5)
 
   // jump to a hit in a later chapter
@@ -476,14 +476,14 @@ test("find lists hits across the book, jumps to one, and replace-all is a single
   await expect(page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })).toContainText("Zemurray")
 
   // replace all, then undo in one step
-  await page.getByLabel("바꿀 말").fill("ZEMURRAY")
-  await page.getByRole("button", { name: /모두 바꾸기/ }).click()
-  await expect(status).toContainText("일치하는 곳이 없습니다")
+  await page.getByRole("textbox", { name: "Replace with" }).fill("ZEMURRAY")
+  await page.getByRole("button", { name: /Replace all/ }).click()
+  await expect(status).toContainText("No matches")
   await find.fill("ZEMURRAY")
   // the book already had a few all-caps occurrences, so at least every replaced segment shows up
-  await expect.poll(async () => Number((await status.innerText()).match(/(\d+)개 단락/)?.[1] ?? 0)).toBeGreaterThanOrEqual(hitCount)
+  await expect.poll(async () => Number((await status.innerText()).match(/(\d+) paragraphs/)?.[1] ?? 0)).toBeGreaterThanOrEqual(hitCount)
   await page.locator("body").click({ position: { x: 5, y: 5 } })
   await page.keyboard.press("Meta+z")
   await find.fill("Zemurray")
-  await expect(status).toContainText(`${hitCount}개 단락`)
+  await expect(status).toContainText(`${hitCount} paragraphs`)
 })

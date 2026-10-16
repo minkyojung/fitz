@@ -21,15 +21,15 @@ export function NotesPanel({ notes, segments, onAnchor }: Props) {
     <div className="flex h-full flex-col">
       <ScrollArea className="min-h-0 flex-1">
         {notes.length === 0 ? (
-          <p className="p-3 text-xs text-muted-foreground">모든 미주가 본문에 연결되었습니다.</p>
+          <p className="p-3 text-xs text-muted-foreground">All notes are linked to the text.</p>
         ) : (
           <ul className="divide-y">
             {notes.map((n) => (
               <li key={n.id} className="space-y-1 px-3 py-2 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground tabular-nums">{n.origPage ? `p. ${n.origPage}` : "쪽 없음"}</span>
+                  <span className="text-muted-foreground tabular-nums">{n.origPage ? `p. ${n.origPage}` : "No page"}</span>
                   <Button size="xs" variant="outline" className="ml-auto" onClick={() => setLinking(n)}>
-                    연결
+                    Link
                   </Button>
                 </div>
                 {n.origQuote && <p className="reading text-[13px] font-medium" lang="en">“{n.origQuote}”</p>}
@@ -43,13 +43,13 @@ export function NotesPanel({ notes, segments, onAnchor }: Props) {
       <CommandDialog
         open={linking !== null}
         onOpenChange={(open) => !open && setLinking(null)}
-        title="미주를 연결할 단락 선택"
-        description="현재 장의 단락을 검색합니다"
+        title="Choose a paragraph for this note"
+        description="Searches paragraphs in the current chapter"
       >
         <Command>
-        <CommandInput placeholder={linking?.origQuote ? `“${linking.origQuote}” 가 있는 단락…` : "단락 검색…"} />
+        <CommandInput placeholder={linking?.origQuote ? `Paragraph containing “${linking.origQuote}”…` : "Search paragraphs…"} />
         <CommandList>
-          <CommandEmpty>일치하는 단락이 없습니다.</CommandEmpty>
+          <CommandEmpty>No matching paragraph.</CommandEmpty>
           {segments.map((s) => (
             <CommandItem
               key={s.id}

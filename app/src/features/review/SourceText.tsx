@@ -38,7 +38,7 @@ export function SourceText({ text, ocr }: Props) {
             <mark
               data-edit
               className={added ? "rounded-sm bg-mark-comment text-inherit box-decoration-clone" : "inline-block w-0.5 bg-mark-warning align-baseline"}
-              aria-label={removed ? `원문: ${removed.text.trim()}` : "추가됨"}
+              aria-label={removed ? `Original: ${removed.text.trim()}` : "Added"}
             />
           }
         >
@@ -47,10 +47,10 @@ export function SourceText({ text, ocr }: Props) {
         <TooltipContent side="top">
           {removed ? (
             <span>
-              원문: <span className="line-through opacity-70">{removed.text.trim()}</span>
+              Original: <span className="line-through opacity-70">{removed.text.trim()}</span>
             </span>
           ) : (
-            "추가됨"
+            "Added"
           )}
         </TooltipContent>
       </Tooltip>,
