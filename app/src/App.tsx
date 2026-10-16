@@ -49,6 +49,9 @@ export function App() {
     onAddCaption: book.addCaption,
   })
   const [focusMode, setFocusMode] = useState(false)
+  // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
+  const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false })
+  const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode })
   const translating = mode === "translate"
   const commands = translating ? translate.commands : review.commands
@@ -59,7 +62,7 @@ export function App() {
     [speller, userWords, book.segments],
   )
   const openFind = () => { setPanelTab("find"); setFindFocusToken((n) => n + 1) }
-  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind }), [commands, book.undo, book.redo]))
+  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleScan }), [commands, book.undo, book.redo])) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
 
@@ -69,6 +72,7 @@ export function App() {
     <AppShell
       mode={mode}
       onModeChange={setMode}
+      leftCollapsed={!scanShown[mode]}
       sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       left={review.left}
       right={translating ? translate.view : review.right}
@@ -87,6 +91,7 @@ export function App() {
               <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
               <span data-sheets>{formatSheets(chapterSheets)}</span>
               <Toggle size="sm" variant="outline" pressed={focusMode} onPressedChange={setFocusMode} aria-label="Focus mode">Focus</Toggle>
+              <Toggle size="sm" variant="outline" pressed={scanShown[mode]} onPressedChange={toggleScan} aria-label="Show scan">Scan</Toggle>
             </>
           ) : (
             <span>

@@ -1,4 +1,5 @@
-import type { ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
+import type { PanelImperativeHandle } from "react-resizable-panels"
 
 import { Sidebar, SidebarContent, SidebarHeader, SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -20,10 +21,19 @@ interface AppShellProps {
   right: ReactNode
   panel: ReactNode
   status: ReactNode
+  /** Collapse the scan (left) panel, e.g. while translating. */
+  leftCollapsed?: boolean
 }
 
 /** Fixed frame: sidebar | [tabs / left+right+panel / status]. Content is injected per mode. */
-export function AppShell({ mode, onModeChange, sidebar, left, right, panel, status }: AppShellProps) {
+export function AppShell({ mode, onModeChange, sidebar, left, right, panel, status, leftCollapsed = false }: AppShellProps) {
+  const leftRef = useRef<PanelImperativeHandle>(null)
+  useEffect(() => {
+    const p = leftRef.current
+    if (!p) return
+    if (leftCollapsed && !p.isCollapsed()) p.collapse()
+    if (!leftCollapsed && p.isCollapsed()) p.expand()
+  }, [leftCollapsed])
   return (
     <SidebarProvider style={{ "--sidebar-width": "15rem" } as React.CSSProperties}>
       <Sidebar collapsible="offcanvas">
@@ -43,7 +53,7 @@ export function AppShell({ mode, onModeChange, sidebar, left, right, panel, stat
           </Tabs>
         </header>
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          <ResizablePanel defaultSize="42" minSize={240}>
+          <ResizablePanel panelRef={leftRef} defaultSize="42" minSize={240} collapsible collapsedSize={0}>
             {left}
           </ResizablePanel>
           <ResizableHandle />

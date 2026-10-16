@@ -64,7 +64,7 @@ cd app && pnpm test:unit   # keymap 단위 테스트
 
 - 클릭 → 그 자리 편집. Enter 새 블록, ⌘Enter 확정(Reviewed)하고 다음 미확정 짝으로, Esc 취소, Tab/Shift-Tab 이웃 짝, ↑/↓는 글 끝·처음에서 이웃 짝으로 흐른다.
 - 상태: untranslated → draft(첫 저장 시 자동) → reviewed(⌘Enter) → final. 사이드바 진행률과 상태 바 "Confirmed n / m", 원고지 매수(200자, 공백 포함, `lib/manuscript.ts`).
-- 임시본은 `draft:<book>:<segment>:target`로 원문 임시본과 분리. Focus 토글은 편집 중인 짝만 선명하게.
+- 임시본은 `draft:<book>:<segment>:target`로 원문 임시본과 분리. Focus 토글은 편집 중인 짝만 선명하게. 스캔 패널은 번역 모드에서 기본으로 접히며 Scan 토글 또는 ⌘I로 연다.
 - 번역문 변경은 `updateSegment`(targetDoc/status)로 기록되어 ⌘Z 가능하며, 이전 번역은 `segment_version`에 스냅샷된다.
 
 ## 쪽과 목록의 동기
