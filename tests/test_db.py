@@ -35,7 +35,7 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 4
+    assert len(steps) == 5
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
@@ -66,5 +66,17 @@ def test_migration_adds_segment_box_table(tmp_path: Path):
     conn = sqlite3.connect(p)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(segment_box)")}
     assert cols == {"segment_id", "page_no", "x0", "y0", "x1", "y1"}
+    conn.close()
+    assert migrate(p) == []
+
+
+def test_migration_adds_target_text(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);")
+    conn.commit(); conn.close()
+    assert any("target_text" in s for s in migrate(p))
+    conn = sqlite3.connect(p)
+    assert "target_text" in {r[1] for r in conn.execute("PRAGMA table_info(segment)")}
     conn.close()
     assert migrate(p) == []

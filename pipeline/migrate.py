@@ -37,6 +37,9 @@ def migrate(path: Path) -> list[str]:
             undone INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
         """)
         done.append("ops table")
+    if "target_text" not in cols:
+        conn.execute("ALTER TABLE segment ADD COLUMN target_text TEXT")
+        done.append("target_text column")
     if "segment_box" not in tables:
         conn.executescript("""
           CREATE TABLE segment_box (

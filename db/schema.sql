@@ -48,6 +48,7 @@ CREATE TABLE segment (
   source_doc    TEXT NOT NULL,        -- ProseMirror JSON (이탤릭 mark 포함)
   source_text   TEXT NOT NULL,        -- 평문. 검색/앵커 매칭용 (source_doc에서 파생)
   target_doc    TEXT,                 -- ProseMirror JSON (댓글/주석 mark 포함). NULL = 미번역
+  target_text   TEXT,                 -- 번역문 평문 (target_doc에서 파생). 검색·매수 계산용
   status        TEXT NOT NULL DEFAULT 'untranslated'
                 CHECK (status IN ('untranslated','draft','reviewed','final')),
   verified      INTEGER NOT NULL DEFAULT 0,  -- 검수 모드에서 원본 대조 확인됨

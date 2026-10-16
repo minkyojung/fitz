@@ -4,6 +4,7 @@
 import { DatabaseSync } from "node:sqlite"
 
 export const KINDS = ["paragraph", "heading", "blockquote", "caption", "verse"]
+export const STATUSES = ["untranslated", "draft", "reviewed", "final"]
 
 export const httpError = (status, message) => Object.assign(new Error(message), { status })
 
@@ -75,6 +76,7 @@ const checkDoc = (doc) => {
 export const segRow = (r) => ({
   id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
   sourceText: r.source_text, sourceDoc: JSON.parse(r.source_doc), ocrText: r.ocr_text ?? null,
+  targetDoc: r.target_doc ? JSON.parse(r.target_doc) : null, targetText: r.target_text ?? "",
   verified: r.verified === 1, status: r.status,
 })
 export const noteRow = (r) => ({
@@ -129,22 +131,41 @@ const setText = (db, id, text, extra = "") =>
 
 /** Each command: (db, params) → { result, forward, inverse: {name, params}, segmentIds }. No transactions here. */
 export const COMMANDS = {
-  // `doc` (ProseMirror JSON) wins over `text`; text is derived from it so marks survive.
-  updateSegment(db, { id, text, doc, kind, verified }) {
+  // Source: `doc` (ProseMirror JSON) wins over `text`; text is derived from it so marks survive.
+  // Target: `targetDoc` (null clears the translation); `status` moves the workflow state.
+  // A target change also snapshots the previous translation into segment_version.
+  updateSegment(db, { id, text, doc, kind, verified, targetDoc, status }) {
     const cur = getSegment(db, id)
     if (doc !== undefined) checkDoc(doc)
+    if (targetDoc != null) checkDoc(targetDoc)
     const nextDoc = doc !== undefined ? JSON.stringify(doc) : text !== undefined ? pmDoc(text) : cur.source_doc
     const nextText = doc !== undefined ? docText(doc) : text !== undefined ? text : cur.source_text
+    const nextTarget = targetDoc === undefined ? cur.target_doc : targetDoc === null ? null : JSON.stringify(targetDoc)
+    const nextTargetText = nextTarget ? docText(JSON.parse(nextTarget)) : null
+    let nextStatus = status ?? cur.status
+    if (targetDoc !== undefined && status === undefined) {
+      // first translation moves untranslated → draft; clearing it moves back
+      if (nextTargetText?.trim() && cur.status === "untranslated") nextStatus = "draft"
+      if (!nextTargetText?.trim()) nextStatus = "untranslated"
+    }
     const next = { kind: kind ?? cur.kind, verified: verified ?? cur.verified === 1 }
     if (!KINDS.includes(next.kind)) throw httpError(400, "bad kind")
-    db.prepare(`UPDATE segment SET source_text = ?, source_doc = ?, kind = ?, verified = ?, updated_at = datetime('now')
-                WHERE id = ?`).run(nextText, nextDoc, next.kind, next.verified ? 1 : 0, id)
+    if (!STATUSES.includes(nextStatus)) throw httpError(400, "bad status")
+    if (targetDoc !== undefined && cur.target_doc && nextTarget !== cur.target_doc) {
+      db.prepare("INSERT INTO segment_version(segment_id, target_doc) VALUES (?, ?)").run(id, cur.target_doc)
+    }
+    db.prepare(`UPDATE segment SET source_text = ?, source_doc = ?, kind = ?, verified = ?, target_doc = ?, target_text = ?,
+                status = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(nextText, nextDoc, next.kind, next.verified ? 1 : 0, nextTarget, nextTargetText, nextStatus, id)
     return {
       result: segOut(db, id),
-      forward: { id, doc: JSON.parse(nextDoc), text: nextText, ...next },
+      forward: { id, doc: JSON.parse(nextDoc), text: nextText, ...next, targetDoc: nextTarget ? JSON.parse(nextTarget) : null, status: nextStatus },
       inverse: {
         name: "updateSegment",
-        params: { id, doc: JSON.parse(cur.source_doc), text: cur.source_text, kind: cur.kind, verified: cur.verified === 1 },
+        params: {
+          id, doc: JSON.parse(cur.source_doc), text: cur.source_text, kind: cur.kind, verified: cur.verified === 1,
+          targetDoc: cur.target_doc ? JSON.parse(cur.target_doc) : null, status: cur.status,
+        },
       },
       segmentIds: [id],
     }

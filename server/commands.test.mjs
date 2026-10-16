@@ -34,7 +34,7 @@ function fixture() {
 
 /** Everything undo must restore, in a comparable shape. */
 const snapshot = (db) => ({
-  segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, verified FROM segment ORDER BY id").all(),
+  segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, target_doc, target_text, status, verified FROM segment ORDER BY id").all(),
   notes: db.prepare("SELECT id, segment_id, src_start, src_end, anchored FROM note ORDER BY id").all(),
   comments: db.prepare("SELECT id, segment_id FROM comment ORDER BY id").all(),
   glossary: db.prepare("SELECT book_id, term, translation, kind FROM glossary ORDER BY term").all(),
@@ -71,6 +71,26 @@ roundTrip("mergeWithNext", { id: 2 })                  // pulls segment 3 (note 
 roundTrip("setNoteAnchor", { noteId: 3, segmentId: 2, anchored: true })
 roundTrip("insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "A photo", pageNo: 4 })
 roundTrip("addGlossaryWord", { bookId: 1, term: "Zemurray" })
+const pmDocJ = (t) => JSON.parse(pmDoc(t))
+roundTrip("updateSegment", { id: 2, targetDoc: pmDocJ("알파 베타"), status: "reviewed" })
+
+test("a first translation moves the status to draft, clearing it moves back, and versions are kept", () => {
+  const db = fixture()
+  const r1 = execute(db, "updateSegment", { id: 2, targetDoc: pmDocJ("알파 베타 감마") })
+  assert.equal(r1.status, "draft")
+  assert.equal(r1.targetText, "알파 베타 감마")
+  assert.equal(db.prepare("SELECT count(*) n FROM segment_version WHERE segment_id = 2").get().n, 0) // nothing to snapshot yet
+  execute(db, "updateSegment", { id: 2, targetDoc: pmDocJ("알파 베타 감마 델타") })
+  assert.equal(db.prepare("SELECT count(*) n FROM segment_version WHERE segment_id = 2").get().n, 1)
+  const r3 = execute(db, "updateSegment", { id: 2, status: "final" })
+  assert.equal(r3.status, "final")
+  const r4 = execute(db, "updateSegment", { id: 2, targetDoc: null })
+  assert.equal(r4.status, "untranslated")
+  assert.equal(r4.targetText, "")
+  assert.throws(() => execute(db, "updateSegment", { id: 2, status: "done" }), /bad status/)
+  undo(db)
+  assert.equal(db.prepare("SELECT status FROM segment WHERE id = 2").get().status, "final")
+})
 
 test("split moves a note into the tail and unsplit brings it back at the same offset", () => {
   const db = fixture()
