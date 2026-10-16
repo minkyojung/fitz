@@ -1,13 +1,26 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/inter";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import "@fontsource-variable/literata/opsz.css";
+@import "@fontsource-variable/literata/opsz-italic.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Inter Variable', sans-serif;
+    --font-sans: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+    /* reading surfaces: source (English, serif) and target (Korean) */
+    --font-source: 'Literata Variable', Georgia, serif;
+    --font-target: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+    --text-reading: 1rem;
+    --text-reading--line-height: var(--leading-reading);
+    /* semantic marks used by the editor */
+    --color-mark-comment: var(--mark-comment);
+    --color-mark-note: var(--mark-note);
+    --color-mark-term: var(--mark-term);
+    --color-mark-italic: var(--mark-italic);
+    --color-mark-warning: var(--mark-warning);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -73,6 +86,14 @@
     --chart-4: oklch(0.508 0.118 165.612);
     --chart-5: oklch(0.432 0.095 166.913);
     --radius: 0.625rem;
+    --leading-reading: 1.65;
+    --leading-reading-ko: 1.75;
+    --measure-reading: 38rem;
+    --mark-comment: oklch(0.93 0.08 90);
+    --mark-note: oklch(0.92 0.06 240);
+    --mark-term: oklch(0.93 0.07 160);
+    --mark-italic: oklch(0.92 0.08 300);
+    --mark-warning: oklch(0.9 0.12 30);
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.596 0.145 163.225);
@@ -107,6 +128,11 @@
     --chart-3: oklch(0.596 0.145 163.225);
     --chart-4: oklch(0.508 0.118 165.612);
     --chart-5: oklch(0.432 0.095 166.913);
+    --mark-comment: oklch(0.35 0.07 90);
+    --mark-note: oklch(0.35 0.06 240);
+    --mark-term: oklch(0.35 0.06 160);
+    --mark-italic: oklch(0.35 0.07 300);
+    --mark-warning: oklch(0.4 0.12 30);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.696 0.17 162.48);
@@ -127,4 +153,29 @@
   html {
     @apply font-sans;
     }
+}
+
+/* Reading surfaces. Apply .reading plus lang="en" / lang="ko" on the paragraph container. */
+@layer components {
+  .reading {
+    font-size: var(--text-reading);
+    line-height: var(--leading-reading);
+    max-width: var(--measure-reading);
+    text-wrap: pretty;
+    font-variant-numeric: oldstyle-nums;
+  }
+  .reading:lang(en) {
+    font-family: var(--font-source);
+    font-optical-sizing: auto;
+  }
+  .reading:lang(ko) {
+    font-family: var(--font-target);
+    line-height: var(--leading-reading-ko);
+    letter-spacing: -0.005em;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+  .reading:lang(ko) :is(h1, h2, h3) {
+    word-break: keep-all;
+  }
 }
