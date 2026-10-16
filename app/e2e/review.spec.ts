@@ -111,3 +111,39 @@ test("undo restores a merge, redo reapplies it", async ({ page }) => {
   await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
   await expect(page.locator("[data-slot=scroll-area] .group")).toHaveCount(before - 1)
 })
+
+test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undoes", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /4: Brown to Green/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Brown to Green/)
+  await page.locator("body").click({ position: { x: 5, y: 5 } }) // drop focus from the sidebar button
+
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Space")
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Space")
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Space")
+  await expect(rows.nth(1).getByRole("checkbox")).toBeChecked()
+  await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
+  await expect(rows.nth(3).getByRole("checkbox")).toBeChecked()
+  await expect(page.getByRole("button", { name: /4: Brown to Green/ })).toContainText("3/")
+
+  await page.keyboard.press("Meta+z")
+  await expect(rows.nth(3).getByRole("checkbox")).not.toBeChecked()
+  await expect(page.getByRole("button", { name: /4: Brown to Green/ })).toContainText("2/")
+
+  await page.keyboard.press("ArrowUp")
+  await page.keyboard.press("Enter")
+  const box = rows.nth(2).getByRole("textbox")
+  await expect(box).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(box).toHaveCount(0)
+  // space inside the editor must type, not toggle
+  await page.keyboard.press("Enter")
+  await rows.nth(2).getByRole("textbox").press("End")
+  await rows.nth(2).getByRole("textbox").press("Space")
+  await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
+  await page.keyboard.press("Escape")
+})

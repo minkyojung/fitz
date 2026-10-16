@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { IconArrowBackUp, IconArrowForwardUp } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -8,11 +8,14 @@ import { ChapterList } from "@/features/review/ChapterList"
 import { NotesPanel } from "@/features/review/NotesPanel"
 import { useReview } from "@/features/review/ReviewView"
 import { useBook } from "@/data/useBook"
+import { useKeymap } from "@/lib/useKeymap"
 
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
   const book = useBook()
   const review = useReview({ pages: book.pages, segments: book.segments, onPatch: book.updateSegment, onSplit: book.splitSegment, onMerge: book.mergeWithNext })
+  const { commands } = review
+  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo }), [commands, book.undo, book.redo]))
 
   if (book.error) return <div className="p-8 text-destructive">API 연결 실패: {book.error}</div>
 
