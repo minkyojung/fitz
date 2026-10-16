@@ -31,3 +31,12 @@ uv run python -m pipeline.build --pdf "<book>.pdf" --out out --no-images
 - `kind='blockquote'` 세그먼트의 범위, 편지/운문의 줄바꿈
 - `note.anchored=0` 미주의 수동 연결
 - 사진 페이지의 캡션 (페이지 단위로 버려짐)
+
+## 개발 서버 (임시 로컬 API)
+
+```sh
+node server/index.mjs            # http://localhost:4800, out/book.db 와 out/pages 사용
+cd app && pnpm dev               # 화면
+```
+
+화면은 `app/src/data/api.ts` 인터페이스만 의존한다. 지금 구현은 HTTP(`http.ts`), 나중에 Tauri 명령으로 교체.
