@@ -1,5 +1,6 @@
 import { DiffView } from "@/features/review/DiffView"
 import { SpellGallery } from "./SpellGallery"
+import { TranslateGallery } from "./TranslateGallery"
 import { SourceText } from "@/features/review/SourceText"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { IconChevronRight } from "@tabler/icons-react"
@@ -43,6 +44,7 @@ function Row({ title, ocr, text }: (typeof CASES)[number]) {
 
 export function Gallery() {
   if (location.search.includes("spell")) return <SpellGallery />
+  if (location.search.includes("translate")) return <TranslateGallery />
   return (
     <div className="grid min-h-svh grid-cols-[1fr_340px] gap-6 p-8">
       <div className="space-y-3">

@@ -4,6 +4,8 @@
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 @import "@fontsource-variable/literata/opsz.css";
 @import "@fontsource-variable/literata/opsz-italic.css";
+@import "@fontsource/noto-serif-kr/400.css";
+@import "@fontsource/noto-serif-kr/700.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -12,7 +14,7 @@
     --font-sans: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
     /* reading surfaces: source (English, serif) and target (Korean) */
     --font-source: 'Literata Variable', Georgia, serif;
-    --font-target: 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+    --font-target: 'Noto Serif KR', 'Apple SD Gothic Neo', serif;
     --text-reading: 1rem;
     --text-reading--line-height: var(--leading-reading);
     /* semantic marks used by the editor */
@@ -177,7 +179,7 @@
   .reading:lang(ko) {
     font-family: var(--font-target);
     line-height: var(--leading-reading-ko);
-    letter-spacing: -0.005em;
+    letter-spacing: 0;
     word-break: normal;
     overflow-wrap: anywhere;
   }
