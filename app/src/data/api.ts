@@ -1,6 +1,7 @@
 /** Data interface the UI depends on. Implementations: http.ts (dev server), later a Tauri binding. */
 
-/** ProseMirror document JSON (single paragraph of text nodes, optional marks). */
+/** ProseMirror document JSON: paragraphs of text nodes with optional marks.
+ *  Source docs hold exactly one paragraph; a translation may hold several (blocks inside one pair). */
 export type DocJSON = { type: "doc"; content: Array<{ type: "paragraph"; content?: Array<{ type: "text"; text: string; marks?: Array<{ type: string }> }> }> }
 
 export type SegmentKind = "paragraph" | "heading" | "blockquote" | "caption" | "verse"
@@ -19,6 +20,8 @@ export interface Chapter {
   startPage: number | null
   segmentCount: number
   verifiedCount: number
+  /** Segments whose translation is reviewed or final. */
+  confirmedCount: number
 }
 
 /** Where a segment sits on a scanned page, as fractions of the page (0..1). One per page it touches. */
@@ -39,6 +42,9 @@ export interface Segment {
   pageEnd: number
   sourceText: string
   sourceDoc: DocJSON
+  /** Translation; null until written. Plain text joins paragraphs with newlines. */
+  targetDoc: DocJSON | null
+  targetText: string
   /** OCR original, immutable. null when the row was edited before originals were kept. */
   ocrText: string | null
   boxes: Box[]
@@ -75,6 +81,9 @@ export interface SegmentPatch {
   sourceText?: string
   /** Wins over sourceText; the server derives the text from it so marks survive. */
   sourceDoc?: DocJSON
+  /** null clears the translation. First translation moves status to draft automatically. */
+  targetDoc?: DocJSON | null
+  status?: SegmentStatus
   kind?: SegmentKind
   verified?: boolean
 }

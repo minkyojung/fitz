@@ -12,26 +12,27 @@ export interface Draft {
 
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">
 
-const key = (bookId: number, segmentId: number) => `draft:${bookId}:${segmentId}`
+export type Side = "source" | "target"
+const key = (bookId: number, segmentId: number, side: Side) => `draft:${bookId}:${segmentId}${side === "target" ? ":target" : ""}`
 
 export function createDraftStore(store: Store, bookId: number) {
   return {
-    save(segmentId: number, doc: DocJSON, baseText: string) {
+    save(segmentId: number, doc: DocJSON, baseText: string, side: Side = "source") {
       const d: Draft = { doc, baseText, savedAt: Date.now() }
-      store.setItem(key(bookId, segmentId), JSON.stringify(d))
+      store.setItem(key(bookId, segmentId, side), JSON.stringify(d))
     },
-    load(segmentId: number): Draft | null {
-      const raw = store.getItem(key(bookId, segmentId))
+    load(segmentId: number, side: Side = "source"): Draft | null {
+      const raw = store.getItem(key(bookId, segmentId, side))
       if (!raw) return null
       try {
         return JSON.parse(raw) as Draft
       } catch {
-        store.removeItem(key(bookId, segmentId))
+        store.removeItem(key(bookId, segmentId, side))
         return null
       }
     },
-    clear(segmentId: number) {
-      store.removeItem(key(bookId, segmentId))
+    clear(segmentId: number, side: Side = "source") {
+      store.removeItem(key(bookId, segmentId, side))
     },
     /** Segment ids that have a draft, for the badge pass after a chapter loads. */
     ids(): number[] {

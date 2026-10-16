@@ -17,10 +17,10 @@ export const openDb = (path) => {
 export const pmDoc = (text) =>
   JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }] })
 
-/** Plain text of a ProseMirror doc (single paragraph; text nodes only). */
+/** Plain text of a ProseMirror doc: paragraphs joined by newlines, text nodes only. */
 export const docText = (doc) => {
-  const walk = (n) => (n.type === "text" ? n.text ?? "" : (n.content ?? []).map(walk).join(""))
-  return walk(doc)
+  const para = (n) => (n.content ?? []).map((c) => c.text ?? "").join("")
+  return (doc.content ?? []).map(para).join("\n")
 }
 const paraNodes = (doc) => doc.content[0].content ?? []
 const mkDoc = (nodes) => ({ type: "doc", content: [{ type: "paragraph", content: nodes }] })
@@ -65,12 +65,13 @@ export const replaceInDoc = (doc, query, replacement) => {
   return { doc: mkDoc(nodes), count }
 }
 
-/** Validate a doc for our schema: one paragraph of text nodes, optional marks. */
-const checkDoc = (doc) => {
-  const ok = doc && doc.type === "doc" && Array.isArray(doc.content) && doc.content.length === 1
-    && doc.content[0].type === "paragraph"
-    && (doc.content[0].content ?? []).every((n) => n.type === "text" && typeof n.text === "string")
-  if (!ok) throw httpError(400, "doc must be a single paragraph of text")
+/** Validate a doc: paragraphs of text nodes (optional marks). Source docs must be exactly one paragraph;
+ *  a translation may be written as several blocks inside the same pair. */
+const checkDoc = (doc, { multi = false } = {}) => {
+  const paras = doc && doc.type === "doc" && Array.isArray(doc.content) ? doc.content : null
+  const ok = paras && paras.length >= 1 && (multi || paras.length === 1)
+    && paras.every((p) => p.type === "paragraph" && (p.content ?? []).every((n) => n.type === "text" && typeof n.text === "string"))
+  if (!ok) throw httpError(400, multi ? "doc must be one or more paragraphs of text" : "doc must be a single paragraph of text")
 }
 
 export const segRow = (r) => ({
@@ -137,7 +138,7 @@ export const COMMANDS = {
   updateSegment(db, { id, text, doc, kind, verified, targetDoc, status }) {
     const cur = getSegment(db, id)
     if (doc !== undefined) checkDoc(doc)
-    if (targetDoc != null) checkDoc(targetDoc)
+    if (targetDoc != null) checkDoc(targetDoc, { multi: true })
     const nextDoc = doc !== undefined ? JSON.stringify(doc) : text !== undefined ? pmDoc(text) : cur.source_doc
     const nextText = doc !== undefined ? docText(doc) : text !== undefined ? text : cur.source_text
     const nextTarget = targetDoc === undefined ? cur.target_doc : targetDoc === null ? null : JSON.stringify(targetDoc)

@@ -23,9 +23,10 @@ const routes = {
     return { id: b.id, title: b.title, author: b.author }
   },
   listChapters: () =>
-    db.prepare(`SELECT c.id, c.idx, c.title, c.start_page, count(s.id) n, coalesce(sum(s.verified), 0) v
+    db.prepare(`SELECT c.id, c.idx, c.title, c.start_page, count(s.id) n, coalesce(sum(s.verified), 0) v,
+                       coalesce(sum(s.status IN ('reviewed','final')), 0) t
                 FROM chapter c LEFT JOIN segment s ON s.chapter_id = c.id GROUP BY c.id ORDER BY c.idx`).all()
-      .map((r) => ({ id: r.id, idx: r.idx, title: r.title, startPage: r.start_page, segmentCount: r.n, verifiedCount: r.v })),
+      .map((r) => ({ id: r.id, idx: r.idx, title: r.title, startPage: r.start_page, segmentCount: r.n, verifiedCount: r.v, confirmedCount: r.t })),
   listSegments: ({ chapterId }) => {
     const boxes = new Map()
     for (const b of db.prepare(`SELECT b.* FROM segment_box b JOIN segment s ON s.id = b.segment_id

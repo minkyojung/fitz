@@ -40,3 +40,15 @@ test("corrupt entries are dropped instead of thrown", () => {
   assert.equal(drafts.load(9), null)
   assert.equal(drafts.ids().length, 0)
 })
+
+test("source and target drafts of one segment are independent", () => {
+  const store = memory()
+  const drafts = createDraftStore(store, 1)
+  drafts.save(5, doc("src"), "s")
+  drafts.save(5, doc("tgt"), "t", "target")
+  assert.deepEqual(drafts.load(5)?.doc, doc("src"))
+  assert.deepEqual(drafts.load(5, "target")?.doc, doc("tgt"))
+  drafts.clear(5, "target")
+  assert.equal(drafts.load(5, "target"), null)
+  assert.ok(drafts.load(5))
+})

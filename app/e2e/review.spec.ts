@@ -556,3 +556,43 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
   await page.keyboard.press("Meta+z") // removes the dictionary word again
   await expect(page.locator("mark[data-spell]", { hasText: "Hondurefio" }).first()).toBeVisible()
 })
+
+test("translate mode: facing pairs, blocks inside a pair, confirm-and-next, persistence, undo", async ({ page }) => {
+  await page.goto("/")
+  await expect(page.locator("[data-segment]").first()).toHaveText(/Prologue/)
+  await page.getByRole("button", { name: /14: The Fish That Swallowed/ }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  const pairs = page.locator("[data-pair]")
+  await expect(pairs.first()).toContainText("The Fish That Swallowed")
+  // the first unconfirmed pair is selected; its translation is empty
+  const pair = pairs.nth(1)
+  await expect(pair.locator("[data-target]")).toContainText("Translate…")
+  await expect(pair.locator("[data-status]")).toHaveAttribute("data-status", "untranslated")
+
+  await pair.locator("[data-target]").click()
+  const box = pair.getByRole("textbox", { name: "Edit translation" })
+  await expect(box).toBeFocused()
+  await page.keyboard.type("첫 번째 덩어리.")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("두 번째 덩어리.")
+  await page.keyboard.press("Meta+Enter")
+
+  // saved as reviewed with two blocks; the next pair opened for editing
+  await expect(pair.locator("[data-status]")).toHaveAttribute("data-status", "reviewed")
+  await expect(pair.locator("[data-target] p")).toHaveCount(2)
+  await expect(pair.locator("[data-target] p").nth(1)).toHaveText("두 번째 덩어리.")
+  await expect(pairs.nth(2).getByRole("textbox", { name: "Edit translation" })).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(page.locator("footer")).toContainText("Confirmed 1 /")
+  await expect(page.locator("footer [data-sheets]")).toContainText("sheets")
+
+  await page.reload()
+  await page.getByRole("button", { name: /14: The Fish That Swallowed/ }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  await expect(page.locator("[data-pair]").nth(1).locator("[data-target] p")).toHaveCount(2)
+
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("Meta+z")
+  await expect(page.locator("[data-pair]").nth(1).locator("[data-target]")).toContainText("Translate…")
+  await expect(page.locator("[data-pair]").nth(1).locator("[data-status]")).toHaveAttribute("data-status", "untranslated")
+})

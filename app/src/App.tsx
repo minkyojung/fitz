@@ -11,6 +11,9 @@ import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
 import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
+import { useTranslate } from "@/features/translate/TranslateView"
+import { Toggle } from "@/components/ui/toggle"
+import { formatSheets, sheets } from "@/lib/manuscript"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useKeymap } from "@/lib/useKeymap"
 import { chapterForPage } from "@/lib/pages"
@@ -45,7 +48,11 @@ export function App() {
     onSelectChapter: book.setChapterId,
     onAddCaption: book.addCaption,
   })
-  const { commands } = review
+  const [focusMode, setFocusMode] = useState(false)
+  const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode })
+  const translating = mode === "translate"
+  const commands = translating ? translate.commands : review.commands
+  const chapterSheets = useMemo(() => sheets(book.segments.map((s) => s.targetText).join("\n")), [book.segments])
   const { speller, userWords } = book.spell
   const suspectTotal = useMemo(
     () => (speller ? book.segments.reduce((n, s) => n + findSuspects(s.sourceText, speller.correct, userWords).length, 0) : 0),
@@ -62,9 +69,9 @@ export function App() {
     <AppShell
       mode={mode}
       onModeChange={setMode}
-      sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} />}
+      sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       left={review.left}
-      right={review.right}
+      right={translating ? translate.view : review.right}
       panel={
         <ReviewPanel
           notes={book.unanchoredNotes} segments={book.segments} selected={review.selected} onAnchor={book.anchorNote}
@@ -75,9 +82,17 @@ export function App() {
       status={
         <>
           <span>{book.chapter?.title ?? "—"}</span>
-          <span>
-            Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
-          </span>
+          {translating ? (
+            <>
+              <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
+              <span data-sheets>{formatSheets(chapterSheets)}</span>
+              <Toggle size="sm" variant="outline" pressed={focusMode} onPressedChange={setFocusMode} aria-label="Focus mode">Focus</Toggle>
+            </>
+          ) : (
+            <span>
+              Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
+            </span>
+          )}
           <span>Unlinked notes {book.unanchoredNotes.length}</span>
           <span data-suspect-total>Suspects {suspectTotal}</span>
           <span className="hidden items-center gap-3 lg:flex">

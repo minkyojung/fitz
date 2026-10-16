@@ -291,6 +291,14 @@ test("dictionary words are unique per book and removable", () => {
   assert.equal(db.prepare("SELECT count(*) n FROM glossary").get().n, 0)
 })
 
+test("a translation may hold several paragraphs; its text joins them with newlines; sources may not", () => {
+  const db = fixture()
+  const two = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "첫째" }] }, { type: "paragraph", content: [{ type: "text", text: "둘째" }] }] }
+  const r = execute(db, "updateSegment", { id: 3, targetDoc: two })
+  assert.equal(r.targetText, "첫째\n둘째")
+  assert.throws(() => execute(db, "updateSegment", { id: 3, doc: two }), /single paragraph/)
+})
+
 test("every command has a registered inverse", () => {
   const db = fixture()
   for (const name of Object.keys(COMMANDS)) assert.ok(COMMANDS[name], name)

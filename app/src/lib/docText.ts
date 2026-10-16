@@ -6,8 +6,10 @@ import type { DocJSON } from "@/data/api"
 type TextNode = { type: "text"; text: string; marks?: Array<{ type: string }> }
 
 export function docPlainText(doc: DocJSON): string {
-  return (doc.content[0].content ?? []).map((n) => n.text).join("")
+  return doc.content.map((p) => (p.content ?? []).map((n) => n.text).join("")).join("\n")
 }
+
+export const emptyDoc = (): DocJSON => ({ type: "doc", content: [{ type: "paragraph", content: [] }] })
 
 export function replaceRangeInDoc(doc: DocJSON, start: number, end: number, replacement: string): DocJSON {
   const out: TextNode[] = []

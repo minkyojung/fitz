@@ -58,6 +58,15 @@ cd app && pnpm test:unit   # keymap 단위 테스트
 
 상태 바 오른쪽에 저장 상태(저장 중 · 저장됨 · 저장 실패)가 표시된다. 저장 중에 창을 닫으면 경고한다.
 
+## 번역 모드 (Translate 탭)
+
+대역본 모양이다: 왼쪽 여백의 상태 점, 원문(회색, 읽기 전용), 번역(명조 Noto Serif KR, 클릭해 편집). 단락은 원문과 1:1로 마주 보며, 번역은 한 짝 안에서 여러 블록(Enter)으로 쓸 수 있다(`target_doc`은 paragraph+, 평문은 줄바꿈으로 이음). 단락 구조를 바꾸려면 원문 쪽을 검수 모드에서 분할·병합한다.
+
+- 클릭 → 그 자리 편집. Enter 새 블록, ⌘Enter 확정(Reviewed)하고 다음 미확정 짝으로, Esc 취소, Tab/Shift-Tab 이웃 짝, ↑/↓는 글 끝·처음에서 이웃 짝으로 흐른다.
+- 상태: untranslated → draft(첫 저장 시 자동) → reviewed(⌘Enter) → final. 사이드바 진행률과 상태 바 "Confirmed n / m", 원고지 매수(200자, 공백 포함, `lib/manuscript.ts`).
+- 임시본은 `draft:<book>:<segment>:target`로 원문 임시본과 분리. Focus 토글은 편집 중인 짝만 선명하게.
+- 번역문 변경은 `updateSegment`(targetDoc/status)로 기록되어 ⌘Z 가능하며, 이전 번역은 `segment_version`에 스냅샷된다.
+
 ## 쪽과 목록의 동기
 
 왼쪽 스캔과 오른쪽 목록은 항상 같은 쪽을 가리킨다. 단락을 고르면 스캔이 그 쪽·그 자리로 가고, 스캔에서 쪽을 넘기면 목록이 그 쪽 첫 단락을 고른다. 넘긴 쪽이 다른 장이면 장을 바꾼다(`lib/pages.ts` `chapterForPage`). 단락이 없는 쪽(빈 면·사진 화보)은 목록 위에 "이 쪽에는 단락이 없습니다"와 **캡션 추가** 버튼을 보인다. 캡션은 그 쪽 이하 마지막 단락 뒤에 자리 표시 글로 삽입되어 바로 편집기로 열리며, ⌘Z로 삭제된다(`insertSegment`/`deleteSegment`).

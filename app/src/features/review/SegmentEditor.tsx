@@ -11,6 +11,8 @@ import type { DocJSON } from "@/data/api"
 
 /** Exactly one paragraph: the schema cannot hold a second one, so Enter means "done". */
 const OneParagraph = Document.extend({ content: "paragraph" })
+/** Translations may be written as several blocks inside one pair; Enter makes a new block. */
+const Paragraphs = Document.extend({ content: "paragraph+" })
 
 interface Props {
   doc: DocJSON
@@ -26,6 +28,13 @@ interface Props {
   onStep?: (delta: 1 | -1) => void
   /** Called with the current doc shortly after typing pauses (crash insurance). */
   onDraft?: (doc: DocJSON) => void
+  /** Translation mode: several paragraphs allowed, Enter = new block, ⌘Enter = confirm. */
+  multiParagraph?: boolean
+  lang?: "en" | "ko"
+  /** ⌘Enter (only with multiParagraph): commit, then confirm and move on. */
+  onConfirm?: (doc: DocJSON) => void
+  /** ↑ at the very start / ↓ at the very end: commit and flow into the neighbouring pair. */
+  onFlow?: (delta: 1 | -1) => void
   onReady?: (editor: Editor) => void
 }
 
@@ -35,11 +44,15 @@ export const caretOffset = (editor: Editor) => editor.state.selection.from - 1
 /** In-place paragraph editor. Same `.reading` classes as the read view, so nothing shifts when it mounts. */
 const DRAFT_DELAY = 300
 
-export function SegmentEditor({ doc, className, caretOffset, selectAll, onCommit, onCancel, onStep, onDraft, onReady }: Props) {
+export function SegmentEditor({
+  doc, className, caretOffset, selectAll, onCommit, onCancel, onStep, onDraft, onReady,
+  multiParagraph = false, lang = "en", onConfirm, onFlow,
+}: Props) {
   const draftTimer = useRef<number | undefined>(undefined)
+  const closingRef = useRef(false) // set when ⌘Enter already handed the doc to onConfirm; blur must not commit again
   const editor = useEditor({
     extensions: [
-      OneParagraph,
+      multiParagraph ? Paragraphs : OneParagraph,
       Paragraph,
       Text,
       Italic,
@@ -47,21 +60,30 @@ export function SegmentEditor({ doc, className, caretOffset, selectAll, onCommit
       Extension.create({
         name: "commitKeys",
         addKeyboardShortcuts() {
+          const ed = () => this.editor as Editor
+          const atStart = () => ed().state.selection.from <= 1
+          const atEnd = () => ed().state.selection.to >= ed().state.doc.content.size - 1
           return {
-            Enter: () => { commit(this.editor as Editor); return true },
-            "Mod-Enter": () => { commit(this.editor as Editor); return true },
+            // single paragraph: Enter is "done"; multi: Enter is a new block (default behaviour)
+            Enter: () => { if (multiParagraph) return false; commit(ed()); return true },
+            "Mod-Enter": () => {
+              if (multiParagraph && onConfirm) { closingRef.current = true; onConfirm(ed().getJSON() as DocJSON); return true }
+              commit(ed()); return true
+            },
             Escape: () => { onCancel(); return true },
-            Tab: () => { commit(this.editor as Editor); onStep?.(1); return true },
-            "Shift-Tab": () => { commit(this.editor as Editor); onStep?.(-1); return true },
+            Tab: () => { commit(ed()); onStep?.(1); return true },
+            "Shift-Tab": () => { commit(ed()); onStep?.(-1); return true },
+            ArrowUp: () => { if (onFlow && atStart()) { commit(ed()); onFlow(-1); return true } return false },
+            ArrowDown: () => { if (onFlow && atEnd()) { commit(ed()); onFlow(1); return true } return false },
           }
         },
       }),
     ],
     content: doc,
     editorProps: {
-      attributes: { class: className ?? "", lang: "en", "aria-label": "Edit paragraph", spellcheck: "true" },
+      attributes: { class: className ?? "", lang, "aria-label": lang === "ko" ? "Edit translation" : "Edit paragraph", spellcheck: "true" },
     },
-    onBlur: ({ editor }) => commit(editor),
+    onBlur: ({ editor }) => { if (!closingRef.current) commit(editor) },
     onUpdate: ({ editor }) => {
       if (!onDraft) return
       window.clearTimeout(draftTimer.current)
