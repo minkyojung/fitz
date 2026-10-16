@@ -49,7 +49,7 @@ export function PageViewer({ pages, pageNo, onPageChange, highlight }: Props) {
                 ref={markRef}
                 data-testid="segment-highlight"
                 aria-hidden
-                className="pointer-events-none absolute rounded-sm border-2 border-primary/70 bg-primary/5"
+                className="pointer-events-none absolute rounded-sm bg-primary/15 mix-blend-multiply"
                 style={{
                   left: `${highlight.x0 * 100}%`,
                   top: `${highlight.y0 * 100}%`,
