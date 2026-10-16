@@ -8,6 +8,10 @@ export interface Suspect {
 }
 
 export type Checker = (word: string) => boolean
+export interface Speller {
+  correct: Checker
+  suggest: (word: string) => string[]
+}
 
 /** Words with letters only (apostrophes inside allowed). Numbers, all-caps acronyms and single letters are skipped. */
 const WORD = /[A-Za-z][A-Za-z’']*[A-Za-z]|[A-Za-z]/g
@@ -28,10 +32,10 @@ export function findSuspects(text: string, correct: Checker, userWords: Readonly
   return out
 }
 
-let loading: Promise<Checker> | null = null
+let loading: Promise<Speller> | null = null
 
 /** Hunspell en_US, loaded lazily once. The dictionary files ship with the app (no network). */
-export function loadEnglishChecker(): Promise<Checker> {
+export function loadEnglishSpeller(): Promise<Speller> {
   loading ??= Promise.all([
     import("nspell"),
     // relative file paths bypass the package's `exports` map, which does not expose the raw files
@@ -39,7 +43,7 @@ export function loadEnglishChecker(): Promise<Checker> {
     import("../../node_modules/dictionary-en/index.dic?raw"),
   ]).then(([{ default: nspell }, aff, dic]) => {
     const d = nspell(aff.default, dic.default)
-    return (w) => d.correct(w)
+    return { correct: (w) => d.correct(w), suggest: (w) => d.suggest(w).slice(0, 5) }
   })
   return loading
 }
