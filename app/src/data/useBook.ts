@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "./http"
-import type { Book, Chapter, Note, Page, Segment, SegmentPatch } from "./api"
+import type { Book, Chapter, GlossaryTerm, Note, Page, Segment, SegmentPatch } from "./api"
 import { createDraftStore } from "@/lib/draftStore"
 import { buildCorpus, type Corpus } from "@/lib/corpus"
 import { loadEnglishSpeller, type Speller } from "@/lib/spell"
@@ -18,6 +18,7 @@ export const OP_LABEL: Record<string, string> = {
   setDocs: "Replace all",
   addGlossaryWord: "Add to dictionary",
   removeGlossaryWord: "Remove from dictionary",
+  setGlossaryTerm: "Glossary",
 }
 
 export const CAPTION_PLACEHOLDER = "Caption"
@@ -38,6 +39,7 @@ export function useBook() {
   const [speller, setSpeller] = useState<Speller | null>(null)
   const [corpus, setCorpus] = useState<Corpus>(() => buildCorpus([]))
   const [userWords, setUserWords] = useState<ReadonlySet<string>>(new Set())
+  const [glossary, setGlossary] = useState<GlossaryTerm[]>([])
   const pending = useRef(0)
 
   /** Every write goes through here: one place owns the save indicator and the error toast. */
@@ -78,8 +80,10 @@ export function useBook() {
     () => api.listSourceTexts().then((rows) => setCorpus(buildCorpus(rows.map((r) => r.text)))).catch(() => undefined),
     [],
   )
+  /** The glossary doubles as the dictionary: every term is a known word. */
   const refreshWords = useCallback(
-    (bookId: number) => api.listGlossaryWords(bookId).then((w) => setUserWords(new Set(w))).catch(() => undefined),
+    (bookId: number) =>
+      api.listGlossary(bookId).then((g) => { setGlossary(g); setUserWords(new Set(g.map((t) => t.term))) }).catch(() => undefined),
     [],
   )
   useEffect(() => { void loadEnglishSpeller().then(setSpeller) }, [])
@@ -118,6 +122,18 @@ export function useBook() {
         return updated
       }),
     [mutate, refreshChapters, refreshCorpus],
+  )
+
+  /** Set a term's agreed translation (creates the entry if needed). Undoable. */
+  const setTerm = useCallback(
+    (input: { term: string; translation: string; aliases: string; kind: GlossaryTerm["kind"] }) =>
+      mutate("Glossary", async () => {
+        if (!book) return null
+        const r = await api.setGlossaryTerm({ bookId: book.id, ...input })
+        await refreshWords(book.id)
+        return r
+      }),
+    [mutate, book, refreshWords],
   )
 
   /** "This is a real word": add it to the book's dictionary (undoable). */
@@ -222,7 +238,7 @@ export function useBook() {
 
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
   // stable identity: every row subscribes to this, so it must only change when its parts do
-  const spell = useMemo(() => ({ speller, corpus, userWords, addWord }), [speller, corpus, userWords, addWord])
+  const spell = useMemo(() => ({ speller, corpus, userWords, addWord, glossary, setTerm }), [speller, corpus, userWords, addWord, glossary, setTerm])
   /** Crash insurance for in-progress edits; keyed by book so other databases never collide. */
   const drafts = useMemo(() => (book ? createDraftStore(localStorage, book.id) : null), [book])
 

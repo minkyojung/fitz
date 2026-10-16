@@ -32,6 +32,8 @@ export const api: Api = {
   search: (query) => call("search", { query }),
   listGlossaryWords: (bookId) => call("listGlossaryWords", { bookId }),
   addGlossaryWord: (bookId, term) => call("addGlossaryWord", { bookId, term }),
+  listGlossary: (bookId) => call("listGlossary", { bookId }),
+  setGlossaryTerm: (input) => call("setGlossaryTerm", input),
   listSourceTexts: () => call("listSourceTexts"),
   replaceAll: (query, replacement) => call("replaceAll", { query, replacement }),
 }

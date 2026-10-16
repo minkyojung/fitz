@@ -4,7 +4,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { diffText, type Piece } from "@/lib/diffText"
 import { neighbours } from "@/lib/rank"
 import type { Suspect } from "@/lib/spell"
+import type { TermHit } from "@/lib/glossary"
 import { SpellMark } from "./SpellMark"
+import { GlossaryMark } from "./GlossaryMark"
 
 interface Props {
   text: string
@@ -12,11 +14,13 @@ interface Props {
   /** Dictionary suspects in `text` (absolute offsets). */
   suspects?: Suspect[]
   onAcceptFix?: (suspect: Suspect, replacement: string) => void
+  /** Glossary terms in `text` (absolute offsets). Never overlap suspects: glossary terms are known words. */
+  terms?: TermHit[]
 }
 
 /** Paragraph text with two overlays computed from the text itself (never stored):
  *  edits against the OCR original (background + tooltip) and spelling suspects (SpellMark). */
-export function SourceText({ text, ocr, suspects = [], onAcceptFix }: Props) {
+export function SourceText({ text, ocr, suspects = [], onAcceptFix, terms = [] }: Props) {
   // `ocr == null` also covers responses from a server that predates the ocrText field
   const pieces = useMemo<Piece[]>(
     () => (ocr == null || ocr === text ? [{ text, kind: "same" }] : diffText(ocr, text)),
@@ -28,7 +32,7 @@ export function SourceText({ text, ocr, suspects = [], onAcceptFix }: Props) {
   for (let i = 0; i < pieces.length; i++) {
     const p = pieces[i]
     if (p.kind === "same") {
-      out.push(<Fragment key={i}>{withSuspects(text, pos, pos + p.text.length, suspects, onAcceptFix)}</Fragment>)
+      out.push(<Fragment key={i}>{withOverlays(text, pos, pos + p.text.length, suspects, terms, onAcceptFix)}</Fragment>)
       pos += p.text.length
       continue
     }
@@ -70,16 +74,28 @@ export function SourceText({ text, ocr, suspects = [], onAcceptFix }: Props) {
   return <>{out}</>
 }
 
-/** Text in [from, to) with any suspects inside it rendered as SpellMarks. */
-function withSuspects(text: string, from: number, to: number, suspects: Suspect[], onAccept?: (s: Suspect, r: string) => void) {
-  const inside = suspects.filter((s) => s.start >= from && s.end <= to)
+type Overlay = { start: number; end: number; kind: "suspect"; suspect: Suspect } | { start: number; end: number; kind: "term"; hit: TermHit }
+
+/** Text in [from, to) with spelling suspects and glossary terms inside it rendered as marks. */
+function withOverlays(text: string, from: number, to: number, suspects: Suspect[], terms: TermHit[], onAccept?: (s: Suspect, r: string) => void) {
+  const inside: Overlay[] = [
+    ...suspects.filter((s) => s.start >= from && s.end <= to).map((s) => ({ start: s.start, end: s.end, kind: "suspect" as const, suspect: s })),
+    ...terms.filter((t) => t.start >= from && t.end <= to).map((t) => ({ start: t.start, end: t.end, kind: "term" as const, hit: t })),
+  ].sort((a, b) => a.start - b.start)
   if (!inside.length) return text.slice(from, to)
   const out: React.ReactNode[] = []
   let pos = from
-  for (const s of inside) {
-    out.push(text.slice(pos, s.start))
-    out.push(<SpellMark key={s.start} suspect={s} context={neighbours(text, s.start, s.end)} onAccept={(r) => onAccept?.(s, r)} />)
-    pos = s.end
+  for (const o of inside) {
+    if (o.start < pos) continue // overlap: keep the earlier mark
+    out.push(text.slice(pos, o.start))
+    out.push(
+      o.kind === "suspect" ? (
+        <SpellMark key={o.start} suspect={o.suspect} context={neighbours(text, o.start, o.end)} onAccept={(r) => onAccept?.(o.suspect, r)} />
+      ) : (
+        <GlossaryMark key={o.start} entry={o.hit.entry}>{text.slice(o.start, o.end)}</GlossaryMark>
+      ),
+    )
+    pos = o.end
   }
   out.push(text.slice(pos, to))
   return out

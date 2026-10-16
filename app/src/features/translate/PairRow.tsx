@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Editor } from "@tiptap/react"
 
 import { Badge } from "@/components/ui/badge"
@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { SourceText } from "@/features/review/SourceText"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
 import { useDrafts } from "@/features/review/DraftContext"
+import { useSpell } from "@/features/review/SpellContext"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { findTerms, missingTerms } from "@/lib/glossary"
 import { docPlainText, emptyDoc } from "@/lib/docText"
 import type { DocJSON, Segment, SegmentPatch, SegmentStatus } from "@/data/api"
 import { cn } from "cn"
@@ -40,6 +43,9 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelec
   const drafts = useDrafts()
   const [, bump] = useState(0)
   const [editDoc, setEditDoc] = useState<DocJSON | null>(null)
+  const glossary = useSpell()?.glossary
+  const terms = useMemo(() => (glossary ? findTerms(s.sourceText, glossary) : []), [glossary, s.sourceText])
+  const missing = useMemo(() => (editing ? [] : missingTerms(terms, s.targetText)), [terms, s.targetText, editing])
 
   useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest" }) }, [selected])
   useEffect(() => { if (!editing) { closing.current = false; clickPos.current = null } }, [editing])
@@ -85,11 +91,19 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelec
       onClick={onSelect}
       className={cn("col-span-3 grid grid-cols-subgrid scroll-mt-8 py-3 transition-opacity", dim && "opacity-30")}
     >
-      <div className="pt-2">
+      <div className="flex flex-col items-center gap-1.5 pt-2">
         <span className={cn("block size-2 rounded-full", STATUS_DOT[s.status])} title={STATUS_LABEL[s.status]} data-status={s.status} />
+        {missing.length > 0 && (
+          <Tooltip>
+            <TooltipTrigger render={<span data-term-missing className="block size-2 rounded-full bg-mark-warning ring-1 ring-destructive/50" />} />
+            <TooltipContent side="right">
+              Glossary: {missing.map((e) => `${e.term} → ${e.translation}`).join(", ")} not found in the translation
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
-      <p className={cn("reading text-[15px] text-muted-foreground", s.kind === "heading" && "font-semibold text-foreground")} lang="en">
-        <SourceText text={s.sourceText} ocr={s.ocrText} />
+      <p className={cn("reading select-text text-[15px] text-muted-foreground", s.kind === "heading" && "font-semibold text-foreground")} lang="en">
+        <SourceText text={s.sourceText} ocr={s.ocrText} terms={terms} />
       </p>
       <div className="min-w-0">
         {recoverable && !editing && (

@@ -469,11 +469,13 @@ const glossaryRow = (db, bookId, term) => {
 export const listGlossary = (db, { bookId }) => {
   const rows = db.prepare("SELECT * FROM glossary WHERE book_id = ? ORDER BY term COLLATE NOCASE").all(bookId)
   if (!rows.length) return []
-  const texts = db.prepare("SELECT source_text FROM segment").all().map((r) => r.source_text)
+  const texts = db.prepare(`SELECT s.id, s.chapter_id, s.source_text FROM segment s JOIN chapter c ON c.id = s.chapter_id ORDER BY c.idx, s.idx`).all()
   return rows.map((r) => {
     const re = new RegExp(`(^|[^A-Za-z])${r.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^A-Za-z])`, "i")
-    const occurrences = texts.reduce((n, t) => n + (re.test(t) ? 1 : 0), 0)
-    return { id: r.id, term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind, occurrences }
+    let occurrences = 0
+    let first = null
+    for (const t of texts) if (re.test(t.source_text)) { occurrences++; first ??= { segmentId: t.id, chapterId: t.chapter_id } }
+    return { id: r.id, term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind, occurrences, first }
   })
 }
 

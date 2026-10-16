@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Note, Segment } from "@/data/api"
 import { FindPanel } from "./FindPanel"
+import { GlossaryPanel } from "./GlossaryPanel"
 import { HistoryPanel } from "./HistoryPanel"
 import { NotesPanel } from "./NotesPanel"
 
@@ -24,6 +25,7 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
       <TabsList className="m-2 shrink-0 self-start">
         <TabsTrigger value="history">History</TabsTrigger>
         <TabsTrigger value="find">Find</TabsTrigger>
+        <TabsTrigger value="glossary">Glossary</TabsTrigger>
         <TabsTrigger value="notes">
           Unlinked notes
           {notes.length > 0 && <Badge variant="destructive" className="ml-1">{notes.length}</Badge>}
@@ -34,6 +36,9 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
       </TabsContent>
       <TabsContent value="find" className="min-h-0 flex-1">
         <FindPanel refreshKey={segments} onJump={onJump} onReplaceAll={onReplaceAll} focusToken={findFocusToken} />
+      </TabsContent>
+      <TabsContent value="glossary" className="min-h-0 flex-1">
+        <GlossaryPanel onJump={onJump} />
       </TabsContent>
       <TabsContent value="notes" className="min-h-0 flex-1">
         <NotesPanel notes={notes} segments={segments} onAnchor={onAnchor} />

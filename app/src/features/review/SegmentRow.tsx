@@ -16,6 +16,7 @@ import { CAPTION_PLACEHOLDER } from "@/data/useBook"
 import { useSpell } from "./SpellContext"
 import { findSuspects, type Suspect } from "@/lib/spell"
 import { replaceRangeInDoc } from "@/lib/docText"
+import { findTerms } from "@/lib/glossary"
 import { cn } from "cn"
 import type { DocJSON, Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
@@ -78,6 +79,8 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     () => (speller && userWords && !editing ? findSuspects(s.sourceText, speller.correct, userWords) : []),
     [speller, userWords, s.sourceText, editing],
   )
+  const glossary = spell?.glossary
+  const terms = useMemo(() => (glossary && !editing ? findTerms(s.sourceText, glossary) : []), [glossary, s.sourceText, editing])
   /** Accept a spelling fix without opening the editor: a normal (undoable) text edit. */
   const acceptFix = (sp: Suspect, replacement: string) => {
     const doc = s.sourceDoc ?? { type: "doc" as const, content: [{ type: "paragraph" as const, content: [{ type: "text" as const, text: s.sourceText }] }] }
@@ -228,11 +231,11 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         />
       ) : (
         <p
-          className={cn("reading cursor-text text-[15px]", s.kind === "heading" && "font-semibold")}
+          className={cn("reading cursor-text select-text text-[15px]", s.kind === "heading" && "font-semibold")}
           lang="en"
           onClick={startEditAt}
         >
-          <SourceText text={s.sourceText} ocr={s.ocrText} suspects={suspects} onAcceptFix={acceptFix} />
+          <SourceText text={s.sourceText} ocr={s.ocrText} suspects={suspects} onAcceptFix={acceptFix} terms={terms} />
         </p>
       )}
     </ContextMenuTrigger>

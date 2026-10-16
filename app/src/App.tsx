@@ -9,6 +9,7 @@ import { ChapterList } from "@/features/review/ChapterList"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
+import { SelectionToolbar } from "@/features/review/SelectionToolbar"
 import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
 import { useTranslate } from "@/features/translate/TranslateView"
@@ -69,6 +70,7 @@ export function App() {
   return (
     <DraftContext value={book.drafts}>
     <SpellContext value={book.spell}>
+    <SelectionToolbar />
     <AppShell
       mode={mode}
       onModeChange={setMode}

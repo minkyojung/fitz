@@ -68,6 +68,18 @@ export interface Note {
   anchored: boolean
 }
 
+export interface GlossaryTerm {
+  id: number
+  term: string
+  translation: string
+  aliases: string
+  kind: "person" | "place" | "org" | "work" | "other"
+  /** Segments mentioning the term. */
+  occurrences: number
+  /** First mention in book order, for jumping. */
+  first: { segmentId: number; chapterId: number } | null
+}
+
 export interface SearchHit {
   segmentId: number
   chapterId: number
@@ -123,6 +135,8 @@ export interface Api {
   /** Words the person marked as correct for this book. */
   listGlossaryWords(bookId: number): Promise<string[]>
   addGlossaryWord(bookId: number, term: string): Promise<{ id: number; term: string }>
+  listGlossary(bookId: number): Promise<GlossaryTerm[]>
+  setGlossaryTerm(input: { bookId: number; term: string; translation: string; aliases: string; kind: GlossaryTerm["kind"] }): Promise<GlossaryTerm>
   /** Every segment's plain text (for the client-side language model). */
   listSourceTexts(): Promise<{ id: number; text: string }[]>
   /** Literal, case-sensitive search across the whole book. */
