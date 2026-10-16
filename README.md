@@ -85,6 +85,16 @@ cd app && pnpm test:unit   # keymap 단위 테스트
 node --test server/      # 명령 왕복 단위 테스트
 ```
 
+## 세그먼트 위치 (segment_box)
+
+단락이 스캔 이미지의 어디에 있는지를 쪽 대비 비율(0~1)로 저장한다. 두 쪽에 걸치면 행 두 개. 새 빌드는 자동으로 채우고, 이미 작업 중인 DB는 추가만 하는 스크립트로 채운다 (덮어쓰기 금지와 무관, 재실행 안전).
+
+```sh
+uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
+```
+
+`ocr_text` 완전 일치 → 분할·병합된 단락은 같은 쪽 안에서 유사 일치(90+) → 못 찾으면 비움.
+
 ## 데이터 안전
 - 에디터가 한 번이라도 쓰면 `meta.last_edit_at`이 기록되고, 이후 `pipeline.build`는 그 DB를 덮어쓰지 않는다 (다른 `--out`으로 빌드).
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
