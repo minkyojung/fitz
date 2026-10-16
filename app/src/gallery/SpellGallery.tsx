@@ -34,7 +34,7 @@ export function SpellGallery() {
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-8">
       <h1 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        맞춤법 의심 단어 갤러리 · 호버 설명 · 클릭하면 교정 후보와 "사전에 추가"
+        맞춤법 의심 단어 갤러리 · 호버하면 교정 후보 · 클릭하면 바꾸기 / "사전에 추가"
         <Badge variant={total ? "secondary" : "outline"} className="ml-auto">의심 단어 {speller ? total : "…"}</Badge>
       </h1>
       {paras.map((text, i) => (
@@ -76,14 +76,21 @@ function SuspectMark({ suspect: s, speller, onAdd, onReplace }: {
   suspect: Suspect; speller: Speller | null; onAdd: (w: string) => void; onReplace: (s: Suspect, to: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const suggestions = useMemo(() => (open && speller ? speller.suggest(s.word) : []), [open, speller, s.word])
+  const [hovered, setHovered] = useState(false)
+  // suggestions are computed on demand (hover or click), never for every suspect up front
+  const suggestions = useMemo(
+    () => ((open || hovered) && speller ? speller.suggest(s.word) : []),
+    [open, hovered, speller, s.word],
+  )
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
+      <Tooltip onOpenChange={setHovered}>
         <TooltipTrigger render={<PopoverTrigger render={<mark data-spell className={SPELL_MARK_CLASS} />} />}>
           {s.word}
         </TooltipTrigger>
-        <TooltipContent side="top">사전에 없는 단어 · 클릭하면 교정 후보</TooltipContent>
+        <TooltipContent side="top">
+          {suggestions.length ? suggestions.join(" · ") : "교정 후보 없음"}
+        </TooltipContent>
       </Tooltip>
       <PopoverContent side="bottom" align="start" className="w-56 p-1">
         <div className="px-2 py-1 text-xs text-muted-foreground">“{s.word}”</div>
