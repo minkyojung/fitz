@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "./http"
-import type { Chapter, Page, Segment, SegmentPatch } from "./api"
+import type { Chapter, Note, Page, Segment, SegmentPatch } from "./api"
 
 /** Book-level state: chapters, the selected chapter's segments, and page images. */
 export function useBook() {
@@ -11,6 +11,7 @@ export function useBook() {
   const [pages, setPages] = useState<Page[]>([])
   const [chapterId, setChapterId] = useState<number | null>(null)
   const [segments, setSegments] = useState<Segment[]>([])
+  const [unanchoredNotes, setUnanchoredNotes] = useState<Note[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const refreshChapters = useCallback(
@@ -22,11 +23,17 @@ export function useBook() {
     [],
   )
 
+  const refreshNotes = useCallback(
+    () => api.listUnanchoredNotes().then(setUnanchoredNotes).catch((e: Error) => setError(e.message)),
+    [],
+  )
+
   useEffect(() => {
-    Promise.all([api.listChapters(), api.listPages()])
-      .then(([cs, ps]) => {
+    Promise.all([api.listChapters(), api.listPages(), api.listUnanchoredNotes()])
+      .then(([cs, ps, ns]) => {
         setChapters(cs)
         setPages(ps)
+        setUnanchoredNotes(ns)
         setChapterId((cur) => cur ?? cs[0]?.id ?? null)
       })
       .catch((e: Error) => setError(e.message))
@@ -82,10 +89,24 @@ export function useBook() {
     [chapterId, refreshSegments, refreshChapters],
   )
 
+  const anchorNote = useCallback(
+    async (noteId: number, segmentId: number) => {
+      try {
+        await api.anchorNote(noteId, segmentId)
+        await refreshNotes()
+        toast.success("미주를 연결했습니다")
+      } catch (e) {
+        toast.error("연결 실패", { description: (e as Error).message })
+      }
+    },
+    [refreshNotes],
+  )
+
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
 
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
+    unanchoredNotes, anchorNote,
   }
 }

@@ -68,3 +68,22 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
   await expect(rows).toHaveCount(before)
   await expect(rows.nth(1).locator("p")).toHaveText(original)
 })
+
+test("an unanchored note can be linked to a segment", async ({ page }) => {
+  await page.goto("/")
+  const panel = page.locator("[data-slot=resizable-panel]").last()
+  await expect(panel.getByText("미연결 미주")).toBeVisible()
+  const before = await panel.getByRole("button", { name: "연결" }).count()
+  expect(before).toBeGreaterThan(0)
+  await expect(page.locator("footer")).toContainText(`미연결 미주 ${before}`)
+
+  await panel.getByRole("button", { name: "연결" }).first().click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByPlaceholder(/단락/).fill("Zemurray")
+  await dialog.getByRole("option").first().click()
+
+  await expect(panel.getByRole("button", { name: "연결" })).toHaveCount(before - 1)
+  await expect(page.locator("footer")).toContainText(`미연결 미주 ${before - 1}`)
+  await page.reload()
+  await expect(page.locator("footer")).toContainText(`미연결 미주 ${before - 1}`)
+})
