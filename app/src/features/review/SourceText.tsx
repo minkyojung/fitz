@@ -37,7 +37,7 @@ export function SourceText({ text, ocr }: Props) {
           render={
             <mark
               data-edit
-              className={added ? "rounded-sm bg-mark-comment px-0.5 text-inherit" : "inline-block w-0.5 bg-mark-warning align-baseline"}
+              className={added ? "rounded-sm bg-mark-comment text-inherit box-decoration-clone" : "inline-block w-0.5 bg-mark-warning align-baseline"}
               aria-label={removed ? `원문: ${removed.text.trim()}` : "추가됨"}
             />
           }

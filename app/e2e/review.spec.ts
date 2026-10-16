@@ -225,13 +225,19 @@ test("in-place editing: no layout shift, character undo inside, paragraph undo a
   await expect(rows.first()).toHaveText(/New Orleans/)
   const row = rows.nth(1)
   const original = (await row.locator("p").innerText()).trim()
-  const heightBefore = (await row.boundingBox())!.height
+  const lineWidths = (sel: string) =>
+    row.locator(sel).first().evaluate((el) => {
+      const r = document.createRange(); r.selectNodeContents(el)
+      return Array.from(r.getClientRects()).map((x) => Math.round(x.width))
+    })
+  const before = await lineWidths("p")
 
   await row.click()
   await page.keyboard.press("Enter")
   const box = row.getByRole("textbox")
   await expect(box).toBeFocused()
-  expect(Math.abs((await row.boundingBox())!.height - heightBefore)).toBeLessThan(2)
+  // every line must break at the same place: entering edit mode is invisible to the eye
+  expect(await lineWidths(".ProseMirror p")).toEqual(before)
 
   await page.keyboard.press("End")
   await page.keyboard.type(" EXTRA")

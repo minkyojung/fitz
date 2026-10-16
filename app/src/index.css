@@ -163,6 +163,12 @@
     max-width: var(--measure-reading);
     text-wrap: pretty;
     font-variant-numeric: oldstyle-nums;
+    /* ProseMirror forces these on its root (and disables ligatures for caret accuracy);
+       the read view must use the same rules so entering edit mode never reflows a line */
+    white-space: break-spaces;
+    overflow-wrap: break-word;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0;
   }
   .reading:lang(en) {
     font-family: var(--font-source);
