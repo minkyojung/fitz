@@ -33,6 +33,8 @@ const getSegment = (id) => {
   return r
 }
 const httpError = (status, message) => Object.assign(new Error(message), { status })
+// Every write marks the database as edited so the pipeline refuses to rebuild over it.
+const touch = () => db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('last_edit_at', datetime('now'))").run()
 // Shift idx of segments after `afterIdx` by `delta`. Goes through negative values so UNIQUE(chapter_id, idx)
 // never collides mid-update (SQLite has no ORDER BY on UPDATE).
 const shiftIdx = (chapterId, afterIdx, delta) => {
@@ -61,6 +63,7 @@ const routes = {
     if (!["paragraph", "heading", "blockquote", "caption", "verse"].includes(kind)) throw httpError(400, "bad kind")
     db.prepare(`UPDATE segment SET source_text = ?, source_doc = ?, kind = ?, verified = ?, updated_at = datetime('now')
                 WHERE id = ?`).run(text, pmDoc(text), kind, verified ? 1 : 0, id)
+    touch()
     return segRow(getSegment(id))
   },
 
@@ -79,6 +82,7 @@ const routes = {
       // notes whose anchor lies in the tail move with it
       db.prepare("UPDATE note SET segment_id = ?, src_start = src_start - ?, src_end = src_end - ? WHERE segment_id = ? AND src_start >= ?")
         .run(tailId, offset, offset, id, offset)
+      touch()
       db.exec("COMMIT")
       return [segRow(getSegment(id)), segRow(getSegment(tailId))]
     } catch (e) { db.exec("ROLLBACK"); throw e }
@@ -99,6 +103,7 @@ const routes = {
       db.prepare("UPDATE segment SET source_text = ?, source_doc = ?, page_end = ?, verified = 0, updated_at = datetime('now') WHERE id = ?")
         .run(text, pmDoc(text), next.page_end, id)
       shiftIdx(cur.chapter_id, next.idx, -1)  // close the gap
+      touch()
       db.exec("COMMIT")
       return segRow(getSegment(id))
     } catch (e) { db.exec("ROLLBACK"); throw e }
@@ -110,6 +115,7 @@ const routes = {
     getSegment(segmentId)
     const r = db.prepare("UPDATE note SET segment_id = ?, anchored = 1 WHERE id = ? RETURNING *").get(segmentId, noteId)
     if (!r) throw httpError(404, `note ${noteId} not found`)
+    touch()
     return noteRow(r)
   },
 }
