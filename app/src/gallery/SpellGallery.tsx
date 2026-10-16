@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Command, CommandGroup, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { findSuspects, loadEnglishSpeller, type Speller, type Suspect } from "@/lib/spell"
 import { buildCorpus, type Corpus } from "@/lib/corpus"
@@ -104,6 +104,7 @@ function SuspectMark({ suspect: s, context, speller, corpus, onAdd, onReplace }:
   onAdd: (w: string) => void; onReplace: (s: Suspect, to: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
   // candidates ranked by OCR-error likelihood × how the word fits this book and its neighbours
   const ranked = useMemo(
     () => (speller ? rankCandidates(s.word, context, speller.suggest, speller.correct, corpus) : []),
@@ -136,23 +137,28 @@ function SuspectMark({ suspect: s, context, speller, corpus, onAdd, onReplace }:
           </ins>
         </>
       )}
-      <PopoverContent side="bottom" align="start" className="w-56 p-1">
-        <div className="px-2 py-1 text-xs text-muted-foreground">“{s.word}”</div>
-        {suggestions.length ? (
-          suggestions.map((sug, i) => (
-            <Button key={sug} variant="ghost" size="sm" autoFocus={i === 0}
-              className={i === 0 ? "w-full justify-start font-semibold" : "w-full justify-start font-normal"}
-              onClick={() => { onReplace(s, sug); setOpen(false) }}>
-              {sug}
-            </Button>
-          ))
-        ) : (
-          <div className="px-2 py-1 text-xs text-muted-foreground">교정 후보 없음</div>
-        )}
-        <div className="my-1 border-t" />
-        <Button variant="ghost" size="sm" className="w-full justify-start font-normal" onClick={() => { onAdd(s.word); setOpen(false) }}>
-          사전에 추가
-        </Button>
+      <PopoverContent side="bottom" align="start" className="w-52 p-0" initialFocus={listRef}>
+        <Command ref={listRef} tabIndex={-1} className="outline-none">
+          <CommandList>
+            <CommandGroup heading={`“${s.word}”`}>
+              {suggestions.length ? (
+                suggestions.map((sug) => (
+                  <CommandItem key={sug} value={sug} onSelect={() => { onReplace(s, sug); setOpen(false) }}>
+                    {sug}
+                  </CommandItem>
+                ))
+              ) : (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">교정 후보 없음</div>
+              )}
+            </CommandGroup>
+            <CommandSeparator />
+            <CommandGroup>
+              <CommandItem value="__add" onSelect={() => { onAdd(s.word); setOpen(false) }}>
+                사전에 추가
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   )
