@@ -54,7 +54,7 @@ export function SpellGallery() {
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-8">
       <h1 className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        맞춤법 의심 단어 갤러리 · 확실한 후보는 "→ 단어"로 바로 표시(클릭해 수락) · 단어 클릭하면 전체 후보 / "사전에 추가"
+        맞춤법 의심 단어 갤러리 · 확실한 교정은 git diff처럼(취소선 → 초록, 초록 클릭해 수락) · 단어 클릭하면 전체 후보 / "사전에 추가"
         <span className="ml-auto text-muted-foreground">문맥 통계: {corpusSource}</span>
         <Badge variant={total ? "secondary" : "outline"}>의심 단어 {speller ? total : "…"}</Badge>
       </h1>
@@ -75,6 +75,8 @@ export function SpellGallery() {
   )
 }
 
+export const SPELL_STRUCK_CLASS =
+  "rounded-sm bg-mark-warning/60 px-0.5 text-destructive line-through decoration-destructive/60 cursor-pointer"
 export const SPELL_MARK_CLASS =
   "rounded-sm bg-mark-warning/50 text-inherit underline decoration-destructive/70 decoration-dotted decoration-2 underline-offset-4 cursor-pointer"
 
@@ -109,19 +111,30 @@ function SuspectMark({ suspect: s, context, speller, corpus, onAdd, onReplace }:
   )
   const suggestions = ranked.map((r) => r.word)
   const top = ranked[0] && ranked[0].score >= CONFIDENT ? ranked[0].word : null
+  // Confident fix: the same diff language as the history panel — struck original, inserted replacement.
+  // Click the insertion to accept; click the original for all candidates / add to dictionary.
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<mark data-spell className={SPELL_MARK_CLASS} />}>{s.word}</PopoverTrigger>
+      <PopoverTrigger
+        render={<mark data-spell className={top ? SPELL_STRUCK_CLASS : SPELL_MARK_CLASS} />}
+      >
+        {s.word}
+      </PopoverTrigger>
       {top && (
-        <button
-          type="button"
-          data-spell-fix
-          className="mx-0.5 rounded-sm px-0.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="클릭하면 이 후보로 바꿉니다"
-          onClick={() => onReplace(s, top)}
-        >
-          → {top}
-        </button>
+        <>
+          {" "}
+          <ins
+            data-spell-fix
+            role="button"
+            tabIndex={0}
+            className="cursor-pointer rounded-sm bg-mark-term px-0.5 no-underline hover:brightness-95"
+            title="클릭하면 이 후보로 바꿉니다"
+            onClick={() => onReplace(s, top)}
+            onKeyDown={(e) => e.key === "Enter" && onReplace(s, top)}
+          >
+            {top}
+          </ins>
+        </>
       )}
       <PopoverContent side="bottom" align="start" className="w-56 p-1">
         <div className="px-2 py-1 text-xs text-muted-foreground">“{s.word}”</div>
