@@ -46,6 +46,12 @@ export interface SegmentPatch {
   verified?: boolean
 }
 
+export interface OpSummary {
+  id: number
+  name: string
+  segmentIds: number[]
+}
+
 export interface Api {
   listChapters(): Promise<Chapter[]>
   listSegments(chapterId: number): Promise<Segment[]>
@@ -57,4 +63,7 @@ export interface Api {
   mergeWithNext(id: number): Promise<Segment>
   listUnanchoredNotes(): Promise<Note[]>
   anchorNote(noteId: number, segmentId: number): Promise<Note>
+  /** Revert / re-apply the last logged command. null when there is nothing to do. */
+  undo(): Promise<OpSummary | null>
+  redo(): Promise<OpSummary | null>
 }

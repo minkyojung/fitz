@@ -5,6 +5,13 @@ import { toast } from "sonner"
 import { api } from "./http"
 import type { Chapter, Note, Page, Segment, SegmentPatch } from "./api"
 
+const OP_LABEL: Record<string, string> = {
+  updateSegment: "단락 수정",
+  splitSegment: "분할",
+  mergeWithNext: "병합",
+  setNoteAnchor: "미주 연결",
+}
+
 /** Book-level state: chapters, the selected chapter's segments, and page images. */
 export function useBook() {
   const [chapters, setChapters] = useState<Chapter[]>([])
@@ -102,11 +109,38 @@ export function useBook() {
     [refreshNotes],
   )
 
+  /** Undo/redo may touch any table, so reload everything the screen shows. */
+  const reloadAll = useCallback(async () => {
+    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null])
+  }, [chapterId, refreshChapters, refreshNotes, refreshSegments])
+
+  const undo = useCallback(async () => {
+    try {
+      const op = await api.undo()
+      if (!op) return
+      await reloadAll()
+      toast("되돌렸습니다", { description: OP_LABEL[op.name] ?? op.name })
+    } catch (e) {
+      toast.error("되돌리기 실패", { description: (e as Error).message })
+    }
+  }, [reloadAll])
+
+  const redo = useCallback(async () => {
+    try {
+      const op = await api.redo()
+      if (!op) return
+      await reloadAll()
+      toast("다시 실행했습니다", { description: OP_LABEL[op.name] ?? op.name })
+    } catch (e) {
+      toast.error("다시 실행 실패", { description: (e as Error).message })
+    }
+  }, [reloadAll])
+
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
 
   return {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
-    unanchoredNotes, anchorNote,
+    unanchoredNotes, anchorNote, undo, redo,
   }
 }

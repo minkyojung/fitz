@@ -24,4 +24,6 @@ export const api: Api = {
   mergeWithNext: (id) => call("mergeWithNext", { id }),
   listUnanchoredNotes: () => call("listUnanchoredNotes"),
   anchorNote: (noteId, segmentId) => call("anchorNote", { noteId, segmentId }),
+  undo: () => call("undo"),
+  redo: () => call("redo"),
 }

@@ -87,3 +87,27 @@ test("an unanchored note can be linked to a segment", async ({ page }) => {
   await page.reload()
   await expect(page.locator("footer")).toContainText(`미연결 미주 ${before - 1}`)
 })
+
+test("undo restores a merge, redo reapplies it", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Fruit Jobber/)
+  const before = await rows.count()
+  const second = (await rows.nth(2).locator("p").innerText()).trim()
+
+  await rows.nth(1).click()
+  await rows.nth(1).getByRole("button", { name: "다음 단락과 병합" }).click()
+  await expect(rows).toHaveCount(before - 1)
+
+  await page.getByRole("button", { name: "되돌리기" }).click()
+  await expect(rows).toHaveCount(before)
+  await expect(rows.nth(2).locator("p")).toHaveText(second)
+
+  await page.getByRole("button", { name: "다시 실행" }).click()
+  await expect(rows).toHaveCount(before - 1)
+
+  await page.reload()
+  await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
+  await expect(page.locator("[data-slot=scroll-area] .group")).toHaveCount(before - 1)
+})
