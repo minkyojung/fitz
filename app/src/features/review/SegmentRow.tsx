@@ -133,7 +133,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       </div>
       {editing ? (
         <SegmentEditor
-          doc={s.sourceDoc}
+          doc={s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }}
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
           onCommit={(doc) => void commit(doc)}
           onCancel={cancel}

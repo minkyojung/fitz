@@ -11,7 +11,8 @@ interface Props {
 /** Paragraph text with edits against the OCR original highlighted in place.
  *  Added words get a background; the removed original shows in a tooltip on hover. */
 export function SourceText({ text, ocr }: Props) {
-  const pieces = useMemo(() => (ocr === null || ocr === text ? null : diffText(ocr, text)), [ocr, text])
+  // `ocr == null` also covers responses from a server that predates the ocrText field
+  const pieces = useMemo(() => (ocr == null || ocr === text ? null : diffText(ocr, text)), [ocr, text])
   if (!pieces) return <>{text}</>
 
   const out: React.ReactNode[] = []
