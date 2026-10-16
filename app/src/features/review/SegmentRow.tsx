@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/context-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { SourceText } from "./SourceText"
 import { cn } from "cn"
 import type { Segment, SegmentKind, SegmentPatch } from "@/data/api"
 
@@ -134,7 +135,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         />
       ) : (
         <p className={cn("reading text-[15px]", s.kind === "heading" && "font-semibold")} lang="en">
-          {s.sourceText}
+          <SourceText text={s.sourceText} ocr={s.ocrText} />
         </p>
       )}
     </ContextMenuTrigger>

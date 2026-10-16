@@ -129,6 +129,15 @@ test("listOps filters by affected segment", () => {
   assert.deepEqual(listOps(db, { segmentId: 3 }).map((o) => o.name), ["mergeWithNext", "updateSegment"])
 })
 
+test("listOps exposes before/after text for text edits only", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 3, text: "epsilon ZETA" })
+  execute(db, "updateSegment", { id: 3, verified: true })
+  const [verify, edit] = listOps(db, { segmentId: 3 })
+  assert.deepEqual([edit.before, edit.after], ["epsilon zeta", "epsilon ZETA"])
+  assert.deepEqual([verify.before, verify.after], [null, null])
+})
+
 test("every command has a registered inverse", () => {
   const db = fixture()
   for (const name of Object.keys(COMMANDS)) assert.ok(COMMANDS[name], name)

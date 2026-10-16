@@ -72,7 +72,8 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
 test("an unanchored note can be linked to a segment", async ({ page }) => {
   await page.goto("/")
   const panel = page.locator("[data-slot=resizable-panel]").last()
-  await expect(panel.getByText("미연결 미주")).toBeVisible()
+  await panel.getByRole("tab", { name: /미연결 미주/ }).click()
+  await expect(panel.getByRole("button", { name: "연결" }).first()).toBeVisible()
   const before = await panel.getByRole("button", { name: "연결" }).count()
   expect(before).toBeGreaterThan(0)
   await expect(page.locator("footer")).toContainText(`미연결 미주 ${before}`)
@@ -170,4 +171,33 @@ test("status bar shows saved, and save failure when the server rejects", async (
   await rows.nth(2).getByRole("checkbox").click()
   await expect(status).toHaveText("저장됨")
   await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
+})
+
+test("edits are highlighted against the OCR original and listed in history", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /6: The Octopus/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Octopus/)
+  const row = rows.nth(1)
+  const original = (await row.locator("p").innerText()).trim()
+  const firstWord = original.split(" ")[0]
+
+  await row.click()
+  await row.getByRole("button", { name: "텍스트 수정" }).click()
+  await row.getByRole("textbox").fill(original.replace(firstWord, "EDITED"))
+  await row.getByRole("textbox").press("Meta+Enter")
+
+  const mark = row.locator("mark[data-edit]")
+  await expect(mark).toHaveText("EDITED")
+  await expect(mark).toHaveAttribute("aria-label", `원문: ${firstWord}`)
+
+  const history = page.getByRole("list", { name: "이 단락의 기록" })
+  await expect(history.getByRole("button", { name: /단락 수정/ })).toHaveCount(1)
+  await history.getByRole("button", { name: /단락 수정/ }).click()
+  await expect(history.locator("del")).toContainText(firstWord)
+  await expect(history.locator("ins")).toContainText("EDITED")
+
+  await page.keyboard.press("Meta+z")
+  await expect(row.locator("mark[data-edit]")).toHaveCount(0)
+  await expect(history.getByText("되돌려짐")).toBeVisible()
 })

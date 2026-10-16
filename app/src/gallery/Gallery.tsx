@@ -1,4 +1,7 @@
+import { DiffView } from "@/features/review/DiffView"
 import { SourceText } from "@/features/review/SourceText"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { IconChevronRight } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -12,10 +15,13 @@ const CASES: { title: string; ocr: string | null; text: string }[] = [
   { title: "원문 없음 (마이그레이션 전 수정)", ocr: null, text: OCR.replace("cleafed", "cleared") },
 ]
 
-const HISTORY = [
-  { at: "10:42", label: "단락 수정", undone: false },
+const STEP1 = OCR.replace("cleafed", "cleaned")
+const STEP2 = STEP1.replace("cleaned", "cleared").replace("a variety of nicknames", "many names")
+const HISTORY: { at: string; label: string; undone: boolean; before?: string; after?: string }[] = [
+  { at: "10:42", label: "단락 수정", undone: false, before: STEP1, after: STEP2 },
   { at: "10:41", label: "확인", undone: false },
-  { at: "10:40", label: "병합", undone: true },
+  { at: "10:40", label: "단락 수정", undone: false, before: OCR, after: STEP1 },
+  { at: "10:39", label: "병합", undone: true },
 ]
 
 function Row({ title, ocr, text }: (typeof CASES)[number]) {
@@ -36,7 +42,7 @@ function Row({ title, ocr, text }: (typeof CASES)[number]) {
 
 export function Gallery() {
   return (
-    <div className="grid min-h-svh grid-cols-[1fr_280px] gap-6 p-8">
+    <div className="grid min-h-svh grid-cols-[1fr_340px] gap-6 p-8">
       <div className="space-y-3">
         <h1 className="text-xs font-medium text-muted-foreground">수정 흔적 갤러리 · 바뀐 단어에 배경색, 호버하면 원문</h1>
         {CASES.map((c) => (
@@ -50,12 +56,31 @@ export function Gallery() {
             <TabsTrigger value="history">이 단락의 기록</TabsTrigger>
           </TabsList>
           <TabsContent value="history">
+            <div className="border-b px-3 py-2">
+              <div className="mb-1 text-xs font-medium">원문 대비 지금</div>
+              <DiffView before={OCR} after={STEP2} />
+            </div>
             <ul className="divide-y text-xs">
               {HISTORY.map((h) => (
-                <li key={h.at} className={`flex gap-3 px-3 py-2 ${h.undone ? "text-muted-foreground line-through" : ""}`}>
-                  <span className="tabular-nums">{h.at}</span>
-                  <span>{h.label}</span>
-                  {h.undone && <span className="ml-auto no-underline">되돌려짐</span>}
+                <li key={h.at} className={h.undone ? "text-muted-foreground" : ""}>
+                  {h.before ? (
+                    <Collapsible>
+                      <CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50">
+                        <IconChevronRight className="size-3 transition-transform group-data-[panel-open]:rotate-90" />
+                        <span className="tabular-nums">{h.at}</span>
+                        <span>{h.label}</span>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="px-3 pb-2 pl-8">
+                        <DiffView before={h.before} after={h.after!} />
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ) : (
+                    <div className="flex gap-2 px-3 py-2 pl-8">
+                      <span className={`tabular-nums ${h.undone ? "line-through" : ""}`}>{h.at}</span>
+                      <span className={h.undone ? "line-through" : ""}>{h.label}</span>
+                      {h.undone && <span className="ml-auto">되돌려짐</span>}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

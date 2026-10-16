@@ -6,7 +6,7 @@ import { Kbd } from "@/components/ui/kbd"
 
 import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList } from "@/features/review/ChapterList"
-import { NotesPanel } from "@/features/review/NotesPanel"
+import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { useReview } from "@/features/review/ReviewView"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useKeymap } from "@/lib/useKeymap"
@@ -42,7 +42,7 @@ export function App() {
       sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} />}
       left={review.left}
       right={review.right}
-      panel={<NotesPanel notes={book.unanchoredNotes} segments={book.segments} onAnchor={book.anchorNote} />}
+      panel={<ReviewPanel notes={book.unanchoredNotes} segments={book.segments} selected={review.selected} onAnchor={book.anchorNote} />}
       status={
         <>
           <span>{book.chapter?.title ?? "—"}</span>

@@ -20,6 +20,8 @@ export interface Segment {
   pageStart: number
   pageEnd: number
   sourceText: string
+  /** OCR original, immutable. null when the row was edited before originals were kept. */
+  ocrText: string | null
   verified: boolean
   status: SegmentStatus
 }
@@ -52,6 +54,14 @@ export interface OpSummary {
   segmentIds: number[]
 }
 
+export interface OpRecord extends OpSummary {
+  undone: boolean
+  createdAt: string
+  /** Text before/after, only for text edits. */
+  before: string | null
+  after: string | null
+}
+
 export interface Api {
   listChapters(): Promise<Chapter[]>
   listSegments(chapterId: number): Promise<Segment[]>
@@ -66,4 +76,5 @@ export interface Api {
   /** Revert / re-apply the last logged command. null when there is nothing to do. */
   undo(): Promise<OpSummary | null>
   redo(): Promise<OpSummary | null>
+  listOps(segmentId: number): Promise<OpRecord[]>
 }

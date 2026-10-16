@@ -18,7 +18,7 @@ export const pmDoc = (text) =>
 
 export const segRow = (r) => ({
   id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
-  sourceText: r.source_text, verified: r.verified === 1, status: r.status,
+  sourceText: r.source_text, ocrText: r.ocr_text ?? null, verified: r.verified === 1, status: r.status,
 })
 export const noteRow = (r) => ({
   id: r.id, segmentId: r.segment_id, kind: r.kind, origPage: r.orig_page, origQuote: r.orig_quote,
@@ -222,6 +222,15 @@ export const listOps = (db, { segmentId, limit = 50 } = {}) => {
     ? db.prepare("SELECT * FROM ops WHERE segment_ids LIKE ? ORDER BY id DESC LIMIT ?").all(`%${Number(segmentId)}%`, limit)
     : db.prepare("SELECT * FROM ops ORDER BY id DESC LIMIT ?").all(limit)
   return rows
-    .map((r) => ({ ...summary(r), undone: r.undone === 1, createdAt: r.created_at }))
+    .map((r) => {
+      const o = { ...summary(r), undone: r.undone === 1, createdAt: r.created_at, before: null, after: null }
+      if (r.name === "updateSegment") {
+        // text before/after this edit; inverse holds the previous values
+        const before = JSON.parse(r.inverse_params).text
+        const after = JSON.parse(r.params).text
+        if (before !== after) Object.assign(o, { before, after })
+      }
+      return o
+    })
     .filter((o) => !segmentId || o.segmentIds.includes(Number(segmentId)))
 }

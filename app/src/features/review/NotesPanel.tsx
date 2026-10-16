@@ -1,6 +1,5 @@
 import { useState } from "react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList,
@@ -20,10 +19,6 @@ export function NotesPanel({ notes, segments, onAnchor }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3 text-xs">
-        <span className="font-medium">미연결 미주</span>
-        <Badge variant={notes.length ? "destructive" : "outline"}>{notes.length}</Badge>
-      </div>
       <ScrollArea className="min-h-0 flex-1">
         {notes.length === 0 ? (
           <p className="p-3 text-xs text-muted-foreground">모든 미주가 본문에 연결되었습니다.</p>

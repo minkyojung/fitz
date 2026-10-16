@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import { api } from "./http"
 import type { Chapter, Note, Page, Segment, SegmentPatch } from "./api"
 
-const OP_LABEL: Record<string, string> = {
+export const OP_LABEL: Record<string, string> = {
   updateSegment: "단락 수정",
   splitSegment: "분할",
   mergeWithNext: "병합",

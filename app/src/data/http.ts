@@ -26,4 +26,5 @@ export const api: Api = {
   anchorNote: (noteId, segmentId) => call("anchorNote", { noteId, segmentId }),
   undo: () => call("undo"),
   redo: () => call("redo"),
+  listOps: (segmentId) => call("listOps", { segmentId }),
 }
