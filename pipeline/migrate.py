@@ -44,6 +44,15 @@ def migrate(path: Path) -> list[str]:
     if gcols and "aliases" not in gcols:
         conn.execute("ALTER TABLE glossary ADD COLUMN aliases TEXT")
         done.append("glossary.aliases column")
+    ncols = {r[1] for r in conn.execute("PRAGMA table_info(note)")}
+    if ncols and "tgt_exact" not in ncols:
+        for col, typ in [("tgt_exact", "TEXT"), ("tgt_prefix", "TEXT"), ("tgt_suffix", "TEXT"), ("tgt_start", "INTEGER"), ("tgt_end", "INTEGER")]:
+            conn.execute(f"ALTER TABLE note ADD COLUMN {col} {typ}")
+        done.append("note.tgt_* columns")
+    ccols = {r[1] for r in conn.execute("PRAGMA table_info(comment)")}
+    if ccols and "parent_id" not in ccols:
+        conn.execute("ALTER TABLE comment ADD COLUMN parent_id INTEGER REFERENCES comment(id) ON DELETE CASCADE")
+        done.append("comment.parent_id column")
     if "segment_box" not in tables:
         conn.executescript("""
           CREATE TABLE segment_box (

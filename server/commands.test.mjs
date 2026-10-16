@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listGlossary, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo } from "./commands.mjs"
+import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo } from "./commands.mjs"
 
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
@@ -35,8 +35,8 @@ function fixture() {
 /** Everything undo must restore, in a comparable shape. */
 const snapshot = (db) => ({
   segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, target_doc, target_text, status, verified FROM segment ORDER BY id").all(),
-  notes: db.prepare("SELECT id, segment_id, src_start, src_end, anchored FROM note ORDER BY id").all(),
-  comments: db.prepare("SELECT id, segment_id FROM comment ORDER BY id").all(),
+  notes: db.prepare("SELECT id, segment_id, kind, src_start, src_end, tgt_exact, tgt_start, body_target, anchored FROM note ORDER BY id").all(),
+  comments: db.prepare("SELECT id, segment_id, side, parent_id, src_exact, src_start, body, resolved FROM comment ORDER BY id").all(),
   glossary: db.prepare("SELECT book_id, term, translation, aliases, kind FROM glossary ORDER BY term").all(),
   boxes: db.prepare("SELECT * FROM segment_box ORDER BY segment_id, page_no").all(),
 })
@@ -73,6 +73,12 @@ roundTrip("insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "
 roundTrip("addGlossaryWord", { bookId: 1, term: "Zemurray" })
 roundTrip("setGlossaryTerm", { bookId: 1, term: "alpha", translation: "알파", aliases: "알파벳", kind: "person" })
 const pmDocJ = (t) => JSON.parse(pmDoc(t))
+const A = { exact: "beta", prefix: "alpha ", suffix: " gamma", start: 6, end: 10 }
+roundTrip("addComment", { segmentId: 2, side: "source", anchor: A, body: "check this" })
+roundTrip("setComment", { id: 1, body: "edited", resolved: true })
+roundTrip("deleteComment", { id: 1 })
+roundTrip("addNote", { segmentId: 2, anchor: { exact: "베타", prefix: "", suffix: "", start: 0, end: 2 }, body: "옮긴이 주" })
+roundTrip("setNote", { id: 1, targetAnchor: { exact: "감마", prefix: "", suffix: "", start: 3, end: 5 } })
 roundTrip("updateSegment", { id: 2, targetDoc: pmDocJ("알파 베타"), status: "reviewed" })
 
 test("a first translation moves the status to draft, clearing it moves back, and versions are kept", () => {
@@ -314,6 +320,20 @@ test("setGlossaryTerm upgrades a dictionary word, keeps the previous row for und
   undo(db)
   assert.equal(listGlossary(db, { bookId: 1 }).length, 0)
   assert.throws(() => execute(db, "setGlossaryTerm", { bookId: 1, term: "x", kind: "animal" }), /bad kind/)
+})
+
+test("comment threads: replies cascade on delete and come back together on undo; listAnnotations groups by chapter", () => {
+  const db = fixture()
+  const root = execute(db, "addComment", { segmentId: 2, side: "target", anchor: null, body: "root" })
+  execute(db, "addComment", { segmentId: 2, side: "target", anchor: null, body: "reply", parentId: root.id })
+  assert.equal(listAnnotations(db, { chapterId: 1 }).comments.length, 3) // fixture has one comment already
+  execute(db, "deleteComment", { id: root.id })
+  assert.equal(listAnnotations(db, { chapterId: 1 }).comments.length, 1)
+  undo(db)
+  const after = listAnnotations(db, { chapterId: 1 }).comments
+  assert.deepEqual(after.filter((c) => c.id >= root.id).map((c) => [c.id, c.parentId, c.body]), [[root.id, null, "root"], [root.id + 1, root.id, "reply"]])
+  assert.throws(() => execute(db, "deleteNote", { id: 1 }), /author notes/)
+  assert.throws(() => execute(db, "addComment", { segmentId: 2, side: "middle", anchor: null, body: "x" }), /bad side/)
 })
 
 test("every command has a registered inverse", () => {

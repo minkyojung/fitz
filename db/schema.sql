@@ -77,11 +77,17 @@ CREATE TABLE note (
   src_suffix    TEXT,
   src_start     INTEGER,
   src_end       INTEGER,
+  -- 번역문 쪽 앵커 (역주 위치, 저자 각주 번호 위치). 같은 W3C selector
+  tgt_exact     TEXT,
+  tgt_prefix    TEXT,
+  tgt_suffix    TEXT,
+  tgt_start     INTEGER,
+  tgt_end       INTEGER,
   -- 원서 Notes 섹션의 원래 키 (대조/복구용)
   orig_page     INTEGER,
   orig_quote    TEXT,
   body_source   TEXT,                 -- 저자 미주 원문
-  body_target   TEXT,                 -- 번역된 주석 본문 (ProseMirror JSON)
+  body_target   TEXT,                 -- 번역된 주석 본문 / 역주 본문 (평문)
   anchored      INTEGER NOT NULL DEFAULT 0,  -- 자동 매칭 성공 여부
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -91,8 +97,9 @@ CREATE TABLE comment (
   id            INTEGER PRIMARY KEY,
   segment_id    INTEGER NOT NULL REFERENCES segment(id),
   side          TEXT NOT NULL CHECK (side IN ('source','target')),
-  mark_id       TEXT,                 -- side='target'일 때
-  src_exact     TEXT, src_prefix TEXT, src_suffix TEXT, src_start INTEGER, src_end INTEGER, -- side='source'일 때
+  parent_id     INTEGER REFERENCES comment(id) ON DELETE CASCADE, -- 답글이면 부모 댓글
+  mark_id       TEXT,                 -- (예약) 편집기 mark id
+  src_exact     TEXT, src_prefix TEXT, src_suffix TEXT, src_start INTEGER, src_end INTEGER, -- 앵커 (side가 가리키는 글 기준)
   body          TEXT NOT NULL,
   resolved      INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))

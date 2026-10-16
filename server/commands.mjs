@@ -80,10 +80,24 @@ export const segRow = (r) => ({
   targetDoc: r.target_doc ? JSON.parse(r.target_doc) : null, targetText: r.target_text ?? "",
   verified: r.verified === 1, status: r.status,
 })
+const anchorOf = (r, p) =>
+  r[`${p}_exact`] == null ? null : { exact: r[`${p}_exact`], prefix: r[`${p}_prefix`] ?? "", suffix: r[`${p}_suffix`] ?? "", start: r[`${p}_start`], end: r[`${p}_end`] }
+
 export const noteRow = (r) => ({
   id: r.id, segmentId: r.segment_id, kind: r.kind, origPage: r.orig_page, origQuote: r.orig_quote,
-  bodySource: r.body_source, anchored: r.anchored === 1,
+  bodySource: r.body_source, bodyTarget: r.body_target ?? "", anchored: r.anchored === 1,
+  sourceAnchor: anchorOf(r, "src"), targetAnchor: anchorOf(r, "tgt"), createdAt: r.created_at,
 })
+export const commentRow = (r) => ({
+  id: r.id, segmentId: r.segment_id, side: r.side, parentId: r.parent_id ?? null, body: r.body,
+  resolved: r.resolved === 1, anchor: anchorOf(r, "src"), createdAt: r.created_at,
+})
+const getComment = (db, id) => {
+  const r = db.prepare("SELECT * FROM comment WHERE id = ?").get(id)
+  if (!r) throw httpError(404, `comment ${id} not found`)
+  return r
+}
+const anchorCols = (p, a) => a ? [a.exact, a.prefix ?? "", a.suffix ?? "", a.start ?? null, a.end ?? null] : [null, null, null, null, null]
 
 /** Boxes of one segment: { pageNo, x0, y0, x1, y1 }[] */
 const boxesOf = (db, id) =>
@@ -364,6 +378,98 @@ export const COMMANDS = {
     return { result: null, forward: { bookId, term }, inverse, segmentIds: [] }
   },
 
+  // ---- comments (work notes, never exported). Replies carry parentId.
+  addComment(db, { id, segmentId, side, anchor, body, parentId = null, resolved = false, createdAt }) {
+    if (!["source", "target"].includes(side)) throw httpError(400, "bad side")
+    if (!body?.trim()) throw httpError(400, "body is required")
+    getSegment(db, segmentId)
+    const newId = db.prepare(
+      `INSERT INTO comment(id, segment_id, side, parent_id, src_exact, src_prefix, src_suffix, src_start, src_end, body, resolved, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?, coalesce(?, datetime('now')))`,
+    ).run(id ?? null, segmentId, side, parentId, ...anchorCols("src", anchor), body, resolved ? 1 : 0, createdAt ?? null).lastInsertRowid
+    return {
+      result: commentRow(getComment(db, newId)),
+      forward: { id: Number(newId), segmentId, side, anchor, body, parentId, resolved, createdAt: getComment(db, newId).created_at },
+      inverse: { name: "deleteComment", params: { id: Number(newId) } },
+      segmentIds: [segmentId],
+    }
+  },
+  setComment(db, { id, body, resolved }) {
+    const cur = getComment(db, id)
+    const next = { body: body ?? cur.body, resolved: resolved ?? cur.resolved === 1 }
+    if (!next.body.trim()) throw httpError(400, "body is required")
+    db.prepare("UPDATE comment SET body = ?, resolved = ? WHERE id = ?").run(next.body, next.resolved ? 1 : 0, id)
+    return {
+      result: commentRow(getComment(db, id)),
+      forward: { id, ...next },
+      inverse: { name: "setComment", params: { id, body: cur.body, resolved: cur.resolved === 1 } },
+      segmentIds: [cur.segment_id],
+    }
+  },
+  /** Deleting a thread root deletes its replies too (cascade); the inverse re-creates all of them under their ids. */
+  deleteComment(db, { id }) {
+    const cur = getComment(db, id)
+    const replies = db.prepare("SELECT * FROM comment WHERE parent_id = ? ORDER BY id").all(id)
+    db.prepare("DELETE FROM comment WHERE id = ?").run(id)
+    const restore = [cur, ...replies].map((r) => ({
+      id: r.id, segmentId: r.segment_id, side: r.side, parentId: r.parent_id ?? null, body: r.body, resolved: r.resolved === 1,
+      anchor: anchorOf(r, "src"), createdAt: r.created_at,
+    }))
+    return {
+      result: null,
+      forward: { id },
+      inverse: { name: "restoreComments", params: { rows: restore } },
+      segmentIds: [cur.segment_id],
+    }
+  },
+  restoreComments(db, { rows }) {
+    for (const r of rows) COMMANDS.addComment(db, r)
+    return { result: null, forward: { rows }, inverse: { name: "deleteComment", params: { id: rows[0].id } }, segmentIds: [rows[0].segmentId] }
+  },
+
+  // ---- translator's notes (exported as footnotes) and target anchors for any note
+  addNote(db, { id, segmentId, anchor, body, createdAt }) {
+    if (!body?.trim()) throw httpError(400, "body is required")
+    getSegment(db, segmentId)
+    const newId = db.prepare(
+      `INSERT INTO note(id, segment_id, kind, tgt_exact, tgt_prefix, tgt_suffix, tgt_start, tgt_end, body_target, anchored, created_at)
+       VALUES (?,?,'translator',?,?,?,?,?,?,1, coalesce(?, datetime('now')))`,
+    ).run(id ?? null, segmentId, ...anchorCols("tgt", anchor), body, createdAt ?? null).lastInsertRowid
+    const row = getNote(db, newId)
+    return {
+      result: noteRow(row),
+      forward: { id: Number(newId), segmentId, anchor, body, createdAt: row.created_at },
+      inverse: { name: "deleteNote", params: { id: Number(newId) } },
+      segmentIds: [segmentId],
+    }
+  },
+  /** Body (translator) and target anchor (any kind) of a note. */
+  setNote(db, { id, body, targetAnchor }) {
+    const cur = getNote(db, id)
+    const nextBody = body ?? cur.body_target
+    const nextAnchor = targetAnchor === undefined ? anchorOf(cur, "tgt") : targetAnchor
+    if (cur.kind === "translator" && !nextBody?.trim()) throw httpError(400, "body is required")
+    db.prepare("UPDATE note SET body_target = ?, tgt_exact = ?, tgt_prefix = ?, tgt_suffix = ?, tgt_start = ?, tgt_end = ? WHERE id = ?")
+      .run(nextBody, ...anchorCols("tgt", nextAnchor), id)
+    return {
+      result: noteRow(getNote(db, id)),
+      forward: { id, body: nextBody, targetAnchor: nextAnchor },
+      inverse: { name: "setNote", params: { id, body: cur.body_target, targetAnchor: anchorOf(cur, "tgt") } },
+      segmentIds: [cur.segment_id],
+    }
+  },
+  deleteNote(db, { id }) {
+    const cur = getNote(db, id)
+    if (cur.kind !== "translator") throw httpError(400, "author notes cannot be deleted; unlink them instead")
+    db.prepare("DELETE FROM note WHERE id = ?").run(id)
+    return {
+      result: null,
+      forward: { id },
+      inverse: { name: "addNote", params: { id, segmentId: cur.segment_id, anchor: anchorOf(cur, "tgt"), body: cur.body_target, createdAt: cur.created_at } },
+      segmentIds: [cur.segment_id],
+    }
+  },
+
   setNoteAnchor(db, { noteId, segmentId, anchored }) {
     const cur = getNote(db, noteId)
     getSegment(db, segmentId)
@@ -478,6 +584,12 @@ export const listGlossary = (db, { bookId }) => {
     return { id: r.id, term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind, occurrences, first }
   })
 }
+
+/** Everything attached to a chapter's segments: comments (with replies) and notes of both kinds. */
+export const listAnnotations = (db, { chapterId }) => ({
+  comments: db.prepare(`SELECT c.* FROM comment c JOIN segment s ON s.id = c.segment_id WHERE s.chapter_id = ? ORDER BY c.id`).all(chapterId).map(commentRow),
+  notes: db.prepare(`SELECT n.* FROM note n JOIN segment s ON s.id = n.segment_id WHERE s.chapter_id = ? ORDER BY s.idx, n.tgt_start, n.id`).all(chapterId).map(noteRow),
+})
 
 export const listOps = (db, { segmentId, limit = 50 } = {}) => {
   const rows = segmentId

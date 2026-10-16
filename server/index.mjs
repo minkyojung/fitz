@@ -4,7 +4,7 @@ import { createServer } from "node:http"
 import { readFile } from "node:fs/promises"
 import { resolve, basename } from "node:path"
 
-import { execute, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
+import { execute, listAnnotations, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -42,6 +42,7 @@ const routes = {
       .map((r) => ({ pageNo: r.page_no, pdfIndex: r.pdf_index, imageUrl: `/pages/${basename(r.image_path)}` })),
   listUnanchoredNotes: () => db.prepare("SELECT * FROM note WHERE anchored = 0 ORDER BY id").all().map(noteRow),
   listOps: (p) => listOps(db, p),
+  listAnnotations: ({ chapterId }) => listAnnotations(db, { chapterId }),
   /** Words the person marked as correct (the book's dictionary / glossary terms). */
   listGlossary: ({ bookId }) => listGlossary(db, { bookId }),
   listGlossaryWords: ({ bookId }) => db.prepare("SELECT term FROM glossary WHERE book_id = ? ORDER BY term").all(bookId).map((r) => r.term),
@@ -63,6 +64,12 @@ const routes = {
   replaceAll: ({ query, replacement }) => replaceAll(db, { query, replacement }),
   addGlossaryWord: ({ bookId, term }) => execute(db, "addGlossaryWord", { bookId, term }),
   setGlossaryTerm: ({ bookId, term, translation, aliases, kind }) => execute(db, "setGlossaryTerm", { bookId, term, translation, aliases, kind }),
+  addComment: ({ segmentId, side, anchor, body, parentId }) => execute(db, "addComment", { segmentId, side, anchor, body, parentId }),
+  setComment: ({ id, body, resolved }) => execute(db, "setComment", { id, body, resolved }),
+  deleteComment: ({ id }) => execute(db, "deleteComment", { id }),
+  addNote: ({ segmentId, anchor, body }) => execute(db, "addNote", { segmentId, anchor, body }),
+  setNote: ({ id, body, targetAnchor }) => execute(db, "setNote", { id, body, targetAnchor }),
+  deleteNote: ({ id }) => execute(db, "deleteNote", { id }),
   undo: () => undo(db),
   redo: () => redo(db),
 }
