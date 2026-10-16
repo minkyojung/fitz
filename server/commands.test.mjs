@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, execute, listOps, redo, undo } from "./commands.mjs"
+import { COMMANDS, docText, execute, listOps, mergeDocs, pmDoc, redo, splitDoc, undo } from "./commands.mjs"
 
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
@@ -17,10 +17,10 @@ function fixture() {
     INSERT INTO book(id, title, source_pdf) VALUES (1, 'T', 'x.pdf');
     INSERT INTO chapter(id, book_id, idx, title, start_page) VALUES (1, 1, 0, 'One', 3);
     INSERT INTO segment(id, chapter_id, idx, kind, page_start, page_end, ocr_text, source_doc, source_text, verified)
-      VALUES (1, 1, 0, 'heading',   3, 3, 'One', '{}', 'One', 1),
-             (2, 1, 1, 'paragraph', 3, 4, 'alpha beta gamma delta', '{}', 'alpha beta gamma delta', 1),
-             (3, 1, 2, 'paragraph', 4, 4, 'epsilon zeta', '{}', 'epsilon zeta', 0),
-             (4, 1, 3, 'paragraph', 5, 5, 'last one', '{}', 'last one', 0);
+      VALUES (1, 1, 0, 'heading',   3, 3, 'One', '${pmDoc("One")}', 'One', 1),
+             (2, 1, 1, 'paragraph', 3, 4, 'alpha beta gamma delta', '${pmDoc("alpha beta gamma delta")}', 'alpha beta gamma delta', 1),
+             (3, 1, 2, 'paragraph', 4, 4, 'epsilon zeta', '${pmDoc("epsilon zeta")}', 'epsilon zeta', 0),
+             (4, 1, 3, 'paragraph', 5, 5, 'last one', '${pmDoc("last one")}', 'last one', 0);
     INSERT INTO note(id, segment_id, kind, src_exact, src_start, src_end, anchored)
       VALUES (1, 2, 'author', 'gamma', 11, 16, 1),
              (2, 3, 'author', 'zeta', 8, 12, 1),
@@ -32,7 +32,7 @@ function fixture() {
 
 /** Everything undo must restore, in a comparable shape. */
 const snapshot = (db) => ({
-  segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, verified FROM segment ORDER BY id").all(),
+  segments: db.prepare("SELECT id, idx, kind, page_start, page_end, ocr_text, source_text, source_doc, verified FROM segment ORDER BY id").all(),
   notes: db.prepare("SELECT id, segment_id, src_start, src_end, anchored FROM note ORDER BY id").all(),
   comments: db.prepare("SELECT id, segment_id FROM comment ORDER BY id").all(),
 })
@@ -136,6 +136,56 @@ test("listOps exposes before/after text for text edits only", () => {
   const [verify, edit] = listOps(db, { segmentId: 3 })
   assert.deepEqual([edit.before, edit.after], ["epsilon zeta", "epsilon ZETA"])
   assert.deepEqual([verify.before, verify.after], [null, null])
+})
+
+const ITALIC_DOC = { type: "doc", content: [{ type: "paragraph", content: [
+  { type: "text", text: "alpha " }, { type: "text", text: "beta", marks: [{ type: "italic" }] }, { type: "text", text: " gamma" } ] }] }
+
+test("updateSegment with a doc keeps marks and derives the text; undo restores the previous doc", () => {
+  const db = fixture()
+  const before = db.prepare("SELECT source_doc FROM segment WHERE id = 2").get().source_doc
+  execute(db, "updateSegment", { id: 2, doc: ITALIC_DOC })
+  const row = db.prepare("SELECT source_doc, source_text FROM segment WHERE id = 2").get()
+  assert.equal(row.source_text, "alpha beta gamma")
+  assert.deepEqual(JSON.parse(row.source_doc), ITALIC_DOC)
+  undo(db)
+  assert.equal(db.prepare("SELECT source_doc FROM segment WHERE id = 2").get().source_doc, before)
+  redo(db)
+  assert.deepEqual(JSON.parse(db.prepare("SELECT source_doc FROM segment WHERE id = 2").get().source_doc), ITALIC_DOC)
+})
+
+test("updateSegment rejects docs that are not a single paragraph", () => {
+  const db = fixture()
+  const two = { type: "doc", content: [{ type: "paragraph", content: [] }, { type: "paragraph", content: [] }] }
+  assert.throws(() => execute(db, "updateSegment", { id: 2, doc: two }), /single paragraph/)
+  assert.equal(docText(ITALIC_DOC), "alpha beta gamma")
+})
+
+test("splitDoc and mergeDocs keep marks and trim like the text path", () => {
+  const [h, t] = splitDoc(ITALIC_DOC, 8) // "alpha be" | "ta gamma"
+  assert.equal(docText(h), "alpha be")
+  assert.equal(docText(t), "ta gamma")
+  assert.deepEqual(h.content[0].content[1].marks, [{ type: "italic" }])
+  assert.deepEqual(t.content[0].content[0].marks, [{ type: "italic" }])
+  const [h2, t2] = splitDoc(ITALIC_DOC, 6) // boundary on the space: "alpha" | "beta gamma"
+  assert.equal(docText(h2), "alpha")
+  assert.equal(docText(t2), "beta gamma")
+  assert.equal(docText(mergeDocs(h2, t2)), "alpha beta gamma")
+  assert.deepEqual(mergeDocs(h2, t2).content[0].content[2].marks, [{ type: "italic" }])
+})
+
+test("split and merge of a marked paragraph round-trip through the db with marks intact", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, doc: ITALIC_DOC })
+  execute(db, "splitSegment", { id: 2, offset: 6 })
+  const tail = db.prepare("SELECT * FROM segment WHERE chapter_id = 1 AND idx = 2").get()
+  assert.deepEqual(JSON.parse(tail.source_doc).content[0].content[0].marks, [{ type: "italic" }])
+  execute(db, "mergeWithNext", { id: 2 })
+  const merged = JSON.parse(db.prepare("SELECT source_doc FROM segment WHERE id = 2").get().source_doc)
+  assert.equal(docText(merged), "alpha beta gamma")
+  assert.ok(merged.content[0].content.some((n) => n.marks?.[0]?.type === "italic"))
+  undo(db); undo(db)
+  assert.deepEqual(JSON.parse(db.prepare("SELECT source_doc FROM segment WHERE id = 2").get().source_doc), ITALIC_DOC)
 })
 
 test("every command has a registered inverse", () => {

@@ -16,9 +16,55 @@ export const openDb = (path) => {
 export const pmDoc = (text) =>
   JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }] })
 
+/** Plain text of a ProseMirror doc (single paragraph; text nodes only). */
+export const docText = (doc) => {
+  const walk = (n) => (n.type === "text" ? n.text ?? "" : (n.content ?? []).map(walk).join(""))
+  return walk(doc)
+}
+const paraNodes = (doc) => doc.content[0].content ?? []
+const mkDoc = (nodes) => ({ type: "doc", content: [{ type: "paragraph", content: nodes }] })
+const trimNodes = (nodes, side) => {
+  // drop whitespace at one edge of a paragraph, removing text nodes that become empty
+  const out = nodes.map((n) => ({ ...n }))
+  while (out.length) {
+    const i = side === "start" ? 0 : out.length - 1
+    out[i].text = side === "start" ? out[i].text.replace(/^\s+/, "") : out[i].text.replace(/\s+$/, "")
+    if (out[i].text) break
+    out.splice(i, 1)
+  }
+  return out
+}
+/** Split a single-paragraph doc at a text offset, keeping marks. Both halves are trimmed like the text. */
+export const splitDoc = (doc, offset) => {
+  const head = [], tail = []
+  let pos = 0
+  for (const n of paraNodes(doc)) {
+    const end = pos + n.text.length
+    if (end <= offset) head.push(n)
+    else if (pos >= offset) tail.push(n)
+    else {
+      head.push({ ...n, text: n.text.slice(0, offset - pos) })
+      tail.push({ ...n, text: n.text.slice(offset - pos) })
+    }
+    pos = end
+  }
+  return [mkDoc(trimNodes(head, "end")), mkDoc(trimNodes(tail, "start"))]
+}
+/** Join two single-paragraph docs with one space, keeping marks. */
+export const mergeDocs = (a, b) => mkDoc([...paraNodes(a), { type: "text", text: " " }, ...paraNodes(b)])
+
+/** Validate a doc for our schema: one paragraph of text nodes, optional marks. */
+const checkDoc = (doc) => {
+  const ok = doc && doc.type === "doc" && Array.isArray(doc.content) && doc.content.length === 1
+    && doc.content[0].type === "paragraph"
+    && (doc.content[0].content ?? []).every((n) => n.type === "text" && typeof n.text === "string")
+  if (!ok) throw httpError(400, "doc must be a single paragraph of text")
+}
+
 export const segRow = (r) => ({
   id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
-  sourceText: r.source_text, ocrText: r.ocr_text ?? null, verified: r.verified === 1, status: r.status,
+  sourceText: r.source_text, sourceDoc: JSON.parse(r.source_doc), ocrText: r.ocr_text ?? null,
+  verified: r.verified === 1, status: r.status,
 })
 export const noteRow = (r) => ({
   id: r.id, segmentId: r.segment_id, kind: r.kind, origPage: r.orig_page, origQuote: r.orig_quote,
@@ -49,31 +95,39 @@ const setText = (db, id, text, extra = "") =>
 
 /** Each command: (db, params) → { result, forward, inverse: {name, params}, segmentIds }. No transactions here. */
 export const COMMANDS = {
-  updateSegment(db, { id, text, kind, verified }) {
+  // `doc` (ProseMirror JSON) wins over `text`; text is derived from it so marks survive.
+  updateSegment(db, { id, text, doc, kind, verified }) {
     const cur = getSegment(db, id)
-    const next = { text: text ?? cur.source_text, kind: kind ?? cur.kind, verified: verified ?? cur.verified === 1 }
+    if (doc !== undefined) checkDoc(doc)
+    const nextDoc = doc !== undefined ? JSON.stringify(doc) : text !== undefined ? pmDoc(text) : cur.source_doc
+    const nextText = doc !== undefined ? docText(doc) : text !== undefined ? text : cur.source_text
+    const next = { kind: kind ?? cur.kind, verified: verified ?? cur.verified === 1 }
     if (!KINDS.includes(next.kind)) throw httpError(400, "bad kind")
     db.prepare(`UPDATE segment SET source_text = ?, source_doc = ?, kind = ?, verified = ?, updated_at = datetime('now')
-                WHERE id = ?`).run(next.text, pmDoc(next.text), next.kind, next.verified ? 1 : 0, id)
+                WHERE id = ?`).run(nextText, nextDoc, next.kind, next.verified ? 1 : 0, id)
     return {
       result: segRow(getSegment(db, id)),
-      forward: { id, ...next },
-      inverse: { name: "updateSegment", params: { id, text: cur.source_text, kind: cur.kind, verified: cur.verified === 1 } },
+      forward: { id, doc: JSON.parse(nextDoc), text: nextText, ...next },
+      inverse: {
+        name: "updateSegment",
+        params: { id, doc: JSON.parse(cur.source_doc), text: cur.source_text, kind: cur.kind, verified: cur.verified === 1 },
+      },
       segmentIds: [id],
     }
   },
 
   splitSegment(db, { id, offset, tailId }) {
     const cur = getSegment(db, id)
-    const head = cur.source_text.slice(0, offset).trim()
-    const tail = cur.source_text.slice(offset).trim()
+    const [headDoc, tailDoc] = splitDoc(JSON.parse(cur.source_doc), offset)
+    const head = docText(headDoc)
+    const tail = docText(tailDoc)
     if (!head || !tail) throw httpError(400, "split would create an empty segment")
     shiftIdx(db, cur.chapter_id, cur.idx, 1) // open a slot for the tail
-    setText(db, id, head).run(head, pmDoc(head), id)
+    setText(db, id, head).run(head, JSON.stringify(headDoc), id)
     const newTailId = db.prepare(
       `INSERT INTO segment(id, chapter_id, idx, kind, page_start, page_end, source_doc, source_text, verified)
        VALUES (?,?,?,?,?,?,?,?,0)`,
-    ).run(tailId ?? null, cur.chapter_id, cur.idx + 1, cur.kind, cur.page_end, cur.page_end, pmDoc(tail), tail).lastInsertRowid
+    ).run(tailId ?? null, cur.chapter_id, cur.idx + 1, cur.kind, cur.page_end, cur.page_end, JSON.stringify(tailDoc), tail).lastInsertRowid
     // notes whose anchor lies in the tail move with it
     db.prepare("UPDATE note SET segment_id = ?, src_start = src_start - ?, src_end = src_end - ? WHERE segment_id = ? AND src_start >= ?")
       .run(newTailId, offset, offset, id, offset)
@@ -82,24 +136,24 @@ export const COMMANDS = {
       forward: { id, offset, tailId: Number(newTailId) },
       inverse: {
         name: "unsplit",
-        params: { headId: id, tailId: Number(newTailId), text: cur.source_text, verified: cur.verified === 1, pageEnd: cur.page_end, offset },
+        params: { headId: id, tailId: Number(newTailId), doc: JSON.parse(cur.source_doc), text: cur.source_text, verified: cur.verified === 1, pageEnd: cur.page_end, offset },
       },
       segmentIds: [id, Number(newTailId)],
     }
   },
 
-  unsplit(db, { headId, tailId, text, verified, pageEnd, offset }) {
+  unsplit(db, { headId, tailId, doc, text, verified, pageEnd, offset }) {
     const head = getSegment(db, headId)
     const tail = getSegment(db, tailId)
     db.prepare("UPDATE note SET segment_id = ?, src_start = src_start + ?, src_end = src_end + ? WHERE segment_id = ?")
       .run(headId, offset, offset, tailId)
     db.prepare("UPDATE comment SET segment_id = ? WHERE segment_id = ?").run(headId, tailId)
     db.prepare("DELETE FROM segment WHERE id = ?").run(tailId)
-    setText(db, headId, text, ", verified = ?, page_end = ?").run(text, pmDoc(text), verified ? 1 : 0, pageEnd, headId)
+    setText(db, headId, text, ", verified = ?, page_end = ?").run(text, JSON.stringify(doc), verified ? 1 : 0, pageEnd, headId)
     shiftIdx(db, head.chapter_id, tail.idx, -1)
     return {
       result: segRow(getSegment(db, headId)),
-      forward: { headId, tailId, text, verified, pageEnd, offset },
+      forward: { headId, tailId, doc, text, verified, pageEnd, offset },
       inverse: { name: "splitSegment", params: { id: headId, offset, tailId } },
       segmentIds: [headId, tailId],
     }
@@ -109,7 +163,8 @@ export const COMMANDS = {
     const cur = getSegment(db, id)
     const next = db.prepare("SELECT * FROM segment WHERE chapter_id = ? AND idx = ?").get(cur.chapter_id, cur.idx + 1)
     if (!next) throw httpError(400, "no following segment in this chapter")
-    const text = `${cur.source_text} ${next.source_text}`
+    const mergedDoc = mergeDocs(JSON.parse(cur.source_doc), JSON.parse(next.source_doc))
+    const text = docText(mergedDoc)
     const shift = cur.source_text.length + 1
     const movedNoteIds = db.prepare("SELECT id FROM note WHERE segment_id = ?").all(next.id).map((r) => r.id)
     const movedCommentIds = db.prepare("SELECT id FROM comment WHERE segment_id = ?").all(next.id).map((r) => r.id)
@@ -117,7 +172,7 @@ export const COMMANDS = {
     db.prepare("UPDATE comment SET segment_id = ? WHERE segment_id = ?").run(id, next.id)
     db.prepare("DELETE FROM segment_version WHERE segment_id = ?").run(next.id)
     db.prepare("DELETE FROM segment WHERE id = ?").run(next.id)
-    setText(db, id, text, ", page_end = ?, verified = 0").run(text, pmDoc(text), next.page_end, id)
+    setText(db, id, text, ", page_end = ?, verified = 0").run(text, JSON.stringify(mergedDoc), next.page_end, id)
     shiftIdx(db, cur.chapter_id, next.idx, -1) // close the gap
     return {
       result: segRow(getSegment(db, id)),
@@ -126,7 +181,7 @@ export const COMMANDS = {
         name: "unmerge",
         params: {
           headId: id,
-          head: { text: cur.source_text, pageEnd: cur.page_end, verified: cur.verified === 1 },
+          head: { doc: JSON.parse(cur.source_doc), text: cur.source_text, pageEnd: cur.page_end, verified: cur.verified === 1 },
           next: { ...next }, // full row, restored under its original id
           movedNoteIds, movedCommentIds, shift,
         },
@@ -140,7 +195,7 @@ export const COMMANDS = {
     shiftIdx(db, cur.chapter_id, cur.idx, 1)
     const cols = Object.keys(next)
     db.prepare(`INSERT INTO segment(${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(...cols.map((c) => next[c]))
-    setText(db, headId, head.text, ", page_end = ?, verified = ?").run(head.text, pmDoc(head.text), head.pageEnd, head.verified ? 1 : 0, headId)
+    setText(db, headId, head.text, ", page_end = ?, verified = ?").run(head.text, JSON.stringify(head.doc), head.pageEnd, head.verified ? 1 : 0, headId)
     const noteBack = db.prepare("UPDATE note SET segment_id = ?, src_start = src_start - ?, src_end = src_end - ? WHERE id = ?")
     for (const nid of movedNoteIds) noteBack.run(next.id, shift, shift, nid)
     const commentBack = db.prepare("UPDATE comment SET segment_id = ? WHERE id = ?")
