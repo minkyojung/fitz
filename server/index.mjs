@@ -4,7 +4,7 @@ import { createServer } from "node:http"
 import { readFile } from "node:fs/promises"
 import { resolve, basename } from "node:path"
 
-import { execute, listOps, noteRow, openDb, redo, segOut, segRow, undo } from "./commands.mjs"
+import { execute, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -41,6 +41,7 @@ const routes = {
       .map((r) => ({ pageNo: r.page_no, pdfIndex: r.pdf_index, imageUrl: `/pages/${basename(r.image_path)}` })),
   listUnanchoredNotes: () => db.prepare("SELECT * FROM note WHERE anchored = 0 ORDER BY id").all().map(noteRow),
   listOps: (p) => listOps(db, p),
+  search: (p) => search(db, p),
 
   // writes: every one is a logged command
   updateSegment: ({ id, patch }) =>
@@ -50,6 +51,7 @@ const routes = {
   anchorNote: ({ noteId, segmentId }) => execute(db, "setNoteAnchor", { noteId, segmentId, anchored: true }),
   insertSegment: ({ chapterId, afterIdx, kind, text, pageNo }) => execute(db, "insertSegment", { chapterId, afterIdx, kind, text, pageNo }),
   deleteSegment: ({ id }) => execute(db, "deleteSegment", { id }),
+  replaceAll: ({ query, replacement }) => replaceAll(db, { query, replacement }),
   undo: () => undo(db),
   redo: () => redo(db),
 }

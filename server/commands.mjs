@@ -53,6 +53,17 @@ export const splitDoc = (doc, offset) => {
 /** Join two single-paragraph docs with one space, keeping marks. */
 export const mergeDocs = (a, b) => mkDoc([...paraNodes(a), { type: "text", text: " " }, ...paraNodes(b)])
 
+/** Replace every occurrence of `query` inside each text node (marks survive; matches never span nodes). */
+export const replaceInDoc = (doc, query, replacement) => {
+  let count = 0
+  const nodes = paraNodes(doc).map((n) => {
+    const parts = n.text.split(query)
+    count += parts.length - 1
+    return { ...n, text: parts.join(replacement) }
+  }).filter((n) => n.text !== "")
+  return { doc: mkDoc(nodes), count }
+}
+
 /** Validate a doc for our schema: one paragraph of text nodes, optional marks. */
 const checkDoc = (doc) => {
   const ok = doc && doc.type === "doc" && Array.isArray(doc.content) && doc.content.length === 1
@@ -275,6 +286,23 @@ export const COMMANDS = {
     }
   },
 
+  /** Replace the docs of several segments at once (used by find & replace). One log row; inverse restores all. */
+  setDocs(db, { items }) {
+    const prev = []
+    for (const { id, doc } of items) {
+      const cur = getSegment(db, id)
+      checkDoc(doc)
+      prev.push({ id, doc: JSON.parse(cur.source_doc) })
+      setText(db, id, docText(doc)).run(docText(doc), JSON.stringify(doc), id)
+    }
+    return {
+      result: { changed: items.length },
+      forward: { items },
+      inverse: { name: "setDocs", params: { items: prev } },
+      segmentIds: items.map((i) => i.id),
+    }
+  },
+
   setNoteAnchor(db, { noteId, segmentId, anchored }) {
     const cur = getNote(db, noteId)
     getSegment(db, segmentId)
@@ -338,6 +366,38 @@ export const redo = (db) =>
     touch(db)
     return summary(row)
   })
+
+/** Segments whose text contains `query` (case-sensitive, literal), book order. */
+export const search = (db, { query }) => {
+  if (!query) return []
+  return db.prepare(`SELECT s.id, s.chapter_id, c.title, s.page_start, s.source_text, s.source_doc
+                     FROM segment s JOIN chapter c ON c.id = s.chapter_id
+                     WHERE instr(s.source_text, ?) > 0 ORDER BY c.idx, s.idx`).all(query)
+    .map((r) => {
+      const at = r.source_text.indexOf(query)
+      return {
+        segmentId: r.id, chapterId: r.chapter_id, chapterTitle: r.title, pageStart: r.page_start,
+        count: r.source_text.split(query).length - 1,
+        snippet: r.source_text.slice(Math.max(0, at - 40), at + query.length + 40),
+      }
+    })
+}
+
+/** Apply a literal replacement across the whole book as one undoable command. */
+export const replaceAll = (db, { query, replacement }) => {
+  if (!query) throw httpError(400, "query is required")
+  const items = []
+  let occurrences = 0
+  for (const r of search(db, { query })) {
+    const { doc, count } = replaceInDoc(JSON.parse(getSegment(db, r.segmentId).source_doc), query, replacement)
+    if (!docText(doc).trim()) throw httpError(400, `replacement would empty segment ${r.segmentId}`)
+    occurrences += count
+    items.push({ id: r.segmentId, doc })
+  }
+  if (!items.length) return { segments: 0, occurrences: 0 }
+  execute(db, "setDocs", { items })
+  return { segments: items.length, occurrences }
+}
 
 export const listOps = (db, { segmentId, limit = 50 } = {}) => {
   const rows = segmentId

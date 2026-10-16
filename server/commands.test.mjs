@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listOps, mergeDocs, pmDoc, redo, splitDoc, undo } from "./commands.mjs"
+import { COMMANDS, docText, execute, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo } from "./commands.mjs"
 
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
@@ -225,6 +225,39 @@ test("insertSegment places the row after afterIdx with contiguous idx; redo keep
   assert.equal(db.prepare("SELECT kind FROM segment WHERE id = ?").get(row.id).kind, "caption")
   assert.throws(() => execute(db, "deleteSegment", { id: 2 }), /notes or comments/)
   assert.throws(() => execute(db, "insertSegment", { chapterId: 1, afterIdx: 0, kind: "caption", text: "  ", pageNo: 4 }), /text is required/)
+})
+
+test("search lists matching segments with counts and snippets in book order", () => {
+  const db = fixture()
+  const hits = search(db, { query: "a" })
+  assert.deepEqual(hits.map((h) => h.segmentId), [2, 3, 4])
+  assert.equal(hits[0].count, 6) // "alpha beta gamma delta"
+  assert.ok(hits[0].snippet.includes("alpha"))
+  assert.deepEqual(search(db, { query: "" }), [])
+})
+
+test("replaceInDoc keeps marks and replaces inside each text node", () => {
+  const { doc, count } = replaceInDoc(ITALIC_DOC, "a", "A")
+  assert.equal(count, 5)
+  assert.equal(docText(doc), "AlphA betA gAmmA")
+  assert.deepEqual(doc.content[0].content[1].marks, [{ type: "italic" }])
+})
+
+test("replaceAll changes every segment in one logged command; undo restores all; nothing matched logs nothing", () => {
+  const db = fixture()
+  const before = snapshot(db)
+  const r = replaceAll(db, { query: "zeta", replacement: "ZETA" })
+  assert.deepEqual(r, { segments: 1, occurrences: 1 })
+  assert.equal(db.prepare("SELECT source_text FROM segment WHERE id = 3").get().source_text, "epsilon ZETA")
+  assert.equal(opsCount(db, false), 1)
+  const wide = replaceAll(db, { query: "a", replacement: "4" })
+  assert.equal(wide.segments, 2) // segment 3 now reads "epsilon ZETA"
+  assert.equal(opsCount(db, false), 2)
+  undo(db); undo(db)
+  assert.deepEqual(snapshot(db), before)
+  assert.deepEqual(replaceAll(db, { query: "nothing-here", replacement: "x" }), { segments: 0, occurrences: 0 })
+  assert.equal(opsCount(db, false), 0)
+  assert.throws(() => replaceAll(db, { query: "last one", replacement: "" }), /would empty/)
 })
 
 test("every command has a registered inverse", () => {
