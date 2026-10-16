@@ -24,15 +24,17 @@ const KINDS = Object.keys(KIND_LABEL) as SegmentKind[]
 interface Props {
   segment: Segment
   selected: boolean
+  editing: boolean
   hasNext: boolean
   onSelect: () => void
+  onEditingChange: (editing: boolean) => void
   onPatch: (patch: SegmentPatch) => Promise<unknown>
   onSplit: (offset: number) => Promise<unknown>
   onMerge: () => Promise<unknown>
 }
 
-export function SegmentRow({ segment: s, selected, hasNext, onSelect, onPatch, onSplit, onMerge }: Props) {
-  const [editing, setEditing] = useState(false)
+export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, onEditingChange, onPatch, onSplit, onMerge }: Props) {
+  const setEditing = onEditingChange
   const [draft, setDraft] = useState(s.sourceText)
   const ref = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLTextAreaElement>(null)

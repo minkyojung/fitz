@@ -7,14 +7,16 @@ import type { Segment, SegmentPatch } from "@/data/api"
 interface Props {
   segments: Segment[]
   selectedId: number | null
+  editingId: number | null
   onSelect: (segment: Segment) => void
+  onEditingChange: (id: number | null) => void
   onPatch: (id: number, patch: SegmentPatch) => Promise<unknown>
   onSplit: (id: number, offset: number) => Promise<unknown>
   onMerge: (id: number) => Promise<unknown>
 }
 
 /** Segments of the current chapter, grouped under the printed page they start on. */
-export function SegmentList({ segments, selectedId, onSelect, onPatch, onSplit, onMerge }: Props) {
+export function SegmentList({ segments, selectedId, editingId, onSelect, onEditingChange, onPatch, onSplit, onMerge }: Props) {
   return (
     <ScrollArea className="h-full">
       <div className="px-4 py-3">
@@ -30,8 +32,10 @@ export function SegmentList({ segments, selectedId, onSelect, onPatch, onSplit, 
               <SegmentRow
                 segment={s}
                 selected={s.id === selectedId}
+                editing={s.id === editingId}
                 hasNext={i + 1 < segments.length}
                 onSelect={() => onSelect(s)}
+                onEditingChange={(on) => onEditingChange(on ? s.id : null)}
                 onPatch={(patch) => onPatch(s.id, patch)}
                 onSplit={(offset) => onSplit(s.id, offset)}
                 onMerge={() => onMerge(s.id)}
