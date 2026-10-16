@@ -380,3 +380,23 @@ test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
   await expect(row.locator("p")).toHaveText(original + " KEEP")
   await expect(page.locator("footer [role=status]")).toHaveText("저장됨")
 })
+
+test("the selected segment is outlined on the scanned page and follows the selection", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /12: The Banana War/ }).click()
+  const rows = page.locator("[data-slot=scroll-area] .group")
+  await expect(rows.first()).toHaveText(/Banana War/)
+  await selectRow(rows.nth(1))
+
+  const mark = page.getByTestId("segment-highlight")
+  await expect(mark).toBeVisible()
+  const img = page.getByRole("img", { name: /원서 \d+쪽/ })
+  const [m1, i] = await Promise.all([mark.boundingBox(), img.boundingBox()])
+  expect(m1!.x).toBeGreaterThanOrEqual(i!.x - 1)
+  expect(m1!.x + m1!.width).toBeLessThanOrEqual(i!.x + i!.width + 1)
+  expect(m1!.y).toBeGreaterThanOrEqual(i!.y - 1)
+  expect(m1!.height).toBeGreaterThan(10)
+
+  await page.keyboard.press("ArrowDown")
+  await expect.poll(async () => (await mark.boundingBox())!.y).not.toBe(m1!.y)
+})

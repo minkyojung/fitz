@@ -70,8 +70,10 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge }: Props)
     cancelEdit: () => setEditingId(null),
   }
 
+  const highlight = selected?.boxes.find((b) => b.pageNo === pageNo) ?? null
+
   return {
-    left: <PageViewer pages={pages} pageNo={pageNo} onPageChange={changePage} />,
+    left: <PageViewer pages={pages} pageNo={pageNo} onPageChange={changePage} highlight={highlight} />,
     right: (
       <SegmentList
         segments={segments}

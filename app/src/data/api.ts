@@ -21,6 +21,15 @@ export interface Chapter {
   verifiedCount: number
 }
 
+/** Where a segment sits on a scanned page, as fractions of the page (0..1). One per page it touches. */
+export interface Box {
+  pageNo: number
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
 export interface Segment {
   id: number
   chapterId: number
@@ -32,6 +41,7 @@ export interface Segment {
   sourceDoc: DocJSON
   /** OCR original, immutable. null when the row was edited before originals were kept. */
   ocrText: string | null
+  boxes: Box[]
   verified: boolean
   status: SegmentStatus
 }

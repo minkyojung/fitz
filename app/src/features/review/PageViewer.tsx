@@ -1,19 +1,27 @@
+import { useEffect, useRef } from "react"
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { pageImageUrl } from "@/data/http"
-import type { Page } from "@/data/api"
+import type { Box, Page } from "@/data/api"
 
 interface Props {
   pages: Page[]
   pageNo: number | null
   onPageChange: (pageNo: number) => void
+  /** Area of the selected segment on the page being shown. */
+  highlight?: Box | null
 }
 
 /** Scanned page of the printed book. Navigation is by printed page number. */
-export function PageViewer({ pages, pageNo, onPageChange }: Props) {
+export function PageViewer({ pages, pageNo, onPageChange, highlight }: Props) {
   const page = pages.find((p) => p.pageNo === pageNo) ?? null
+  const markRef = useRef<HTMLDivElement>(null)
+  // bring the highlighted area into view whenever it moves
+  useEffect(() => {
+    markRef.current?.scrollIntoView({ block: "center" })
+  }, [highlight?.pageNo, highlight?.y0, highlight?.y1])
   const first = pages[0]?.pageNo ?? 1
   const last = pages[pages.length - 1]?.pageNo ?? 1
 
@@ -34,7 +42,23 @@ export function PageViewer({ pages, pageNo, onPageChange }: Props) {
       </div>
       <ScrollArea className="min-h-0 flex-1 bg-muted/40">
         {page ? (
-          <img src={pageImageUrl(page.imageUrl)} alt={`원서 ${page.pageNo}쪽`} className="mx-auto block max-w-full" />
+          <div className="relative mx-auto w-fit">
+            <img src={pageImageUrl(page.imageUrl)} alt={`원서 ${page.pageNo}쪽`} className="block max-w-full" />
+            {highlight && highlight.pageNo === page.pageNo && (
+              <div
+                ref={markRef}
+                data-testid="segment-highlight"
+                aria-hidden
+                className="pointer-events-none absolute rounded-sm border-2 border-primary/70 bg-primary/5"
+                style={{
+                  left: `${highlight.x0 * 100}%`,
+                  top: `${highlight.y0 * 100}%`,
+                  width: `${(highlight.x1 - highlight.x0) * 100}%`,
+                  height: `${(highlight.y1 - highlight.y0) * 100}%`,
+                }}
+              />
+            )}
+          </div>
         ) : (
           <div className="p-8 text-center text-xs text-muted-foreground">페이지 없음</div>
         )}
