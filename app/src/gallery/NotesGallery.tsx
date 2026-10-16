@@ -40,7 +40,7 @@ export function NotesGallery() {
       if (x.kind === "comment") {
         out.push(
           <mark key={"c" + x.c.id} data-comment onClick={() => setSelected(x.c.id)}
-            className={cn("cursor-pointer border-b-2 border-mark-comment bg-mark-comment/40 text-inherit", selected === x.c.id && "bg-mark-comment")}>
+            className={cn("cursor-pointer border-b-2 border-mark-comment bg-mark-comment/40 text-inherit box-decoration-clone transition-colors hover:bg-mark-comment/70", selected === x.c.id && "border-mark-comment-ink bg-mark-comment/70")}>
             {text.slice(x.at, x.at + x.len)}
           </mark>,
         )
@@ -48,7 +48,7 @@ export function NotesGallery() {
         out.push(text.slice(x.at, x.at + x.len))
         out.push(
           <Tooltip key={"n" + x.n.id}>
-            <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink" />}>
+            <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink transition-colors hover:bg-mark-note/70" />}>
               {x.num}{x.n.kind === "translator" && <span className="opacity-60">T</span>}
             </TooltipTrigger>
             <TooltipContent side="top">{x.n.kind === "author" ? "Author's note" : "Translator's note"}: {x.n.body}</TooltipContent>
