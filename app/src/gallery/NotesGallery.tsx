@@ -15,6 +15,8 @@ type Comment = { id: number; side: "source" | "target"; quote: string; body: str
 type Note = { id: number; kind: "author" | "translator"; quote: string; body: string }
 
 export function NotesGallery() {
+  /** Publishing convention: author's notes are numbered, translator's notes carry an asterisk. */
+  const marker = (n: Note) => (n.kind === "author" ? String(notes.filter((x) => x.kind === "author").indexOf(n) + 1) : "*")
   const [comments, setComments] = useState<Comment[]>([
     { id: 1, side: "source", quote: "ten times the going rate", body: "Check the Fortune article — is it ten times or three?", resolved: false, replies: [{ body: "Fortune (1933) says ten. Keep." }] },
     { id: 2, side: "target", quote: "분개했다", body: "'분노했다'가 더 자연스러울까?", resolved: false, replies: [] },
@@ -23,14 +25,14 @@ export function NotesGallery() {
     { id: 1, kind: "author", quote: "부와 좋은 일자리", body: "Interview with the Zemurray family, 2010." },
     { id: 2, kind: "translator", quote: "통상 임금", body: "1910년대 온두라스 농장 노동자의 일당은 약 25센트였다." },
   ]
-  const [selected, setSelected] = useState<number | null>(1)
+  const [selected, setSelected] = useState<number | null>(null)
   const open = comments.filter((c) => !c.resolved).length
 
   const mark = (text: string, side: "source" | "target") => {
     // overlays in document order: comment highlights and footnote numbers after their quotes
     const items = [
       ...comments.filter((c) => c.side === side && !c.resolved).map((c) => ({ at: text.indexOf(c.quote), len: c.quote.length, kind: "comment" as const, c })),
-      ...notes.filter(() => side === "target").map((n, i) => ({ at: text.indexOf(n.quote), len: n.quote.length, kind: "note" as const, n, num: i + 1 })),
+      ...notes.filter(() => side === "target").map((n) => ({ at: text.indexOf(n.quote), len: n.quote.length, kind: "note" as const, n, label: marker(n) })),
     ].filter((x) => x.at >= 0).sort((a, b) => a.at - b.at)
     const out: React.ReactNode[] = []
     let pos = 0
@@ -49,7 +51,7 @@ export function NotesGallery() {
         out.push(
           <Tooltip key={"n" + x.n.id}>
             <TooltipTrigger render={<sup data-note className="ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink transition-colors hover:bg-mark-note/70" />}>
-              {x.num}{x.n.kind === "translator" && <span className="opacity-60">T</span>}
+              {x.label}
             </TooltipTrigger>
             <TooltipContent side="top">{x.n.kind === "author" ? "Author's note" : "Translator's note"}: {x.n.body}</TooltipContent>
           </Tooltip>,
@@ -66,7 +68,7 @@ export function NotesGallery() {
       <div>
         <h1 className="mb-4 flex items-center gap-3 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Comments &amp; notes gallery</span>
-          <span>yellow = comment (click to open) · blue superscript = footnote (T = translator's) · edits get no colour, only an "edited" dot (hover for the original) · hover for text</span>
+          <span>yellow = comment (click to open) · blue superscript = footnote (number = author's, * = translator's) · edits get no colour, only an "edited" dot (hover for the original) · hover for text</span>
         </h1>
         <div className="grid grid-cols-[1rem_1fr_1fr] gap-x-6">
           <div className="flex flex-col items-center gap-1.5 pt-2">
@@ -110,10 +112,10 @@ export function NotesGallery() {
               {selected === c.id && !c.resolved && <Textarea placeholder="Reply…" className="min-h-8 text-xs" rows={1} />}
             </li>
           ))}
-          {notes.map((n, i) => (
+          {notes.map((n) => (
             <li key={"n" + n.id} className="space-y-1 px-3 py-2">
               <div className="flex items-center gap-2">
-                <sup className="border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink">{i + 1}{n.kind === "translator" && <span className="opacity-60">T</span>}</sup>
+                <sup className="border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink">{marker(n)}</sup>
                 <span className="text-muted-foreground">{n.kind === "author" ? "Author's note" : "Translator's note"}</span>
                 <span className="ml-auto truncate text-muted-foreground" lang="ko">“{n.quote}”</span>
               </div>
