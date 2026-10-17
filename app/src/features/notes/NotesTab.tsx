@@ -112,7 +112,7 @@ function NoteItem({ note, label }: { note: Note; label?: string }) {
         {note.targetAnchor ? (
           <span className="ml-auto truncate text-muted-foreground" lang="ko">“{note.targetAnchor.exact}”</span>
         ) : (
-          <span className="ml-auto text-muted-foreground">not placed</span>
+          <span className="ml-auto text-muted-foreground" title="Select the words in the translation, then “Place note”">not placed</span>
         )}
         {translator && (
           <Button size="icon-xs" variant="ghost" aria-label="Delete note" onClick={(e) => { e.stopPropagation(); void ann.actions.deleteNote(note.id) }}>
