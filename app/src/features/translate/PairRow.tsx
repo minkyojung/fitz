@@ -82,6 +82,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
 
   const startEdit = (e: React.MouseEvent<HTMLElement>) => {
     if (editing) return
+    if (!window.getSelection()?.isCollapsed) return // a drag-selection, not a click: leave it for the toolbar
     clickPos.current = docPosAtPoint(e.currentTarget, e.clientX, e.clientY)
     onSelect()
     onEditingChange(true)

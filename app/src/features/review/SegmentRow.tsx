@@ -109,6 +109,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
    *  anything scrolls, so it survives the selection's scrollIntoView. */
   const startEditAt = (e: React.MouseEvent<HTMLParagraphElement>) => {
     if (editing) return
+    if (!window.getSelection()?.isCollapsed) return // a drag-selection, not a click: leave it for the toolbar
     clickOffset.current = textOffsetAtPoint(e.currentTarget, e.clientX, e.clientY)
     onSelect()
     setEditing(true)
