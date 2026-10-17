@@ -9,6 +9,8 @@ export interface AnnotationState {
   /** Selected item, for cross-highlighting between text and panel. */
   selected: Selected
   select: (sel: Selected) => void
+  /** Footnote labels by note id for the current chapter (author numbers, translator asterisks). */
+  markers: Map<number, string>
   actions: {
     addComment: (segmentId: number, side: "source" | "target", anchor: TextAnchor | null, body: string, parentId?: number | null) => Promise<unknown>
     setComment: (id: number, patch: { body?: string; resolved?: boolean }) => Promise<unknown>

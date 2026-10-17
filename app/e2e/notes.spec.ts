@@ -107,3 +107,37 @@ test("keyboard selection inside the editor shows the same toolbar; a comment mad
   const marked = await row.locator("mark[data-comment]").innerText()
   expect(marked.length).toBeGreaterThan(0)
 })
+
+test("author's note: provisional number at the paragraph's end, placed after selected words, undo unplaces it", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /17: Israel is Real/ }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  const pairs = page.locator("[data-pair]")
+  await expect(pairs.first()).toContainText("Israel")
+  const pair = pairs.nth(7) // its source carries the chapter's first author's note ("several hundred Jewish refugees")
+  await expect(pair).toContainText("several hundred Jewish refugees")
+  await pair.locator("[data-target]").click()
+  await expect(pair.getByRole("textbox", { name: "Edit translation" })).toBeFocused()
+  await page.keyboard.type("수백 명의 유대인 난민이 그 도시에 도착했다.")
+  await page.keyboard.press("Tab")
+  const target = pair.locator("[data-target]")
+  await expect(target).toContainText("난민")
+
+  // not placed: grey number at the end of the paragraph
+  const marker = target.locator("sup[data-note]")
+  await expect(marker).toHaveText("1")
+  await expect(marker).toHaveAttribute("data-provisional", "true")
+  await expect(target).toHaveText(/도착했다\.1$/)
+
+  await target.scrollIntoViewIfNeeded()
+  await selectWord(target, "난민")
+  await page.getByRole("button", { name: "Place note 1" }).click()
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
+  await expect(marker).not.toHaveAttribute("data-provisional", "true")
+  await expect(target).toHaveText(/난민1이 그 도시에/)
+
+  await page.locator("footer").click({ position: { x: 300, y: 10 } }) // drop focus out of the toolbar
+  await page.keyboard.press("Meta+z")
+  await expect(target).toHaveText(/도착했다\.1$/)
+  await expect(marker).toHaveAttribute("data-provisional", "true")
+})

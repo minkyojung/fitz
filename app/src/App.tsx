@@ -63,15 +63,15 @@ export function App() {
   // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
   const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false })
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
-  const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode })
+  const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes })
   const translating = mode === "translate"
   const commands = translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
   // a selected comment/note opens the Notes tab
   const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel) setPanelTab("notes") }, [])
   const annotationState = useMemo(
-    () => ({ annotations: book.annotations, selected: annSelected, select: selectAnnotation, actions: book.annotate }),
-    [book.annotations, annSelected, selectAnnotation, book.annotate],
+    () => ({ annotations: book.annotations, selected: annSelected, select: selectAnnotation, actions: book.annotate, markers: translate.markers }),
+    [book.annotations, annSelected, selectAnnotation, book.annotate, translate.markers],
   )
   const chapterSheets = useMemo(() => sheets(book.segments.map((s) => s.targetText).join("\n")), [book.segments])
   const { speller, userWords } = book.spell

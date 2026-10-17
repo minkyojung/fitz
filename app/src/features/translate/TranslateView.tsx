@@ -2,26 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PairRow } from "./PairRow"
-import type { DocJSON, Segment, SegmentPatch } from "@/data/api"
+import type { DocJSON, Note, Segment, SegmentPatch } from "@/data/api"
 import { footnoteMarkers } from "@/lib/footnotes"
 import { locateAnchor } from "@/lib/anchor"
-import { useAnnotations } from "@/features/notes/AnnotationsContext"
 
 interface Props {
   segments: Segment[]
   onPatch: (id: number, patch: SegmentPatch) => Promise<unknown>
   focusMode: boolean
+  /** The chapter's notes, passed in because this hook runs above the annotations provider. */
+  notes: Note[]
 }
 
 const unconfirmed = (s: Segment) => s.status === "untranslated" || s.status === "draft"
 
 /** Bilingual-book view: facing paragraphs, one translation editor at a time, caret flowing between pairs. */
-export function useTranslate({ segments, onPatch, focusMode }: Props) {
+export function useTranslate({ segments, onPatch, focusMode, notes }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [caretEdge, setCaretEdge] = useState<"start" | "end">("end")
   const shownChapter = useRef<number | null>(null)
-  const notes = useAnnotations()?.annotations.notes ?? []
   const markers = useMemo(() => {
     const idx = new Map(segments.map((sg, i) => [sg.id, i]))
     return footnoteMarkers(notes.filter((n) => idx.has(n.segmentId)).map((n) => {

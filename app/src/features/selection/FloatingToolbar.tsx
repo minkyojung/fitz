@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { IconBook2, IconMessage, IconNote } from "@tabler/icons-react"
+import { IconBook2, IconMessage, IconNote, IconPinned } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent } from "@/components/ui/popover"
@@ -27,6 +27,8 @@ export function FloatingToolbar({ blockText }: { blockText: (segmentId: number, 
 
   if (!sel || !anchor || !spell || !ann) return null
   const known = spell.glossary.some((t) => t.term.toLowerCase() === sel.text.toLowerCase())
+  // author's notes of this paragraph still waiting for a place in the translation
+  const unplaced = sel.side === "target" ? ann.annotations.notes.filter((n) => n.segmentId === sel.segmentId && n.kind === "author" && !n.targetAnchor) : []
   const close = () => { setCompose(null); setBody(""); state?.publish(null); if (sel.origin === "dom") window.getSelection()?.removeAllRanges() }
   /** Anchor against the stored text: the editor may hold unsaved edits and DOM offsets are per block,
    *  so find the selected words nearest the reported offset rather than trusting the offset itself. */
@@ -83,6 +85,12 @@ export function FloatingToolbar({ blockText }: { blockText: (segmentId: number, 
                 <IconNote data-icon="inline-start" /> Translator's note
               </Button>
             )}
+            {unplaced.map((n) => (
+              <Button key={n.id} size="xs" variant="ghost" title={n.bodySource ?? undefined}
+                onClick={() => { void ann.actions.setNote(n.id, { targetAnchor: anchorOf() }); close() }}>
+                <IconPinned data-icon="inline-start" /> Place note {ann.markers.get(n.id) ?? ""}
+              </Button>
+            ))}
           </div>
         )}
       </PopoverContent>
