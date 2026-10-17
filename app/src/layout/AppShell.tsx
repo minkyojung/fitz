@@ -23,13 +23,15 @@ interface AppShellProps {
   status: ReactNode
   /** Collapse the scan (left) panel, e.g. while translating. */
   leftCollapsed?: boolean
+  /** A full-width view that replaces the three panels (the Export tab). */
+  main?: ReactNode
 }
 
 /** The sidebar provider writes its open state to a cookie; read it back so the choice survives reloads. */
 const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.cookie)
 
 /** Fixed frame: sidebar | [tabs / left+right+panel / status]. Content is injected per mode. */
-export function AppShell({ mode, onModeChange, sidebar, left, right, panel, status, leftCollapsed = false }: AppShellProps) {
+export function AppShell({ mode, onModeChange, sidebar, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
   const leftRef = useRef<PanelImperativeHandle>(null)
   useEffect(() => {
     const p = leftRef.current
@@ -57,6 +59,7 @@ export function AppShell({ mode, onModeChange, sidebar, left, right, panel, stat
             </TabsList>
           </Tabs>
         </header>
+        {main ? <div className="min-h-0 flex-1 overflow-auto">{main}</div> : (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           <ResizablePanel panelRef={leftRef} defaultSize="42" minSize={240} collapsible collapsedSize={0}>
             {left}
@@ -70,6 +73,7 @@ export function AppShell({ mode, onModeChange, sidebar, left, right, panel, stat
             {panel}
           </ResizablePanel>
         </ResizablePanelGroup>
+        )}
         <footer className="flex h-7 shrink-0 items-center gap-4 border-t px-3 text-xs text-muted-foreground tabular-nums">
           {status}
         </footer>

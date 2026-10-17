@@ -13,6 +13,21 @@ async function call<T>(method: string, body: unknown = {}): Promise<T> {
   return data as T
 }
 
+/** Same request as `call`, but the body is a file; the name comes from content-disposition. */
+async function callBlob(method: string, body: unknown = {}): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${BASE}/api/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.error ?? `${method} failed (${res.status})`)
+  }
+  const m = res.headers.get("content-disposition")?.match(/filename\*=UTF-8''([^;]+)/)
+  return { blob: await res.blob(), filename: m ? decodeURIComponent(m[1]) : "export.docx" }
+}
+
 export const pageImageUrl = (url: string) => `${BASE}${url}`
 
 export const api: Api = {
@@ -43,4 +58,6 @@ export const api: Api = {
   setGlossaryTerm: (input) => call("setGlossaryTerm", input),
   listSourceTexts: () => call("listSourceTexts"),
   replaceAll: (query, replacement) => call("replaceAll", { query, replacement }),
+  exportSummary: (input) => call("exportSummary", input),
+  exportDocx: (input) => callBlob("exportDocx", input),
 }

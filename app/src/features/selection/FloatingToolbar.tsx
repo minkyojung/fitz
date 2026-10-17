@@ -4,7 +4,7 @@ import { IconBook2, IconMessage, IconNote, IconPinned } from "@tabler/icons-reac
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
-import { makeAnchor } from "@/lib/anchor"
+import { locateAnchor, makeAnchor } from "@/lib/anchor"
 import { useSpell } from "@/features/review/SpellContext"
 import { useAnnotations } from "@/features/notes/AnnotationsContext"
 import { useSelectionState } from "./SelectionContext"
@@ -27,8 +27,10 @@ export function FloatingToolbar({ blockText }: { blockText: (segmentId: number, 
 
   if (!sel || !anchor || !spell || !ann) return null
   const known = spell.glossary.some((t) => t.term.toLowerCase() === sel.text.toLowerCase())
-  // author's notes of this paragraph still waiting for a place in the translation
-  const unplaced = sel.side === "target" ? ann.annotations.notes.filter((n) => n.segmentId === sel.segmentId && n.kind === "author" && !n.targetAnchor) : []
+  // author's notes of this paragraph still waiting for a place in the translation (never placed, or placed in text since rewritten)
+  const unplaced = sel.side === "target"
+    ? ann.annotations.notes.filter((n) => n.segmentId === sel.segmentId && n.kind === "author" && (!n.targetAnchor || !locateAnchor(blockText(sel.segmentId, "target"), n.targetAnchor)))
+    : []
   const close = () => { setCompose(null); setBody(""); state?.publish(null); if (sel.origin === "dom") window.getSelection()?.removeAllRanges() }
   /** Anchor against the stored text: the editor may hold unsaved edits and DOM offsets are per block,
    *  so find the selected words nearest the reported offset rather than trusting the offset itself. */

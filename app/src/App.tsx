@@ -2,10 +2,12 @@ import { useCallback, useMemo, useState } from "react"
 import { IconArrowBackUp, IconArrowForwardUp } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
+import { cn } from "cn"
 import { Kbd } from "@/components/ui/kbd"
 
 import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList } from "@/features/review/ChapterList"
+import { ExportView } from "@/features/export/ExportView"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
@@ -65,7 +67,8 @@ export function App() {
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes })
   const translating = mode === "translate"
-  const commands = translating ? translate.commands : review.commands
+  const exporting = mode === "export"
+  const commands = exporting ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
   // a selected comment/note opens the Notes tab
   const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel) setPanelTab("notes") }, [])
@@ -95,6 +98,7 @@ export function App() {
       onModeChange={setMode}
       leftCollapsed={!scanShown[mode]}
       sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
+      main={exporting ? <ExportView chapters={book.chapters} /> : undefined}
       left={review.left}
       right={translating ? translate.view : review.right}
       panel={
@@ -106,8 +110,8 @@ export function App() {
       }
       status={
         <>
-          <span>{book.chapter?.title ?? "—"}</span>
-          {translating ? (
+          <span>{exporting ? "Export" : book.chapter?.title ?? "—"}</span>
+          {exporting ? null : translating ? (
             <>
               <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
               <span data-sheets>{formatSheets(chapterSheets)}</span>
@@ -119,9 +123,9 @@ export function App() {
               Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
             </span>
           )}
-          <span>Unlinked notes {book.unanchoredNotes.length}</span>
-          <span data-suspect-total>Suspects {suspectTotal}</span>
-          <span className="hidden items-center gap-3 lg:flex">
+          {!exporting && <span>Unlinked notes {book.unanchoredNotes.length}</span>}
+          {!exporting && <span data-suspect-total>Suspects {suspectTotal}</span>}
+          <span className={cn("hidden items-center gap-3 lg:flex", exporting && "lg:hidden")}>
             {HINTS.map((h) => (
               <span key={h.command} className="flex items-center gap-1">
                 <Kbd>{chordLabel(KEYMAP[h.command][0])}</Kbd>

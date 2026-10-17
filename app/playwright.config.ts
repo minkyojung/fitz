@@ -2,6 +2,8 @@ import { defineConfig } from "@playwright/test"
 
 // e2e runs against a scratch copy of the book database so tests never touch out/book.db.
 export default defineConfig({
+  // one worker: every test shares one database and one undo stack, so a ⌘Z in one test must not undo another's write
+  workers: 1,
   testDir: "e2e",
   timeout: 30_000,
   use: { baseURL: "http://localhost:4173", viewport: { width: 1400, height: 800 } },

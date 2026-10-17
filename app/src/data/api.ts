@@ -146,6 +146,17 @@ export interface OpRecord extends OpSummary {
   after: string | null
 }
 
+/** Note scheme for export: A = author's notes as endnotes, translator's notes as * footnotes;
+ *  B = one numbered series of footnotes; C = one series of endnotes (B and C tag translator's notes "—옮긴이"). */
+export type ExportScheme = "A" | "B" | "C"
+export interface ExportWarning { kind: "untranslated" | "unplaced" | "lostAnchor"; chapterId: number; segmentId: number; idx: number; noteId?: number }
+export interface ExportSummary {
+  chapters: { id: number; idx: number; title: string; segments: number; untranslated: number; unplaced: number; chars: number }[]
+  warnings: ExportWarning[]
+  stats: { chapters: number; segments: number; untranslated: number; authorNotes: number; translatorNotes: number; unplaced: number; chars: number }
+  filename: string
+}
+
 export interface Api {
   getBook(): Promise<Book>
   listChapters(): Promise<Chapter[]>
@@ -182,4 +193,7 @@ export interface Api {
   search(query: string): Promise<SearchHit[]>
   /** Replace every occurrence in the book as one undoable step. */
   replaceAll(query: string, replacement: string): Promise<{ segments: number; occurrences: number }>
+  /** What an export would contain (chapters omitted = all), and the Word file itself. */
+  exportSummary(input: { chapterIds?: number[]; scheme: ExportScheme }): Promise<ExportSummary>
+  exportDocx(input: { chapterIds?: number[]; scheme: ExportScheme }): Promise<{ blob: Blob; filename: string }>
 }
