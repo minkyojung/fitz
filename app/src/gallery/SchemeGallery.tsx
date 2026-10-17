@@ -9,7 +9,7 @@ import { cn } from "cn"
 type Scheme = "split" | "single" | "single-tagged"
 
 const SCHEMES: { value: Scheme; label: string; blurb: string }[] = [
-  { value: "split", label: "A · Author 1 2, translator *", blurb: "Author's notes numbered, translator's notes marked * † ‡. The kind is visible in the text itself. CMOS 14.25." },
+  { value: "split", label: "A · Author 1 2, translator *", blurb: "Author's notes numbered, every translator's note marked *. The kind is visible in the text itself; print restarts symbols per page, so the app needs no † ‡. CMOS 14.25." },
   { value: "single", label: "B · One series", blurb: "Everything numbered in one series; the kind shows only in the Notes panel." },
   { value: "single-tagged", label: "C · One series, —옮긴이", blurb: "One series, and the translator's notes end with —옮긴이 as they will in print. CMOS 14.53." },
 ]
@@ -41,10 +41,9 @@ export function SchemeGallery() {
   const info = SCHEMES.find((s) => s.value === scheme)!
 
   const all = PAIRS.flatMap((p) => p.notes)
-  const symbols = ["*", "†", "‡"]
   const labels = new Map<number, string>()
-  let n = 0, sym = 0
-  for (const note of all) labels.set(note.id, scheme === "split" && note.kind === "translator" ? symbols[sym++ % 3] : String(++n))
+  let n = 0
+  for (const note of all) labels.set(note.id, scheme === "split" && note.kind === "translator" ? "*" : String(++n))
   const tag = (x: Note) => (scheme === "single-tagged" && x.kind === "translator" ? " —옮긴이" : "")
 
   const marked = (p: (typeof PAIRS)[number]) => {
