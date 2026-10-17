@@ -59,7 +59,7 @@ export function SchemeGallery() {
             {labels.get(note.id)}
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-xs px-2.5 py-1.5 text-[13px] leading-normal">
-            <span className="reading" lang={note.kind === "author" ? "en" : "ko"}>{note.body}{tag(note)}</span>
+            <span className="reading text-[13px] leading-normal" lang={note.kind === "author" ? "en" : "ko"}>{note.body}{tag(note)}</span>
           </TooltipContent>
         </Tooltip>,
       )

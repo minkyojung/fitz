@@ -39,7 +39,7 @@ export function FootnoteMark({ id, label, body, lang, selected, onSelect }: {
       </TooltipTrigger>
       {body && (
         <TooltipContent side="top" className="max-w-xs px-2.5 py-1.5 text-[13px] leading-normal">
-          <span className="reading" lang={lang}>{body}</span>
+          <span className="reading text-[13px] leading-normal" lang={lang}>{body}</span>
         </TooltipContent>
       )}
     </Tooltip>

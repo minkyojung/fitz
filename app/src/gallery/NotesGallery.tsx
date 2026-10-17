@@ -59,7 +59,7 @@ export function NotesGallery() {
               {x.label}
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs px-2.5 py-1.5 text-[13px] leading-normal">
-              <span className="reading" lang={x.n.kind === "author" ? "en" : "ko"}>{x.n.body}</span>
+              <span className="reading text-[13px] leading-normal" lang={x.n.kind === "author" ? "en" : "ko"}>{x.n.body}</span>
             </TooltipContent>
           </Tooltip>,
         )
