@@ -145,7 +145,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
             className={cn("reading cursor-text text-[15px] [&_p+p]:mt-3", s.kind === "heading" && "font-semibold", !blocks.length && "text-muted-foreground/50")}
           >
             {blocks.length
-              ? blocks.map((b, i) => <p key={i}><AnnotatedText text={b} segmentId={s.id} side="target" markers={markers} /></p>)
+              ? blocks.map((b, i) => <p key={i}><AnnotatedText text={b} segmentId={s.id} side="target" markers={markers} last={i === blocks.length - 1} /></p>)
               : <p>Translate…</p>}
           </div>
         )}

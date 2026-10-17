@@ -17,9 +17,10 @@ export function CommentMark({ id, selected, onSelect, children }: { id: number; 
   )
 }
 
-/** A footnote marker after its quote: number for an author's note, asterisk for a translator's. */
-export function FootnoteMark({ id, label, body, lang, selected, onSelect }: {
-  id: number; label: string; body: string; lang: "en" | "ko"; selected: boolean; onSelect: () => void
+/** A footnote marker after its quote: number for an author's note, asterisk for a translator's.
+ *  A provisional one (author's note not placed yet) is grey and sits at the paragraph's end. */
+export function FootnoteMark({ id, label, body, lang, selected, onSelect, provisional = false }: {
+  id: number; label: string; body: string; lang: "en" | "ko"; selected: boolean; onSelect: () => void; provisional?: boolean
 }) {
   return (
     <Tooltip>
@@ -27,10 +28,13 @@ export function FootnoteMark({ id, label, body, lang, selected, onSelect }: {
         render={
           <sup
             data-note={id}
+            data-provisional={provisional || undefined}
             onClick={(e) => { e.stopPropagation(); onSelect() }}
             className={cn(
-              "ml-px cursor-pointer border-b-2 border-mark-note bg-mark-note/40 px-0.5 text-[11px] font-medium text-mark-note-ink transition-colors hover:bg-mark-note/70",
-              selected && "bg-mark-note/70",
+              "ml-px cursor-pointer border-b-2 px-0.5 text-[11px] font-medium transition-colors",
+              provisional
+                ? cn("border-dashed border-muted-foreground/50 bg-muted text-muted-foreground hover:bg-muted-foreground/20", selected && "bg-muted-foreground/20")
+                : cn("border-mark-note bg-mark-note/40 text-mark-note-ink hover:bg-mark-note/70", selected && "bg-mark-note/70"),
             )}
           />
         }
@@ -39,6 +43,7 @@ export function FootnoteMark({ id, label, body, lang, selected, onSelect }: {
       </TooltipTrigger>
       {body && (
         <TooltipContent side="top" className="max-w-xs px-2.5 py-1.5 text-[13px] leading-normal">
+          {provisional && <div className="mb-0.5 text-[11px] opacity-70">Not placed yet — select the words in the translation, then “Place note”</div>}
           <span className="reading text-[13px] leading-normal" lang={lang}>{body}</span>
         </TooltipContent>
       )}
