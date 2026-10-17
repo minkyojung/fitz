@@ -4,6 +4,8 @@ import { createServer } from "node:http"
 import { readFile } from "node:fs/promises"
 import { resolve, basename } from "node:path"
 
+import { buildManuscript, exportFilename } from "./export.mjs"
+import { renderDocx } from "./docx.mjs"
 import { execute, listAnnotations, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
@@ -49,6 +51,15 @@ const routes = {
   /** Every segment's text, for the client-side language model. */
   listSourceTexts: () => db.prepare("SELECT id, source_text FROM segment").all().map((r) => ({ id: r.id, text: r.source_text })),
   search: (p) => search(db, p),
+  /** Export: the manuscript's chapters, warnings and stats; and the Word file itself (a Buffer result is sent as a download). */
+  exportSummary: ({ chapterIds, scheme }) => {
+    const m = buildManuscript(db, { chapterIds, scheme })
+    return { chapters: m.chapters.map(({ id, idx, title, segments, untranslated, unplaced, chars }) => ({ id, idx, title, segments, untranslated, unplaced, chars })), warnings: m.warnings, stats: m.stats, filename: exportFilename(m) }
+  },
+  exportDocx: async ({ chapterIds, scheme }) => {
+    const m = buildManuscript(db, { chapterIds, scheme })
+    return { file: await renderDocx(m), filename: exportFilename(m) }
+  },
 
   // writes: every one is a logged command
   updateSegment: ({ id, patch }) =>
@@ -93,7 +104,15 @@ createServer(async (req, res) => {
     if (!m || req.method !== "POST" || !(m[1] in routes)) return json(res, 404, { error: "not found" })
     let body = ""
     for await (const chunk of req) body += chunk
-    const result = routes[m[1]](body ? JSON.parse(body) : {})
+    const result = await routes[m[1]](body ? JSON.parse(body) : {})
+    if (result && Buffer.isBuffer(result.file)) {
+      res.writeHead(200, {
+        "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+        "access-control-allow-origin": "*", "access-control-expose-headers": "content-disposition",
+      })
+      return res.end(result.file)
+    }
     json(res, 200, result ?? null)
   } catch (e) {
     json(res, e.status ?? 500, { error: e.message })
