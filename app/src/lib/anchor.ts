@@ -1,6 +1,7 @@
 /** Text anchors in the W3C Web Annotation style: the quoted text plus a little context on each side,
  *  and the offsets it had when created. Re-locating tries the offsets first, then the quote with context,
- *  then the quote alone; it gives up (null) rather than guess. */
+ *  then the quote alone; it gives up (null) rather than guess.
+ *  The server has the same algorithm in server/anchor.mjs (export needs it); keep the two in step. */
 
 export interface Anchor {
   exact: string

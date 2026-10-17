@@ -35,6 +35,7 @@ uv run python -m pipeline.build --pdf "<book>.pdf" --out out --no-images
 ## 개발 서버 (임시 로컬 API)
 
 ```sh
+cd server && pnpm install     # 처음 한 번 (docx 내보내기 라이브러리)
 node server/index.mjs            # http://localhost:4800, out/book.db 와 out/pages 사용
 cd app && pnpm dev               # 화면
 ```
