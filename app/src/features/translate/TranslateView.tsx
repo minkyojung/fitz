@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PairRow } from "./PairRow"
 import type { DocJSON, Segment, SegmentPatch } from "@/data/api"
+import { footnoteMarkers } from "@/lib/footnotes"
+import { locateAnchor } from "@/lib/anchor"
+import { useAnnotations } from "@/features/notes/AnnotationsContext"
 
 interface Props {
   segments: Segment[]
@@ -18,6 +21,15 @@ export function useTranslate({ segments, onPatch, focusMode }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [caretEdge, setCaretEdge] = useState<"start" | "end">("end")
   const shownChapter = useRef<number | null>(null)
+  const notes = useAnnotations()?.annotations.notes ?? []
+  const markers = useMemo(() => {
+    const idx = new Map(segments.map((sg, i) => [sg.id, i]))
+    return footnoteMarkers(notes.filter((n) => idx.has(n.segmentId)).map((n) => {
+      const sg = segments[idx.get(n.segmentId)!]
+      const at = n.targetAnchor ? locateAnchor(sg.targetText, n.targetAnchor) : null
+      return { id: n.id, kind: n.kind, segmentIdx: idx.get(n.segmentId)!, start: at ? at.end : null }
+    }))
+  }, [notes, segments])
 
   useEffect(() => {
     const first = segments[0]
@@ -89,6 +101,7 @@ export function useTranslate({ segments, onPatch, focusMode }: Props) {
             editing={s.id === editingId}
             caretEdge={caretEdge}
             dim={focusMode && editingId !== null && editingId !== s.id}
+            markers={markers}
             onSelect={() => setSelectedId(s.id)}
             onEditingChange={(on) => setEditingId(on ? s.id : null)}
             onPatch={(patch) => onPatch(s.id, patch)}
@@ -100,5 +113,5 @@ export function useTranslate({ segments, onPatch, focusMode }: Props) {
       </div>
     </ScrollArea>
   )
-  return { view, selected, editing: editingId !== null, commands }
+  return { view, selected, editing: editingId !== null, commands, markers }
 }

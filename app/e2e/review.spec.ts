@@ -98,7 +98,7 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
 test("an unanchored note can be linked to a segment", async ({ page }) => {
   await page.goto("/")
   const panel = page.locator("[data-slot=resizable-panel]").last()
-  await panel.getByRole("tab", { name: /Unlinked notes/ }).click()
+  await panel.getByRole("tab", { name: /^Notes/ }).click()
   await expect(panel.getByRole("button", { name: "Link" }).first()).toBeVisible()
   const before = await panel.getByRole("button", { name: "Link" }).count()
   expect(before).toBeGreaterThan(0)

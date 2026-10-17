@@ -58,14 +58,46 @@ export interface Page {
   imageUrl: string
 }
 
+/** Text anchor: the quote plus context and the offsets it had when created (see lib/anchor.ts). */
+export interface TextAnchor {
+  exact: string
+  prefix: string
+  suffix: string
+  start: number
+  end: number
+}
+
 export interface Note {
   id: number
   segmentId: number
   kind: "author" | "translator"
   origPage: number | null
   origQuote: string | null
+  /** Author's note text (as printed in the source book). */
   bodySource: string | null
+  /** Translated author's note, or the translator's note itself. */
+  bodyTarget: string
   anchored: boolean
+  sourceAnchor: TextAnchor | null
+  /** Where the footnote number sits in the translation; null until placed. */
+  targetAnchor: TextAnchor | null
+  createdAt: string
+}
+
+export interface Comment {
+  id: number
+  segmentId: number
+  side: "source" | "target"
+  parentId: number | null
+  body: string
+  resolved: boolean
+  anchor: TextAnchor | null
+  createdAt: string
+}
+
+export interface Annotations {
+  comments: Comment[]
+  notes: Note[]
 }
 
 export interface GlossaryTerm {
@@ -125,6 +157,13 @@ export interface Api {
   /** Merge a segment with the one that follows it in the same chapter. */
   mergeWithNext(id: number): Promise<Segment>
   listUnanchoredNotes(): Promise<Note[]>
+  listAnnotations(chapterId: number): Promise<Annotations>
+  addComment(input: { segmentId: number; side: "source" | "target"; anchor: TextAnchor | null; body: string; parentId?: number | null }): Promise<Comment>
+  setComment(input: { id: number; body?: string; resolved?: boolean }): Promise<Comment>
+  deleteComment(id: number): Promise<null>
+  addNote(input: { segmentId: number; anchor: TextAnchor | null; body: string }): Promise<Note>
+  setNote(input: { id: number; body?: string; targetAnchor?: TextAnchor | null }): Promise<Note>
+  deleteNote(id: number): Promise<null>
   anchorNote(noteId: number, segmentId: number): Promise<Note>
   /** New editor-created segment after `afterIdx` in the chapter (-1 = first). */
   insertSegment(input: { chapterId: number; afterIdx: number; kind: SegmentKind; text: string; pageNo: number }): Promise<Segment>

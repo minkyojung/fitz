@@ -13,20 +13,24 @@ interface Props {
   onAcceptFix?: (suspect: Suspect, replacement: string) => void
   /** Glossary terms in `text` (absolute offsets). Never overlap suspects: glossary terms are known words. */
   terms?: TermHit[]
+  /** Render only this slice of `text` (offsets stay absolute), so a parent can lay other overlays around it. */
+  from?: number
+  to?: number
 }
 
 type Overlay = { start: number; end: number; kind: "suspect"; suspect: Suspect } | { start: number; end: number; kind: "term"; hit: TermHit }
 
 /** Paragraph text with overlays that call for action: spelling suspects and glossary terms.
  *  Edits against the OCR original are not coloured here; the row shows an "edited" dot instead. */
-export function SourceText({ text, suspects = [], onAcceptFix, terms = [] }: Props) {
+export function SourceText({ text, suspects = [], onAcceptFix, terms = [], from = 0, to = text.length }: Props) {
+  const inside = (a: { start: number; end: number }) => a.start >= from && a.end <= to
   const overlays: Overlay[] = [
-    ...suspects.map((s) => ({ start: s.start, end: s.end, kind: "suspect" as const, suspect: s })),
-    ...terms.map((t) => ({ start: t.start, end: t.end, kind: "term" as const, hit: t })),
+    ...suspects.filter(inside).map((s) => ({ start: s.start, end: s.end, kind: "suspect" as const, suspect: s })),
+    ...terms.filter(inside).map((t) => ({ start: t.start, end: t.end, kind: "term" as const, hit: t })),
   ].sort((a, b) => a.start - b.start)
-  if (!overlays.length) return <>{text}</>
+  if (!overlays.length) return <>{text.slice(from, to)}</>
   const out: React.ReactNode[] = []
-  let pos = 0
+  let pos = from
   for (const o of overlays) {
     if (o.start < pos) continue // overlap: keep the earlier mark
     out.push(<Fragment key={`t${pos}`}>{text.slice(pos, o.start)}</Fragment>)
@@ -39,6 +43,6 @@ export function SourceText({ text, suspects = [], onAcceptFix, terms = [] }: Pro
     )
     pos = o.end
   }
-  out.push(<Fragment key="tail">{text.slice(pos)}</Fragment>)
+  out.push(<Fragment key="tail">{text.slice(pos, to)}</Fragment>)
   return <>{out}</>
 }

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
+import { AnnotatedText } from "@/features/notes/AnnotatedText"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
 import { useDrafts } from "@/features/review/DraftContext"
 import { useSpell } from "@/features/review/SpellContext"
@@ -28,6 +29,8 @@ interface Props {
   /** Where the caret goes when editing starts by keyboard flow. */
   caretEdge: "start" | "end"
   dim: boolean
+  /** Footnote labels by note id for this chapter. */
+  markers: Map<number, string>
   onSelect: () => void
   onEditingChange: (editing: boolean) => void
   onPatch: (patch: SegmentPatch) => Promise<unknown>
@@ -37,7 +40,7 @@ interface Props {
 }
 
 /** One facing pair: status dot, source (read-only), translation (click to edit). */
-export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelect, onEditingChange, onPatch, onConfirm, onStep, onFlow }: Props) {
+export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers, onSelect, onEditingChange, onPatch, onConfirm, onStep, onFlow }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const closing = useRef(false)
   const clickPos = useRef<number | null>(null)
@@ -105,7 +108,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelec
         )}
       </div>
       <p className={cn("reading select-text text-[15px] text-muted-foreground", s.kind === "heading" && "font-semibold text-foreground")} lang="en">
-        <SourceText text={s.sourceText} terms={terms} />
+        <AnnotatedText text={s.sourceText} segmentId={s.id} side="source" renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} terms={terms} />} />
       </p>
       <div className="min-w-0">
         {recoverable && !editing && (
@@ -137,7 +140,9 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, onSelec
             onClick={startEdit}
             className={cn("reading cursor-text text-[15px] [&_p+p]:mt-3", s.kind === "heading" && "font-semibold", !blocks.length && "text-muted-foreground/50")}
           >
-            {blocks.length ? blocks.map((b, i) => <p key={i}>{b}</p>) : <p>Translate…</p>}
+            {blocks.length
+              ? blocks.map((b, i) => <p key={i}><AnnotatedText text={b} segmentId={s.id} side="target" markers={markers} /></p>)
+              : <p>Translate…</p>}
           </div>
         )}
       </div>

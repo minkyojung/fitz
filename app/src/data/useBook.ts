@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "./http"
-import type { Book, Chapter, GlossaryTerm, Note, Page, Segment, SegmentPatch } from "./api"
+import type { Annotations, Book, Chapter, GlossaryTerm, Note, Page, Segment, SegmentPatch, TextAnchor } from "./api"
 import { createDraftStore } from "@/lib/draftStore"
 import { buildCorpus, type Corpus } from "@/lib/corpus"
 import { loadEnglishSpeller, type Speller } from "@/lib/spell"
@@ -19,6 +19,13 @@ export const OP_LABEL: Record<string, string> = {
   addGlossaryWord: "Add to dictionary",
   removeGlossaryWord: "Remove from dictionary",
   setGlossaryTerm: "Glossary",
+  addComment: "Comment",
+  setComment: "Comment",
+  deleteComment: "Delete comment",
+  restoreComments: "Restore comment",
+  addNote: "Translator's note",
+  setNote: "Note",
+  deleteNote: "Delete note",
 }
 
 export const CAPTION_PLACEHOLDER = "Caption"
@@ -40,6 +47,7 @@ export function useBook() {
   const [corpus, setCorpus] = useState<Corpus>(() => buildCorpus([]))
   const [userWords, setUserWords] = useState<ReadonlySet<string>>(new Set())
   const [glossary, setGlossary] = useState<GlossaryTerm[]>([])
+  const [annotations, setAnnotations] = useState<Annotations>({ comments: [], notes: [] })
   const pending = useRef(0)
 
   /** Every write goes through here: one place owns the save indicator and the error toast. */
@@ -75,6 +83,10 @@ export function useBook() {
     (id: number) => api.listSegments(id).then(setSegments).catch((e: Error) => setError(e.message)),
     [],
   )
+  const refreshAnnotations = useCallback(
+    (id: number) => api.listAnnotations(id).then(setAnnotations).catch(() => undefined),
+    [],
+  )
 
   const refreshCorpus = useCallback(
     () => api.listSourceTexts().then((rows) => setCorpus(buildCorpus(rows.map((r) => r.text)))).catch(() => undefined),
@@ -108,8 +120,8 @@ export function useBook() {
   }, [])
 
   useEffect(() => {
-    if (chapterId !== null) void refreshSegments(chapterId)
-  }, [chapterId, refreshSegments])
+    if (chapterId !== null) { void refreshSegments(chapterId); void refreshAnnotations(chapterId) }
+  }, [chapterId, refreshSegments, refreshAnnotations])
 
   /** Persist a change, then replace the row in place and refresh chapter counts. */
   const updateSegment = useCallback(
@@ -123,6 +135,21 @@ export function useBook() {
       }),
     [mutate, refreshChapters, refreshCorpus],
   )
+
+  /** Comments and notes: every action is a logged command; the chapter's annotations reload afterwards. */
+  const annotate = useMemo(() => {
+    const after = async <T,>(label: string, fn: () => Promise<T>) =>
+      mutate(label, async () => { const r = await fn(); if (chapterId !== null) await refreshAnnotations(chapterId); return r })
+    return {
+      addComment: (segmentId: number, side: "source" | "target", anchor: TextAnchor | null, body: string, parentId: number | null = null) =>
+        after("Comment", () => api.addComment({ segmentId, side, anchor, body, parentId })),
+      setComment: (id: number, patch: { body?: string; resolved?: boolean }) => after("Comment", () => api.setComment({ id, ...patch })),
+      deleteComment: (id: number) => after("Delete comment", () => api.deleteComment(id)),
+      addNote: (segmentId: number, anchor: TextAnchor | null, body: string) => after("Translator's note", () => api.addNote({ segmentId, anchor, body })),
+      setNote: (id: number, patch: { body?: string; targetAnchor?: TextAnchor | null }) => after("Note", () => api.setNote({ id, ...patch })),
+      deleteNote: (id: number) => after("Delete note", () => api.deleteNote(id)),
+    }
+  }, [mutate, chapterId, refreshAnnotations])
 
   /** Set a term's agreed translation (creates the entry if needed). Undoable. */
   const setTerm = useCallback(
@@ -197,9 +224,9 @@ export function useBook() {
 
   /** Undo/redo may touch any table, so reload everything the screen shows. */
   const reloadAll = useCallback(async () => {
-    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null, refreshCorpus()])
+    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null, chapterId !== null ? refreshAnnotations(chapterId) : null, refreshCorpus()])
     if (book) await refreshWords(book.id)
-  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshCorpus, refreshWords, book])
+  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshCorpus, refreshWords, book])
 
   const undo = useCallback(
     () =>
@@ -246,6 +273,6 @@ export function useBook() {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
     unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption, replaceAll,
-    spell,
+    spell, annotations, annotate,
   }
 }

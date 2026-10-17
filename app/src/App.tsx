@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { IconArrowBackUp, IconArrowForwardUp } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
 import { SelectionToolbar } from "@/features/review/SelectionToolbar"
+import { AnnotationsContext, type Selected } from "@/features/notes/AnnotationsContext"
 import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
 import { useTranslate } from "@/features/translate/TranslateView"
@@ -50,12 +51,20 @@ export function App() {
     onAddCaption: book.addCaption,
   })
   const [focusMode, setFocusMode] = useState(false)
+  const [annSelected, setAnnSelected] = useState<Selected>(null)
   // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
   const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false })
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode })
   const translating = mode === "translate"
   const commands = translating ? translate.commands : review.commands
+  const panelSelected = translating ? translate.selected : review.selected
+  // a selected comment/note opens the Notes tab
+  const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel) setPanelTab("notes") }, [])
+  const annotationState = useMemo(
+    () => ({ annotations: book.annotations, selected: annSelected, select: selectAnnotation, actions: book.annotate }),
+    [book.annotations, annSelected, selectAnnotation, book.annotate],
+  )
   const chapterSheets = useMemo(() => sheets(book.segments.map((s) => s.targetText).join("\n")), [book.segments])
   const { speller, userWords } = book.spell
   const suspectTotal = useMemo(
@@ -70,6 +79,7 @@ export function App() {
   return (
     <DraftContext value={book.drafts}>
     <SpellContext value={book.spell}>
+    <AnnotationsContext value={annotationState}>
     <SelectionToolbar />
     <AppShell
       mode={mode}
@@ -80,7 +90,7 @@ export function App() {
       right={translating ? translate.view : review.right}
       panel={
         <ReviewPanel
-          notes={book.unanchoredNotes} segments={book.segments} selected={review.selected} onAnchor={book.anchorNote}
+          notes={book.unanchoredNotes} segments={book.segments} selected={panelSelected} onAnchor={book.anchorNote} markers={translate.markers}
           onJump={review.jumpTo} onReplaceAll={book.replaceAll}
           tab={panelTab} onTabChange={setPanelTab} findFocusToken={findFocusToken}
         />
@@ -125,6 +135,7 @@ export function App() {
         </>
       }
     />
+    </AnnotationsContext>
     </SpellContext>
     </DraftContext>
   )

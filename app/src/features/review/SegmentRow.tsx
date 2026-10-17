@@ -11,6 +11,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
 import { EditedDot } from "./EditedDot"
+import { AnnotatedText } from "@/features/notes/AnnotatedText"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { useDrafts } from "./DraftContext"
 import { CAPTION_PLACEHOLDER } from "@/data/useBook"
@@ -237,7 +238,8 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           lang="en"
           onClick={startEditAt}
         >
-          <SourceText text={s.sourceText} suspects={suspects} onAcceptFix={acceptFix} terms={terms} />
+          <AnnotatedText text={s.sourceText} segmentId={s.id} side="source"
+            renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} suspects={suspects} onAcceptFix={acceptFix} terms={terms} />} />
         </p>
       )}
     </ContextMenuTrigger>

@@ -4,7 +4,7 @@ import type { Note, Segment } from "@/data/api"
 import { FindPanel } from "./FindPanel"
 import { GlossaryPanel } from "./GlossaryPanel"
 import { HistoryPanel } from "./HistoryPanel"
-import { NotesPanel } from "./NotesPanel"
+import { NotesTab } from "@/features/notes/NotesTab"
 
 interface Props {
   notes: Note[]
@@ -17,9 +17,10 @@ interface Props {
   tab: string
   onTabChange: (tab: string) => void
   findFocusToken: number
+  markers: Map<number, string>
 }
 
-export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onReplaceAll, tab, onTabChange, findFocusToken }: Props) {
+export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onReplaceAll, tab, onTabChange, findFocusToken, markers }: Props) {
   return (
     <Tabs value={tab} onValueChange={(v) => onTabChange(v as string)} className="flex h-full flex-col gap-0">
       <TabsList className="m-2 shrink-0 self-start">
@@ -27,8 +28,8 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
         <TabsTrigger value="find">Find</TabsTrigger>
         <TabsTrigger value="glossary">Glossary</TabsTrigger>
         <TabsTrigger value="notes">
-          Unlinked notes
-          {notes.length > 0 && <Badge variant="destructive" className="ml-1">{notes.length}</Badge>}
+          Notes
+          {notes.length > 0 && <Badge variant="destructive" className="ml-1" title="Unlinked author notes">{notes.length}</Badge>}
         </TabsTrigger>
       </TabsList>
       <TabsContent value="history" className="min-h-0 flex-1">
@@ -41,7 +42,7 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
         <GlossaryPanel onJump={onJump} />
       </TabsContent>
       <TabsContent value="notes" className="min-h-0 flex-1">
-        <NotesPanel notes={notes} segments={segments} onAnchor={onAnchor} />
+        <NotesTab segment={selected} segments={segments} markers={markers} unlinked={notes} onAnchorUnlinked={onAnchor} />
       </TabsContent>
     </Tabs>
   )
