@@ -12,6 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
 import { EditedDot } from "./EditedDot"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
+import { useSelectionState } from "@/features/selection/SelectionContext"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { useDrafts } from "./DraftContext"
 import { CAPTION_PLACEHOLDER } from "@/data/useBook"
@@ -73,6 +74,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const closing = useRef(false)
   const clickOffset = useRef<number | null>(null)
   const drafts = useDrafts()
+  const selectionState = useSelectionState()
   const spell = useSpell()
   // dictionary suspects, recomputed whenever the text, the dictionary or the person's words change
   const speller = spell?.speller ?? null
@@ -232,6 +234,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           onStep={onStep}
           onDraft={saveDraft}
           onReady={onReady}
+          onSelect={(sel) => selectionState?.publish(sel ? { ...sel, segmentId: s.id, side: "source" } : null)}
         />
       ) : (
         <p

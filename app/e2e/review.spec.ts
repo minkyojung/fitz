@@ -126,6 +126,7 @@ test("undo restores a merge, redo reapplies it", async ({ page }) => {
   await selectRow(rows.nth(1))
   await rows.nth(1).getByRole("button", { name: "Merge with next" }).click()
   await expect(rows).toHaveCount(before - 1)
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
   await page.getByRole("button", { name: "Undo" }).click()
   await expect(rows).toHaveCount(before)

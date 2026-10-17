@@ -8,6 +8,7 @@ import { History } from "@tiptap/extension-history"
 import { Extension } from "@tiptap/core"
 
 import type { DocJSON } from "@/data/api"
+import type { TextSelection } from "@/lib/selection"
 
 /** Exactly one paragraph: the schema cannot hold a second one, so Enter means "done". */
 const OneParagraph = Document.extend({ content: "paragraph" })
@@ -35,6 +36,8 @@ interface Props {
   onConfirm?: (doc: DocJSON) => void
   /** ↑ at the very start / ↓ at the very end: commit and flow into the neighbouring pair. */
   onFlow?: (delta: 1 | -1) => void
+  /** Selection adapter: non-empty selections inside the editor, in the shared model; null when collapsed. */
+  onSelect?: (sel: Omit<TextSelection, "segmentId" | "side"> | null) => void
   onReady?: (editor: Editor) => void
 }
 
@@ -46,7 +49,7 @@ const DRAFT_DELAY = 300
 
 export function SegmentEditor({
   doc, className, caretOffset, selectAll, onCommit, onCancel, onStep, onDraft, onReady,
-  multiParagraph = false, lang = "en", onConfirm, onFlow,
+  multiParagraph = false, lang = "en", onConfirm, onFlow, onSelect,
 }: Props) {
   const draftTimer = useRef<number | undefined>(undefined)
   const closingRef = useRef(false) // set when ⌘Enter already handed the doc to onConfirm; blur must not commit again
@@ -84,6 +87,18 @@ export function SegmentEditor({
       attributes: { class: className ?? "", lang, "aria-label": lang === "ko" ? "Edit translation" : "Edit paragraph", spellcheck: "true" },
     },
     onBlur: ({ editor }) => { if (!closingRef.current) commit(editor) },
+    onSelectionUpdate: ({ editor }) => {
+      if (!onSelect) return
+      const { from, to, empty } = editor.state.selection
+      if (empty) { onSelect(null); return }
+      const text = editor.state.doc.textBetween(from, to, "\n")
+      if (!text.trim()) { onSelect(null); return }
+      // text offsets: each paragraph costs one position to open and one to close
+      const offset = (pos: number) => { let n = 0; editor.state.doc.nodesBetween(0, pos, (node, p) => { if (node.isText) n += Math.min(pos, p + node.nodeSize) - p; return true }); return n }
+      const a = editor.view.coordsAtPos(from), b = editor.view.coordsAtPos(to)
+      onSelect({ text, start: offset(from), end: offset(to), origin: "editor",
+        rect: { x: Math.min(a.left, b.left), y: Math.min(a.top, b.top), width: Math.abs(b.left - a.left) || 1, height: Math.max(a.bottom, b.bottom) - Math.min(a.top, b.top) } })
+    },
     onUpdate: ({ editor }) => {
       if (!onDraft) return
       window.clearTimeout(draftTimer.current)

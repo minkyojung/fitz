@@ -9,7 +9,9 @@ import { ChapterList } from "@/features/review/ChapterList"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
-import { SelectionToolbar } from "@/features/review/SelectionToolbar"
+import { FloatingToolbar } from "@/features/selection/FloatingToolbar"
+import { SelectionContext } from "@/features/selection/SelectionContext"
+import type { TextSelection } from "@/lib/selection"
 import { AnnotationsContext, type Selected } from "@/features/notes/AnnotationsContext"
 import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
@@ -52,6 +54,12 @@ export function App() {
   })
   const [focusMode, setFocusMode] = useState(false)
   const [annSelected, setAnnSelected] = useState<Selected>(null)
+  const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
+  const selectionState = useMemo(() => ({ selection: textSelection, publish: setTextSelection }), [textSelection])
+  const blockText = useCallback(
+    (segmentId: number, side: "source" | "target") => { const sg = book.segments.find((x) => x.id === segmentId); return side === "source" ? sg?.sourceText ?? "" : sg?.targetText ?? "" },
+    [book.segments],
+  )
   // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
   const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false })
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
@@ -80,7 +88,8 @@ export function App() {
     <DraftContext value={book.drafts}>
     <SpellContext value={book.spell}>
     <AnnotationsContext value={annotationState}>
-    <SelectionToolbar />
+    <SelectionContext value={selectionState}>
+    <FloatingToolbar blockText={blockText} />
     <AppShell
       mode={mode}
       onModeChange={setMode}
@@ -135,6 +144,7 @@ export function App() {
         </>
       }
     />
+    </SelectionContext>
     </AnnotationsContext>
     </SpellContext>
     </DraftContext>

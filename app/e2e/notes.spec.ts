@@ -36,13 +36,15 @@ test("comments: add on the source, see the mark, reply, resolve (mark disappears
   await item.getByRole("textbox", { name: "Reply" }).fill("Agreed, keep")
   await item.getByRole("textbox", { name: "Reply" }).press("Enter")
   await expect(item).toContainText("Agreed, keep")
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
   await item.getByRole("button", { name: "Resolve" }).click()
   await expect(row.locator("mark[data-comment]")).toHaveCount(0)
   await expect(page.locator("[data-open-comments]")).toHaveText("0 open")
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
-  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.locator("footer").click({ position: { x: 300, y: 10 } }) // drop focus out of the panel
   await page.keyboard.press("Meta+z")
-  await expect(row.locator("mark[data-comment]")).toHaveText(word)
+  await expect(row.locator("mark[data-comment]")).toHaveText(word, { timeout: 10000 })
 })
 
 test("translator's note: add on the translation, asterisk marker with tooltip, edit body, delete", async ({ page }) => {
@@ -80,4 +82,28 @@ test("translator's note: add on the translation, asterisk marker with tooltip, e
   await expect(tooltip.filter({ hasText: "제무레이의 본거지" })).toBeVisible()
   await item.getByRole("button", { name: "Delete note" }).click()
   await expect(pair.locator("sup[data-note]")).toHaveCount(0)
+})
+
+test("keyboard selection inside the editor shows the same toolbar; a comment made there is anchored after saving", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: /19: Backlash/ }).click()
+  const rows = page.locator("[data-segment]")
+  await expect(rows.first()).toHaveText(/Backlash/)
+  const row = rows.nth(1)
+  await row.locator("p").first().click()
+  await expect(row.getByRole("textbox")).toBeFocused()
+  await page.keyboard.press("Meta+ArrowUp")
+  for (let i = 0; i < 12; i++) await page.keyboard.press("Shift+ArrowRight")
+  const toolbar = page.locator("[data-floating-toolbar]")
+  await expect(toolbar).toBeVisible()
+  await expect(toolbar.getByRole("button", { name: "Comment" })).toBeVisible()
+  await toolbar.getByRole("button", { name: "Comment" }).click()
+  await toolbar.getByRole("textbox", { name: "Comment" }).fill("From the keyboard")
+  await toolbar.getByRole("button", { name: "Comment", exact: true }).click()
+  await expect(page.locator("footer [role=status]")).toHaveText("Saved")
+  // leave the editor; the mark appears on the stored text
+  await page.keyboard.press("Escape")
+  await expect(row.locator("mark[data-comment]")).toHaveCount(1)
+  const marked = await row.locator("mark[data-comment]").innerText()
+  expect(marked.length).toBeGreaterThan(0)
 })

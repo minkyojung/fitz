@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
+import { useSelectionState } from "@/features/selection/SelectionContext"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
 import { useDrafts } from "@/features/review/DraftContext"
 import { useSpell } from "@/features/review/SpellContext"
@@ -45,6 +46,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
   const closing = useRef(false)
   const clickPos = useRef<number | null>(null)
   const drafts = useDrafts()
+  const selectionState = useSelectionState()
   const [, bump] = useState(0)
   const [editDoc, setEditDoc] = useState<DocJSON | null>(null)
   const glossary = useSpell()?.glossary
@@ -133,6 +135,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
             onFlow={onFlow}
             onDraft={saveDraft}
             onReady={onReady}
+            onSelect={(sel) => selectionState?.publish(sel ? { ...sel, segmentId: s.id, side: "target" } : null)}
           />
         ) : (
           <div
