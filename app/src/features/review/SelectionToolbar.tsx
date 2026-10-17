@@ -70,18 +70,18 @@ export function SelectionToolbar() {
           </div>
         </div>
       ) : (
-        <div className="flex gap-1">
+        <div className="flex gap-0.5 rounded-md border bg-popover p-0.5 shadow-md">
           {sel.side === "source" && (
-            <Button size="xs" variant="outline" className="shadow-sm" disabled={known}
+            <Button size="xs" variant="ghost" disabled={known}
               onClick={() => { void spell.setTerm({ term: sel.text, translation: "", aliases: "", kind: "other" }); close() }}>
               <IconBook2 data-icon="inline-start" /> {known ? "In glossary" : "Add to glossary"}
             </Button>
           )}
-          <Button size="xs" variant="outline" className="shadow-sm" onClick={() => setCompose("comment")}>
+          <Button size="xs" variant="ghost" onClick={() => setCompose("comment")}>
             <IconMessage data-icon="inline-start" /> Comment
           </Button>
           {sel.side === "target" && (
-            <Button size="xs" variant="outline" className="shadow-sm" onClick={() => setCompose("note")}>
+            <Button size="xs" variant="ghost" onClick={() => setCompose("note")}>
               <IconNote data-icon="inline-start" /> Translator's note
             </Button>
           )}
