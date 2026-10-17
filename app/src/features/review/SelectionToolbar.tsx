@@ -39,7 +39,7 @@ export function SelectionToolbar() {
       const start = pre.toString().length
       const full = block.textContent ?? ""
       const r = range.getBoundingClientRect()
-      setSel({ text, x: r.left + r.width / 2, y: r.top, side, segmentId, anchor: makeAnchor(full, start, start + text.length) })
+      setSel({ text, x: r.left + r.width / 2, y: r.bottom, side, segmentId, anchor: makeAnchor(full, start, start + text.length) })
     }
     document.addEventListener("selectionchange", read)
     return () => document.removeEventListener("selectionchange", read)
@@ -56,7 +56,7 @@ export function SelectionToolbar() {
   }
 
   return (
-    <div data-selection-toolbar className="fixed z-30 -translate-x-1/2 -translate-y-full pb-1" style={{ left: sel.x, top: sel.y }}
+    <div data-selection-toolbar className="fixed z-30 -translate-x-1/2 pt-1.5" style={{ left: sel.x, top: sel.y }}
       onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("textarea")) e.preventDefault() }}>
       {compose ? (
         <div className="w-72 space-y-1.5 rounded-md border bg-popover p-2 shadow-md">

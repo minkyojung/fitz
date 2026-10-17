@@ -53,6 +53,7 @@ test("translator's note: add on the translation, asterisk marker with tooltip, e
   await expect(pairs.first()).toContainText("Israel")
   const pair = pairs.nth(1)
   await pair.locator("[data-target]").click()
+  await expect(pair.getByRole("textbox", { name: "Edit translation" })).toBeFocused()
   await page.keyboard.type("그는 뉴올리언스로 돌아왔다.")
   await page.keyboard.press("Tab")
   await expect(pair.locator("[data-target]")).toContainText("뉴올리언스")
