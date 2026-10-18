@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --test-timeout=30000 ."
+    "test": "node --test --test-timeout=30000 .",
+    "test:real": "FITZ_REAL_CLAUDE=1 node --test --test-timeout=300000 agent/real.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.302",

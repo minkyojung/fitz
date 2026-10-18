@@ -218,12 +218,15 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 
 ## 11. 테스트
 
-세 층, 전부 유지:
-1. 순수 함수 — `tools`·`fold`·`checks`를 스크래치 DB와 **녹화된** 실제 세션 fixture로. 손으로 쓴 프레임만으로 테스트하지 않는다.
-2. WS 라우트 — 세션을 스텁으로 주입.
-3. 실제 화면 — Playwright, `/live`를 가짜 프레임으로.
+네 층, 전부 유지:
+1. **순수 함수**(`node --test`) — `tools`·`fold`·`foldStored`·`records`·`keep`을 스크래치 DB와 **녹화된** 실제 세션(`agent/fixtures/*.jsonl`, `*.stored.json`)으로. 손으로 쓴 프레임은 녹화에 없는 경우(도구 오류, 누적 비용)에만.
+2. **서버의 대화와 연결** — host와 `/live`를 가짜 세션(`fixtures/stubSession.mjs`, 녹화를 흘려 넣음)으로. 사본 기능에도 가짜를 넣어 홈 폴더를 건드리지 않는다.
+3. **실제 화면**(Playwright, 헤드리스) — 서버는 책 DB 사본(`/tmp/fitz-e2e.db`)으로 뜬다. 다른 쪽의 쓰기는 테스트가 서버 API를 직접 불러 흉내 낸다. 에이전트만 쓸 수 있는 것(Claude의 댓글)은 사본 DB에 직접 넣고 지운다 — 서버에 "agent" HTTP 문을 만들지 않는다. 연결이 끊기는 장면은 `page.routeWebSocket`으로 `/live`를 가로채 끊는다.
+4. **진짜 Claude**(Haiku) — `pnpm test:real`(= `FITZ_REAL_CLAUDE=1`)일 때만. 평소 `pnpm test`는 건너뛴다. host와 fitz 도구를 실제 서버와 같은 길로 지나고, 메모리의 Gatsby 책, 새 임시 폴더에서 돌며, 끝나면 세션을 `deleteSession`으로 지우고 빈 프로젝트 폴더까지 치운다. 지금 확인하는 것: Claude의 쓰기가 `actor = agent`와 **그 도구 호출의 id**로 기록되는가(2026-10-18 통과, 3.7초).
 
-실제 모델은 3단계의 녹화 1회와 수동 확인에만 쓴다. 테스트는 `CLAUDE_CONFIG_DIR`를 임시 폴더로 주어 사람의 `~/.claude`와 실제 세션을 건드리지 않는다.
+녹화(`agent/record.mjs`)와 수동 확인도 같은 원칙: 책은 사본이나 Gatsby, 세션은 임시 폴더, 끝나면 지운다. 확인하기 전과 후에 `~/.claude/projects`와 `~/.fitz`를 본다.
+
+"테스트가 지키는 것"은 고장을 넣어 확인한다: 재연결 e2e는 다시 붙은 뒤의 resync를 끄면 놓친 변경에서 실패했다.
 
 ## 12. 쓰는 쪽이 둘인 책 (5.5단계)
 
