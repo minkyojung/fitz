@@ -15,6 +15,8 @@ import { FloatingToolbar } from "@/features/selection/FloatingToolbar"
 import { SelectionContext } from "@/features/selection/SelectionContext"
 import type { TextSelection } from "@/lib/selection"
 import { AnnotationsContext, type Selected } from "@/features/notes/AnnotationsContext"
+import { SuggestionsContext } from "@/features/suggestions/SuggestionsContext"
+import type { TaskName } from "@/data/api"
 import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
 import { useTranslate } from "@/features/translate/TranslateView"
@@ -76,6 +78,15 @@ export function App() {
     () => ({ annotations: book.annotations, selected: annSelected, select: selectAnnotation, actions: book.annotate, markers: translate.markers }),
     [book.annotations, annSelected, selectAnnotation, book.annotate, translate.markers],
   )
+  // Claude's suggestions: the review's while translating, the OCR hunt's while reviewing the source. Selecting one in the
+  // text opens its card, as selecting a comment opens Notes.
+  const task: TaskName = translating ? "review" : "typos"
+  const [suggestionSelected, setSuggestionSelected] = useState<number | null>(null)
+  const selectSuggestion = useCallback((id: number | null) => { setSuggestionSelected(id); if (id !== null) setPanelTab("suggestions") }, [])
+  const suggestionState = useMemo(
+    () => ({ suggestions: book.suggestions.filter((s) => s.task === task), selected: suggestionSelected, select: selectSuggestion }),
+    [book.suggestions, task, suggestionSelected, selectSuggestion],
+  )
   const chapterSheets = useMemo(() => sheets(book.segments.map((s) => s.targetText).join("\n")), [book.segments])
   const { speller, userWords } = book.spell
   const suspectTotal = useMemo(
@@ -91,6 +102,7 @@ export function App() {
     <DraftContext value={book.drafts}>
     <SpellContext value={book.spell}>
     <AnnotationsContext value={annotationState}>
+    <SuggestionsContext value={suggestionState}>
     <SelectionContext value={selectionState}>
     <FloatingToolbar blockText={blockText} />
     <AppShell
@@ -106,6 +118,11 @@ export function App() {
           notes={book.unanchoredNotes} segments={book.segments} selected={panelSelected} onAnchor={book.anchorNote} markers={translate.markers}
           onJump={review.jumpTo} onReplaceAll={book.replaceAll}
           tab={panelTab} onTabChange={setPanelTab} findFocusToken={findFocusToken}
+          suggest={{
+            task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,
+            onRun: () => { if (book.chapterId !== null) book.suggest.run(task, book.chapterId) },
+            onDecide: book.suggest.decide,
+          }}
         />
       }
       status={
@@ -149,6 +166,7 @@ export function App() {
       }
     />
     </SelectionContext>
+    </SuggestionsContext>
     </AnnotationsContext>
     </SpellContext>
     </DraftContext>

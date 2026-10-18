@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
+import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 import { useSelectionState } from "@/features/selection/SelectionContext"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
 import { useDrafts } from "@/features/review/DraftContext"
@@ -13,6 +14,7 @@ import { useSpell } from "@/features/review/SpellContext"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { findTerms, missingTerms } from "@/lib/glossary"
 import { docPlainText, emptyDoc } from "@/lib/docText"
+import { placeSuggestions, within } from "@/lib/suggestions"
 import type { DocJSON, Segment, SegmentPatch, SegmentStatus } from "@/data/api"
 import { cn } from "cn"
 
@@ -54,6 +56,12 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
   const glossary = useSpell()?.glossary
   const terms = useMemo(() => (glossary ? findTerms(s.sourceText, glossary) : []), [glossary, s.sourceText])
   const missing = useMemo(() => (editing ? [] : missingTerms(terms, s.targetText)), [terms, s.targetText, editing])
+  // Claude's suggestions on the translation, laid on the whole text (as the server finds them), shown block by block
+  const allSuggestions = useSuggestions()?.suggestions
+  const suggested = useMemo(
+    () => placeSuggestions(s.targetText, (allSuggestions ?? []).filter((x) => x.segmentId === s.id && x.side === "target")),
+    [allSuggestions, s.id, s.targetText],
+  )
 
   useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest" }) }, [selected])
   // What this edit started from. A save names its version, so it never overwrites what another writer (the agent,
@@ -116,6 +124,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
   }
 
   const blocks = s.targetText ? s.targetText.split("\n") : []
+  const blockStart = blocks.map((_, i) => blocks.slice(0, i).reduce((n, b) => n + b.length + 1, 0))
   return (
     <div
       ref={ref}
@@ -171,7 +180,15 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
             className={cn("reading cursor-text text-[15px] [&_p+p]:mt-3", s.kind === "heading" && "font-semibold", !blocks.length && "text-muted-foreground/50")}
           >
             {blocks.length
-              ? blocks.map((b, i) => <p key={i}><AnnotatedText text={b} segmentId={s.id} side="target" markers={markers} last={i === blocks.length - 1} /></p>)
+              ? blocks.map((b, i) => {
+                  const mine = within(suggested, blockStart[i], blockStart[i] + b.length)
+                  return (
+                    <p key={i}>
+                      <AnnotatedText text={b} segmentId={s.id} side="target" markers={markers} last={i === blocks.length - 1}
+                        renderPlain={mine.length ? (t, a, z) => <SourceText text={t} from={a} to={z} suggestions={mine} /> : undefined} />
+                    </p>
+                  )
+                })
               : <p>Translate…</p>}
           </div>
         )}

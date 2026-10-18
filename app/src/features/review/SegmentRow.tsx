@@ -12,6 +12,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
 import { EditedDot } from "./EditedDot"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
+import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
+import { placeSuggestions } from "@/lib/suggestions"
 import { useSelectionState } from "@/features/selection/SelectionContext"
 import { SegmentEditor, caretOffset } from "./SegmentEditor"
 import { useDrafts } from "./DraftContext"
@@ -85,6 +87,12 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   )
   const glossary = spell?.glossary
   const terms = useMemo(() => (glossary && !editing ? findTerms(s.sourceText, glossary) : []), [glossary, s.sourceText, editing])
+  // Claude's suggestions on the source (the OCR-error hunt)
+  const allSuggestions = useSuggestions()?.suggestions
+  const suggested = useMemo(
+    () => placeSuggestions(s.sourceText, (allSuggestions ?? []).filter((x) => x.segmentId === s.id && x.side === "source")),
+    [allSuggestions, s.id, s.sourceText],
+  )
   /** Accept a spelling fix without opening the editor: a normal (undoable) text edit. */
   const acceptFix = (sp: Suspect, replacement: string) => {
     const doc = s.sourceDoc ?? { type: "doc" as const, content: [{ type: "paragraph" as const, content: [{ type: "text" as const, text: s.sourceText }] }] }
@@ -258,7 +266,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           onClick={startEditAt}
         >
           <AnnotatedText text={s.sourceText} segmentId={s.id} side="source"
-            renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} suspects={suspects} onAcceptFix={acceptFix} terms={terms} />} />
+            renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} suspects={suspects} onAcceptFix={acceptFix} terms={terms} suggestions={suggested} />} />
         </p>
       )}
     </ContextMenuTrigger>

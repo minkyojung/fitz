@@ -146,7 +146,9 @@ app/src/
 
 녹화 둘이 테스트가 된다: 다시 읽은 대화 = 실시간 대화(`fold.test`), 쓰기 도구 없음(`session.test`), 진짜 답이 그대로 저장됨(`host.test`). `pnpm test:real`(Haiku)의 오탈자 실행 8.8–10.7초. 상한(60턴·$5)은 폭주를 막는 값이다.
 | 6 ✓ | 화면의 데이터: 제안 타입·경로, `/live`로 작업 시작(보내기 + 대기열은 이때 `lib/live.ts`에). 페이지의 연결은 하나를 같이 쓴다. 작업의 진행(달리는 중·끝·실패)은 대화의 사건에서 읽는다(`lib/taskRun.ts`, 다시 붙으면 `open`으로 다시 따라가 스냅숏이 그사이 끝났는지 말한다) | `app/src/data/api.ts`, `http.ts`, `lib/live.ts`, `lib/taskRun.ts`, `useBook.ts` | 단위 테스트 |
-| 7 | 화면: 패널 **Suggestions** 탭(시작 줄, 카드), 번역문·원문의 제안 표시(맞춤법 표시 코드를 함께 쓴다) | `features/suggestions/` 새로, `ReviewPanel.tsx`, `PairRow.tsx`, `SourceText.tsx` | e2e: 제안을 e2e DB에 넣고 Accept·Dismiss·Keep·⌘Z·"글이 바뀐 제안" |
+| 7 ✓ | 화면: 패널 **Suggestions** 탭(시작 줄, 카드), 번역문·원문의 제안 표시(맞춤법 표시 코드를 함께 쓴다) | `features/suggestions/` 새로, `ReviewPanel.tsx`, `PairRow.tsx`, `SegmentRow.tsx`, `SourceText.tsx`, `App.tsx`, `lib/suggestions.ts` | e2e: 제안을 e2e DB에 넣고 Accept·Dismiss·Keep·⌘Z·"글이 바뀐 제안" |
+
+**7행 결과**(2026-10-18): 보기가 작업을 정한다 — Translate에서는 리뷰(번역문), Review에서는 오탈자(원문). 본문의 표시는 고르기만 하고(댓글처럼 `SuggestionsContext`, 고르면 Suggestions 탭이 열림), 결정은 카드의 버튼으로만. 고른 것은 같은 색이 진해질 뿐 테두리가 없다. 같은 낱말에 사전 표시와 Claude의 제안이 겹치면 Claude의 것을 보인다. 글이 바뀌어 구절이 정확히 한 번 있지 않은 제안은 본문에 그리지 않고, 카드에 "the paragraph changed since"와 함께 Accept를 끈다(Dismiss·Keep은 된다). 패널이 좁으면(기본 20%) 탭 다섯이 한 줄에 들어가지 않아 두 줄로 접힌다. 시작 줄의 실행은 `/live`를 가로채 흉내 낸다(Claude 없이). e2e 37(새 5), 두 번 연속 통과. `StructuredOutput` 줄 숨기기는 대화 화면(9단계)에서 — 지금은 대화를 보이는 화면이 없다.
 | 8 | README, 이 문서에 결과 | | |
 
 ## 5. 검증 (`checks.mjs`)
