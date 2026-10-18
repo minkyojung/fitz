@@ -19,3 +19,10 @@ test("highlights hug words: no whitespace inside changed pieces", () => {
   assert.equal(p.filter((x) => x.kind !== "removed").map((x) => x.text).join(""), "known by many names: Z")
   assert.equal(p.filter((x) => x.kind !== "added").map((x) => x.text).join(""), "known by a variety of nicknames: Z")
 })
+
+test("Korean is compared word by word, not letter by letter", () => {
+  const p = diffText("그래서 나는 모든 판단을 유보하는 버릇이 생겼는데", "그래서 나는 섣불리 판단하지 않는 버릇이 생겼는데")
+  assert.deepEqual(p.map((x) => [x.kind, x.text]), [
+    ["same", "그래서 나는 "], ["removed", "모든 판단을 유보하는"], ["added", "섣불리 판단하지 않는"], ["same", " 버릇이 생겼는데"],
+  ])
+})
