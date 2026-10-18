@@ -7,6 +7,8 @@ import { expect, test, type APIRequestContext, type Page, type WebSocketRoute } 
 // connection. No Claude is involved.
 const API = "http://localhost:4801/api"
 const E2E_DB = "/tmp/fitz-e2e.db"
+// the server reads and writes the same file meanwhile: wait for it rather than fail at once (SQLite's busy timeout)
+const BUSY = { timeout: 5000 }
 const CONV = "00000000-0000-4000-8000-0000000000e2"
 const doc = (text: string) => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] })
 const post = (request: APIRequestContext, name: string, data: unknown = {}) =>
@@ -15,7 +17,7 @@ const translate = (request: APIRequestContext, id: number, text: string) => post
 
 type Seed = { segmentId: number; side: "source" | "target"; quote: string; replacement: string; why?: string }
 function seed(...rows: Seed[]): number[] {
-  const db = new DatabaseSync(E2E_DB)
+  const db = new DatabaseSync(E2E_DB, BUSY)
   try {
     const version = db.prepare("SELECT version FROM segment WHERE id = ?")
     const insert = db.prepare(`INSERT INTO agent_suggestion(conversation_id, task, segment_id, side, quote, replacement, why, level, base_version)
@@ -25,7 +27,7 @@ function seed(...rows: Seed[]): number[] {
   } finally { db.close() }
 }
 function unseed() {
-  const db = new DatabaseSync(E2E_DB)
+  const db = new DatabaseSync(E2E_DB, BUSY)
   try { db.prepare("DELETE FROM agent_suggestion WHERE conversation_id = ?").run(CONV) } finally { db.close() }
 }
 test.afterEach(unseed)
@@ -111,7 +113,7 @@ test("a suggestion whose words changed since is not shown in the text and cannot
 
 test("an OCR suggestion is shown on the source in Review, and accepting it fixes the source", async ({ page }) => {
   const { id } = await open(page, "Review")
-  const db = new DatabaseSync(E2E_DB, { readOnly: true })
+  const db = new DatabaseSync(E2E_DB, { readOnly: true, ...BUSY })
   const source = (db.prepare("SELECT source_text FROM segment WHERE id = ?").get(id) as { source_text: string }).source_text
   db.close()
   // the first few words, lengthened until they occur only once

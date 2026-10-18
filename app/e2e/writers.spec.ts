@@ -74,7 +74,7 @@ const E2E_DB = "/tmp/fitz-e2e.db"
 
 test("a comment Claude left says so in the notes panel; the translator's does not", async ({ page }) => {
   const { id } = await openChapter(page)
-  const db = new DatabaseSync(E2E_DB)
+  const db = new DatabaseSync(E2E_DB, { timeout: 5000 })  // the server uses the file meanwhile: wait for it, do not fail at once
   const insert = db.prepare("INSERT INTO comment(segment_id, side, body, author) VALUES (?, 'source', ?, ?)")
   const mine = Number(insert.run(id, "번역자의 메모", "translator").lastInsertRowid)
   const claudes = Number(insert.run(id, "Claude가 남긴 메모", "agent").lastInsertRowid)
