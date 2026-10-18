@@ -75,3 +75,23 @@ test("a local program without an Origin (the terminal chat, a script) is served,
   assert.equal(r.status, 200)
   assert.equal(r.headers["access-control-allow-origin"], undefined)
 })
+
+test("Claude's suggestions: listed by chapter, accepted by the translator, and taken back with undo", async () => {
+  const db = new DatabaseSync(dbPath)
+  try {
+    db.prepare(`INSERT INTO agent_suggestion(id, conversation_id, task, segment_id, side, quote, replacement, why, base_version)
+                VALUES (1, 'c', 'typos', 5, 'source', 'privy', 'privvy', '-', 1)`).run()
+  } finally { db.close() }
+  const api = async (name, body = {}) => { const r = await send({ path: `/api/${name}`, body: JSON.stringify(body) }); return { status: r.status, body: JSON.parse(r.text) } }
+  assert.deepEqual((await api("listSuggestions", { chapterId: 1 })).body.map((s) => [s.id, s.status]), [[1, "open"]])
+  const accepted = await api("decideSuggestion", { id: 1, decision: "accept" })
+  assert.equal(accepted.status, 200)
+  assert.equal(accepted.body.status, "accepted")
+  const source = async () => (await api("listSegments", { chapterId: 1 })).body.find((s) => s.id === 5).sourceText
+  assert.match(await source(), /I was privvy to/)
+  assert.deepEqual((await api("listSuggestions", { chapterId: 1 })).body, [])
+  assert.equal((await api("undo")).body.name, "decideSuggestion")
+  assert.match(await source(), /I was privy to/)
+  assert.deepEqual((await api("listSuggestions", { chapterId: 1 })).body.map((s) => s.id), [1])
+  assert.equal((await api("decideSuggestion", { id: 1, decision: "maybe" })).status, 400)
+})

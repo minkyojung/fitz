@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo, watchChanges } from "./commands.mjs"
+import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, undo, watchChanges } from "./commands.mjs"
 
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
@@ -454,4 +454,132 @@ test("a watcher that fails does not undo or fail the write; one that stops watch
   } finally { console.error = quiet }
   assert.equal(db.prepare("SELECT target_text FROM segment WHERE id = 1").get().target_text, "둘")
   assert.deepEqual(heard, [1])
+})
+
+// --- Claude's suggestions, decided by the translator (docs/agent.md §4)
+
+const text = (t, marks) => ({ type: "text", text: t, ...(marks && { marks }) })
+const EM = [{ type: "em" }]
+const docOf = (...paras) => ({ type: "doc", content: paras.map((nodes) => ({ type: "paragraph", content: nodes })) })
+
+test("replaceRange replaces words of a doc's text within one block; the new words take the marks of the first replaced", () => {
+  const d = docOf([text("알파 "), text("베타", EM), text(" 감마")], [text("델타 엡실론")])
+  assert.deepEqual(replaceRange(d, 3, 5, "B"), docOf([text("알파 "), text("B", EM), text(" 감마")], [text("델타 엡실론")]))
+  assert.deepEqual(replaceRange(d, 1, 6, "X"), docOf([text("알X", undefined), text("감마")], [text("델타 엡실론")]), "across nodes: the first keeps it, the rest lose the range")
+  assert.deepEqual(replaceRange(d, 3, 5, ""), docOf([text("알파 "), text(" 감마")], [text("델타 엡실론")]), "a node left empty goes")
+  assert.equal(docText(replaceRange(d, 9, 11, "Delta")), "알파 베타 감마\nDelta 엡실론", "in the second block")
+  assert.throws(() => replaceRange(d, 7, 12, "x"), { status: 400, message: /across two blocks/ })
+})
+
+const translated = (db, id, nodes) => execute(db, "updateSegment", { id, targetDoc: docOf(nodes) })
+function suggest(db, { segmentId, side = "target", quote, replacement, why = "이유" }) {
+  const v = db.prepare("SELECT version FROM segment WHERE id = ?").get(segmentId).version
+  return Number(db.prepare(`INSERT INTO agent_suggestion(conversation_id, task, segment_id, side, quote, replacement, why, level, base_version)
+    VALUES ('c', ?, ?, ?, ?, ?, ?, ?, ?)`).run(side === "target" ? "review" : "typos", segmentId, side, quote, replacement, why, side === "target" ? "low" : null, v).lastInsertRowid)
+}
+const statusOf = (db, id) => db.prepare("SELECT status FROM agent_suggestion WHERE id = ?").get(id).status
+const lastOp = (db) => plain(db.prepare("SELECT name, actor, undone FROM ops ORDER BY id DESC LIMIT 1").get())
+
+test("accept replaces the words in the translation, as the translator's write; ⌘Z brings back both the words and the suggestion", () => {
+  const db = fixture()
+  translated(db, 2, [text("알파 "), text("베타", EM), text(" 감마")])
+  const id = suggest(db, { segmentId: 2, quote: "베타 감", replacement: "BETA 감" })
+  const before = snapshot(db)
+  const r = execute(db, "decideSuggestion", { id, decision: "accept" })
+  assert.equal(r.status, "accepted")
+  const seg = db.prepare("SELECT target_doc, target_text FROM segment WHERE id = 2").get()
+  assert.equal(seg.target_text, "알파 BETA 감마")
+  assert.deepEqual(JSON.parse(seg.target_doc), docOf([text("알파 "), text("BETA 감", EM), text("마")]))
+  assert.deepEqual(lastOp(db), { name: "decideSuggestion", actor: "translator", undone: 0 })
+  undo(db)
+  assert.deepEqual(snapshot(db), before)
+  assert.equal(statusOf(db, id), "open")
+  redo(db)
+  assert.equal(db.prepare("SELECT target_text FROM segment WHERE id = 2").get().target_text, "알파 BETA 감마")
+  assert.equal(statusOf(db, id), "accepted")
+})
+
+test("accept on the source fixes the OCR text", () => {
+  const db = fixture()
+  const id = suggest(db, { segmentId: 3, side: "source", quote: "zeta", replacement: "theta" })
+  execute(db, "decideSuggestion", { id, decision: "accept" })
+  assert.equal(db.prepare("SELECT source_text FROM segment WHERE id = 3").get().source_text, "epsilon theta")
+})
+
+test("accept is refused when the words are no longer there exactly once, and nothing is written", () => {
+  const db = fixture()
+  translated(db, 2, [text("알파 베타")])
+  const gone = suggest(db, { segmentId: 2, quote: "베타", replacement: "B" })
+  const twice = suggest(db, { segmentId: 2, quote: "알파", replacement: "A" })
+  translated(db, 2, [text("알파 알파 감마")])
+  const before = snapshot(db)
+  assert.throws(() => execute(db, "decideSuggestion", { id: gone, decision: "accept" }), { status: 409, message: /¶2 changed: "베타" is no longer in it exactly once/ })
+  assert.throws(() => execute(db, "decideSuggestion", { id: twice, decision: "accept" }), { status: 409 })
+  assert.deepEqual(snapshot(db), before)
+  assert.deepEqual([statusOf(db, gone), statusOf(db, twice)], ["open", "open"])
+})
+
+test("keep as comment makes it Claude's comment on the words; ⌘Z takes the comment away, redo brings the same one back", () => {
+  const db = fixture()
+  translated(db, 2, [text("알파 베타 감마")])
+  const id = suggest(db, { segmentId: 2, quote: "베타", replacement: "B", why: "용어집" })
+  execute(db, "decideSuggestion", { id, decision: "comment" })
+  const c = plain(db.prepare("SELECT id, side, author, body, src_exact, src_start, src_end FROM comment WHERE segment_id = 2").get())
+  assert.deepEqual({ ...c, id: undefined }, { id: undefined, side: "target", author: "agent", body: "베타 → B\n용어집", src_exact: "베타", src_start: 3, src_end: 5 })
+  assert.equal(statusOf(db, id), "commented")
+  undo(db)
+  assert.equal(db.prepare("SELECT count(*) n FROM comment WHERE segment_id = 2").get().n, 0)
+  assert.equal(statusOf(db, id), "open")
+  redo(db)
+  assert.equal(db.prepare("SELECT id FROM comment WHERE segment_id = 2").get().id, c.id)
+})
+
+test("keep as comment on words that are gone puts the comment on the paragraph", () => {
+  const db = fixture()
+  translated(db, 2, [text("알파 베타")])
+  const id = suggest(db, { segmentId: 2, quote: "베타", replacement: "B" })
+  translated(db, 2, [text("알파")])
+  execute(db, "decideSuggestion", { id, decision: "comment" })
+  assert.deepEqual(plain(db.prepare("SELECT src_exact, body FROM comment WHERE segment_id = 2").get()), { src_exact: null, body: "베타 → B\n이유" })
+})
+
+test("dismiss changes nothing in the book; ⌘Z reopens it", () => {
+  const db = fixture()
+  const id = suggest(db, { segmentId: 3, side: "source", quote: "zeta", replacement: "theta" })
+  const before = snapshot(db)
+  execute(db, "decideSuggestion", { id, decision: "dismiss" })
+  assert.deepEqual(snapshot(db), before)
+  assert.equal(statusOf(db, id), "dismissed")
+  undo(db)
+  assert.equal(statusOf(db, id), "open")
+})
+
+test("a suggestion is decided once, with one of the three decisions", () => {
+  const db = fixture()
+  const id = suggest(db, { segmentId: 3, side: "source", quote: "zeta", replacement: "theta" })
+  assert.throws(() => execute(db, "decideSuggestion", { id, decision: "toString" }), { status: 400 })
+  assert.throws(() => execute(db, "decideSuggestion", { id: 99, decision: "dismiss" }), { status: 404 })
+  execute(db, "decideSuggestion", { id, decision: "dismiss" })
+  assert.throws(() => execute(db, "decideSuggestion", { id, decision: "accept" }), { status: 409, message: /already dismissed/ })
+})
+
+test("a decision is announced as a change to its paragraph", () => {
+  const db = fixture()
+  const id = suggest(db, { segmentId: 3, side: "source", quote: "zeta", replacement: "theta" })
+  const heard = []
+  watchChanges(db, (c) => heard.push(c))
+  execute(db, "decideSuggestion", { id, decision: "dismiss" })
+  undo(db)
+  assert.deepEqual(heard.map(({ name, segmentIds, kind }) => ({ name, segmentIds, kind })),
+    [{ name: "decideSuggestion", segmentIds: [3], kind: "do" }, { name: "decideSuggestion", segmentIds: [3], kind: "undo" }])
+})
+
+test("listSuggestions: a chapter's open suggestions, in book order", () => {
+  const db = fixture()
+  const late = suggest(db, { segmentId: 4, side: "source", quote: "last", replacement: "least" })
+  const early = suggest(db, { segmentId: 2, side: "source", quote: "beta", replacement: "BETA" })
+  const decided = suggest(db, { segmentId: 3, side: "source", quote: "zeta", replacement: "theta" })
+  execute(db, "decideSuggestion", { id: decided, decision: "dismiss" })
+  assert.deepEqual(listSuggestions(db, { chapterId: 1 }).map((s) => s.id), [early, late])
+  assert.deepEqual(listSuggestions(db, { chapterId: 2 }), [])
 })

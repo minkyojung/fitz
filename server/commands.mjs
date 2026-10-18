@@ -3,6 +3,8 @@
 // undo() applies the inverse of the last logged command; redo() re-applies a stored forward command.
 import { DatabaseSync } from "node:sqlite"
 
+import { makeAnchor } from "./anchor.mjs"
+
 export const KINDS = ["paragraph", "heading", "blockquote", "caption", "verse"]
 export const STATUSES = ["untranslated", "draft", "reviewed", "final"]
 
@@ -68,6 +70,40 @@ export const replaceInDoc = (doc, query, replacement) => {
   return { doc: mkDoc(nodes), count }
 }
 
+/** Replace the characters [from, to) of a doc's text — docText's, blocks joined by "\n" — within one block. The new
+ *  words take the marks of the first character they replace. */
+export const replaceRange = (doc, from, to, text) => {
+  let start = 0
+  let replaced = false
+  const content = doc.content.map((p) => {
+    const nodes = p.content ?? []
+    let at = start
+    const end = start + nodes.reduce((n, c) => n + c.text.length, 0)
+    start = end + 1
+    if (from < at || to > end) return p
+    replaced = true
+    const out = []
+    let placed = false
+    for (const n of nodes) {
+      const a = at
+      at += n.text.length
+      if (at <= from || a >= to) { out.push(n); continue }
+      const t = n.text.slice(0, Math.max(0, from - a)) + (placed ? "" : text) + n.text.slice(to - a)
+      placed = true
+      if (t) out.push({ ...n, text: t })
+    }
+    return { ...p, content: out }
+  })
+  if (!replaced) throw httpError(400, "the words to replace run across two blocks")
+  return { ...doc, content }
+}
+
+/** Where the quote is in the text, if it is there exactly once; -1 otherwise. */
+export function findOnce(text, quote) {
+  const at = quote ? text.indexOf(quote) : -1
+  return at !== -1 && text.indexOf(quote, at + 1) === -1 ? at : -1
+}
+
 /** Validate a doc: paragraphs of text nodes (optional marks). Source docs must be exactly one paragraph;
  *  a translation may be written as several blocks inside the same pair. */
 const checkDoc = (doc, { multi = false } = {}) => {
@@ -100,6 +136,17 @@ const getComment = (db, id) => {
   if (!r) throw httpError(404, `comment ${id} not found`)
   return r
 }
+/** Claude's suggestions (docs/agent.md §4): agent/suggestions.mjs keeps them; deciding each is the translator's. */
+export const suggestionRow = (r) => ({
+  id: r.id, conversationId: r.conversation_id, task: r.task, segmentId: r.segment_id, side: r.side, quote: r.quote,
+  replacement: r.replacement, why: r.why, level: r.level ?? null, baseVersion: r.base_version, status: r.status, createdAt: r.created_at,
+})
+const getSuggestion = (db, id) => {
+  const r = db.prepare("SELECT * FROM agent_suggestion WHERE id = ?").get(id)
+  if (!r) throw httpError(404, `suggestion ${id} not found`)
+  return r
+}
+const DECIDED = { accept: "accepted", dismiss: "dismissed", comment: "commented" }
 const anchorCols = (p, a) => a ? [a.exact, a.prefix ?? "", a.suffix ?? "", a.start ?? null, a.end ?? null] : [null, null, null, null, null]
 
 /** Boxes of one segment: { pageNo, x0, y0, x1, y1 }[] */
@@ -488,6 +535,43 @@ export const COMMANDS = {
       segmentIds: [segmentId, cur.segment_id],
     }
   },
+
+  // ---- Claude's suggestions, decided by the translator
+  /** accept: the quoted words replaced in the paragraph as it is now — refused if they are no longer there exactly
+   *  once; comment: the suggestion kept as Claude's comment on those words (on the paragraph, if they are gone);
+   *  dismiss: nothing more. One step, so ⌘Z takes back the decision and what it did together. */
+  decideSuggestion(db, { id, decision, commentId, createdAt }) {
+    if (!Object.hasOwn(DECIDED, decision)) throw httpError(400, "decision must be accept, dismiss or comment")
+    const s = getSuggestion(db, id)
+    if (s.status !== "open") throw httpError(409, `suggestion ${id} is already ${s.status}`)
+    const seg = getSegment(db, s.segment_id)
+    const text = (s.side === "source" ? seg.source_text : seg.target_text) ?? ""
+    const at = findOnce(text, s.quote)
+    let did = null  // what it did to the book: that command's inverse is part of this one's
+    if (decision === "accept") {
+      if (at === -1) throw httpError(409, `¶${seg.id} changed: "${s.quote}" is no longer in it exactly once`)
+      const next = replaceRange(JSON.parse(s.side === "source" ? seg.source_doc : seg.target_doc), at, at + s.quote.length, s.replacement)
+      did = COMMANDS.updateSegment(db, s.side === "source" ? { id: seg.id, doc: next } : { id: seg.id, targetDoc: next })
+    } else if (decision === "comment") {
+      const anchor = at === -1 ? null : makeAnchor(text, at, at + s.quote.length)
+      did = COMMANDS.addComment(db, { id: commentId, segmentId: seg.id, side: s.side, anchor, body: `${s.quote} → ${s.replacement}\n${s.why}`, author: "agent", createdAt })
+    }
+    db.prepare("UPDATE agent_suggestion SET status = ? WHERE id = ?").run(DECIDED[decision], id)
+    return {
+      result: suggestionRow(getSuggestion(db, id)),
+      // redo makes the same comment again, under the same id, as addComment's own redo does
+      forward: { id, decision, ...(decision === "comment" && { commentId: did.result.id, createdAt: did.result.createdAt }) },
+      inverse: { name: "reopenSuggestion", params: { id, undo: did?.inverse ?? null } },
+      segmentIds: [seg.id],
+    }
+  },
+  reopenSuggestion(db, { id, undo }) {
+    const s = getSuggestion(db, id)
+    if (undo) COMMANDS[undo.name](db, undo.params)
+    db.prepare("UPDATE agent_suggestion SET status = 'open' WHERE id = ?").run(id)
+    const decision = Object.keys(DECIDED).find((d) => DECIDED[d] === s.status)
+    return { result: suggestionRow(getSuggestion(db, id)), forward: { id, undo }, inverse: { name: "decideSuggestion", params: { id, decision } }, segmentIds: [s.segment_id] }
+  },
 }
 
 export const inTransaction = (db, fn) => {
@@ -639,6 +723,11 @@ export const listAnnotations = (db, { chapterId }) => ({
   comments: db.prepare(`SELECT c.* FROM comment c JOIN segment s ON s.id = c.segment_id WHERE s.chapter_id = ? ORDER BY c.id`).all(chapterId).map(commentRow),
   notes: db.prepare(`SELECT n.* FROM note n JOIN segment s ON s.id = n.segment_id WHERE s.chapter_id = ? ORDER BY s.idx, n.tgt_start, n.id`).all(chapterId).map(noteRow),
 })
+
+/** The open suggestions on a chapter, in book order. */
+export const listSuggestions = (db, { chapterId }) =>
+  db.prepare(`SELECT a.* FROM agent_suggestion a JOIN segment s ON s.id = a.segment_id
+              WHERE s.chapter_id = ? AND a.status = 'open' ORDER BY s.idx, a.id`).all(chapterId).map(suggestionRow)
 
 export const listOps = (db, { segmentId, limit = 50 } = {}) => {
   const rows = segmentId

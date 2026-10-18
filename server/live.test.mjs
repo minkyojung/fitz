@@ -10,6 +10,7 @@ import { execute, pmDoc } from "./commands.mjs"
 import { foldMessages } from "./agent/fold.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachLive } from "./live.mjs"
+import { saveSuggestions } from "./agent/suggestions.mjs"
 import { localOrigin } from "./origin.mjs"
 import { settle, stubSessions } from "./agent/fixtures/stubSession.mjs"
 
@@ -137,6 +138,15 @@ test("every open page hears every change to the book, whoever made it", async (t
       { type: "changed", opId: 2, name: "updateSegment", segmentIds: [4], kind: "do", actor: "agent" },
     ])
   }
+})
+
+test("every open page hears of Claude's new suggestions", async (t) => {
+  const db = gatsby()
+  const srv = await serve(t, db)
+  const page = await connect(srv)
+  saveSuggestions(db, { conversationId: ID, task: "typos", answer: { suggestions: [{ segmentId: 4, quote: "in a reserved way", replacement: "x", why: "-" }] } })
+  await page.until((r) => r.some((e) => e.type === "suggested"))
+  assert.deepEqual(page.received.filter((e) => e.type === "suggested"), [{ type: "suggested", segmentIds: [4] }])
 })
 
 test("a page that closed stops listening; the others go on", async (t) => {

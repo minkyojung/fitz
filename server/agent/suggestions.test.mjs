@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { findOnce, saveSuggestions } from "./suggestions.mjs"
+import { findOnce } from "../commands.mjs"
+import { saveSuggestions, watchSuggestions } from "./suggestions.mjs"
 
 const CONV = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
 
@@ -79,4 +80,15 @@ test("an answer of another shape is refused whole, and nothing is kept", () => {
   const ok = { segmentId: 2, quote: "쉽게 상처받던", replacement: "여리던", why: "-", level: "low" }
   assert.throws(() => review(db, ok, { ...ok, level: "urgent" }), /agreed shape/)
   assert.deepEqual(rows(db), [])
+})
+
+test("new suggestions are announced once they are kept, by paragraph; an answer that keeps none says nothing", () => {
+  const db = gatsby()
+  const heard = []
+  const stop = watchSuggestions(db, (c) => heard.push({ ...c, kept: rows(db).length }))
+  review(db, { segmentId: 2, quote: "쉽게 상처받던", replacement: "여리던", why: "-", level: "low" }, { segmentId: 2, quote: "곱씹어 왔다", replacement: "x", why: "-", level: "low" })
+  review(db, { segmentId: 99, quote: "x", replacement: "y", why: "-", level: "low" })
+  stop()
+  review(db, { segmentId: 2, quote: "그 말을", replacement: "그것을", why: "-", level: "low" })
+  assert.deepEqual(heard, [{ segmentIds: [2], kept: 2 }])
 })

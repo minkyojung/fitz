@@ -9,7 +9,7 @@ import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachLive } from "./live.mjs"
 import { corsHeaders, fromThisMachine } from "./origin.mjs"
-import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
+import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -43,6 +43,8 @@ const routes = {
   listUnanchoredNotes: () => db.prepare("SELECT * FROM note WHERE anchored = 0 ORDER BY id").all().map(noteRow),
   listOps: (p) => listOps(db, p),
   listAnnotations: ({ chapterId }) => listAnnotations(db, { chapterId }),
+  /** Claude's open suggestions on a chapter (docs/agent.md §4). */
+  listSuggestions: ({ chapterId }) => listSuggestions(db, { chapterId }),
   /** Words the person marked as correct (the book's dictionary / glossary terms). */
   listGlossary: ({ bookId }) => listGlossary(db, { bookId }),
   listGlossaryWords: ({ bookId }) => db.prepare("SELECT term FROM glossary WHERE book_id = ? ORDER BY term").all(bookId).map((r) => r.term),
@@ -79,6 +81,8 @@ const routes = {
   addNote: ({ segmentId, anchor, body }) => execute(db, "addNote", { segmentId, anchor, body }),
   setNote: ({ id, body, targetAnchor }) => execute(db, "setNote", { id, body, targetAnchor }),
   deleteNote: ({ id }) => execute(db, "deleteNote", { id }),
+  /** accept | dismiss | comment: the translator's decision on one of Claude's suggestions, undone with ⌘Z. */
+  decideSuggestion: ({ id, decision }) => execute(db, "decideSuggestion", { id, decision }),
   undo: () => undo(db),
   redo: () => redo(db),
 }

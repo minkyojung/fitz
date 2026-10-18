@@ -5,6 +5,7 @@ import { WebSocketServer } from "ws"
 
 import { watchChanges } from "./commands.mjs"
 import { parseClientMessage } from "./agent/protocol.mjs"
+import { watchSuggestions } from "./agent/suggestions.mjs"
 import { localHost, localOrigin } from "./origin.mjs"
 
 export const HEARTBEAT_MS = 30_000
@@ -29,6 +30,7 @@ export function attachLive(server, { db, host, heartbeatMs = HEARTBEAT_MS }) {
     const send = (event) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(event)) }
     // every page hears every change to the book
     const unwatch = watchChanges(db, (change) => send({ type: "changed", ...change }))
+    const unwatchSuggestions = watchSuggestions(db, (change) => send({ type: "suggested", ...change }))
     const following = new Map()  // convId → stop following
     // following again sends a fresh snapshot
     const follow = (convId) => { following.get(convId)?.(); following.set(convId, host.open(convId, send)) }
@@ -46,7 +48,7 @@ export function attachLive(server, { db, host, heartbeatMs = HEARTBEAT_MS }) {
         send({ type: "error", ...(m?.convId && { convId: m.convId }), message: e.message })
       }
     })
-    ws.on("close", () => { unwatch(); for (const stop of following.values()) stop() })
+    ws.on("close", () => { unwatch(); unwatchSuggestions(); for (const stop of following.values()) stop() })
   })
   return wss
 }

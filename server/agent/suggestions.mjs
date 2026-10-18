@@ -1,21 +1,20 @@
 // Claude's suggestions (docs/agent.md §4): what the review and the OCR-error hunt found, kept in book.db until the
 // translator decides each. Claude only finds; saving a suggestion changes nothing in the book.
-import { inTransaction } from "../commands.mjs"
+import { findOnce, inTransaction, suggestionRow } from "../commands.mjs"
 import { TASKS, parseAnswer } from "./tasks.mjs"
 
-export const suggestionRow = (r) => ({
-  id: r.id, conversationId: r.conversation_id, task: r.task, segmentId: r.segment_id, side: r.side, quote: r.quote,
-  replacement: r.replacement, why: r.why, level: r.level ?? null, baseVersion: r.base_version, status: r.status, createdAt: r.created_at,
-})
+// New suggestions are not a change to the book (they are not undone), so they have their own announcement; deciding
+// one is a book command, announced as every change is (commands.mjs watchChanges).
+const watchers = new WeakMap()  // db → Set<({ segmentIds }) => void>
+/** Returns the function that stops watching. */
+export const watchSuggestions = (db, fn) => {
+  if (!watchers.has(db)) watchers.set(db, new Set())
+  watchers.get(db).add(fn)
+  return () => watchers.get(db).delete(fn)
+}
 
 const textOf = (seg, side) => (side === "source" ? seg.source_text : seg.target_text) ?? ""
 const SIDE = { source: "source", target: "translation" }
-
-/** Where the quote is in the text, if it is there exactly once; -1 otherwise. */
-export function findOnce(text, quote) {
-  const at = quote ? text.indexOf(quote) : -1
-  return at !== -1 && text.indexOf(quote, at + 1) === -1 ? at : -1
-}
 
 /** Keep a task's answer. A suggestion is kept only if its quote is in its paragraph exactly once — so it points at
  *  one place — changes something, and does not overlap an open suggestion on the same words (a second run on the
@@ -27,7 +26,7 @@ export function saveSuggestions(db, { conversationId, task, answer }) {
   const insert = db.prepare(`INSERT INTO agent_suggestion(conversation_id, task, segment_id, side, quote, replacement, why, level, base_version)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`)
   const suggestions = parseAnswer(task, answer)
-  return inTransaction(db, () => {
+  const kept = inTransaction(db, () => {
     const saved = []
     const skipped = []
     for (const s of suggestions) {
@@ -45,4 +44,11 @@ export function saveSuggestions(db, { conversationId, task, answer }) {
     }
     return { saved, skipped }
   })
+  if (kept.saved.length) {
+    const change = { segmentIds: [...new Set(kept.saved.map((s) => s.segmentId))] }
+    for (const fn of watchers.get(db) ?? []) {
+      try { fn(change) } catch (e) { console.error("suggestion watcher failed:", e) }
+    }
+  }
+  return kept
 }
