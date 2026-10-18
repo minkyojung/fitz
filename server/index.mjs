@@ -8,6 +8,7 @@ import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachAgentSocket } from "./agent/socket.mjs"
+import { serveChanges } from "./events.mjs"
 import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
@@ -18,7 +19,9 @@ const DB = resolve(arg("db", "out/book.db"))
 const PAGES = resolve(arg("pages", "out/pages"))
 const PORT = Number(arg("port", 4800))
 
-const db = openDb(DB)
+const db = (() => {
+  try { return openDb(DB) } catch (e) { console.error(e.message); process.exit(1) }
+})()
 
 const routes = {
   // reads
@@ -89,6 +92,7 @@ const json = (res, status, body) => {
 const server = createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") return json(res, 204, null)
+    if (req.method === "GET" && req.url === "/api/events") return serveChanges(db, req, res)
     if (req.method === "GET" && req.url.startsWith("/pages/")) {
       const file = basename(req.url)  // basename defeats path traversal
       const png = await readFile(resolve(PAGES, file))

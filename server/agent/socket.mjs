@@ -2,11 +2,8 @@
 // it follows the conversations it started or opened.
 import { WebSocketServer } from "ws"
 
+import { localOrigin } from "../origin.mjs"
 import { parseClientMessage } from "./protocol.mjs"
-
-/** Only pages served from this machine may talk to the agent; a page on any other site could otherwise drive it
- *  and read the book through it. A client without an Origin (the terminal chat, tests) is not a browser page. */
-export const localOrigin = (origin) => origin === undefined || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)
 
 export function attachAgentSocket(server, host) {
   const wss = new WebSocketServer({ server, path: "/agent", maxPayload: 256 * 1024, verifyClient: ({ origin }) => localOrigin(origin) })

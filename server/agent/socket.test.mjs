@@ -8,7 +8,8 @@ import WebSocket from "ws"
 
 import { foldMessages } from "./fold.mjs"
 import { createAgentHost } from "./host.mjs"
-import { attachAgentSocket, localOrigin } from "./socket.mjs"
+import { localOrigin } from "../origin.mjs"
+import { attachAgentSocket } from "./socket.mjs"
 import { settle, stubSessions } from "./fixtures/stubSession.mjs"
 
 const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))

@@ -510,18 +510,38 @@ const run = (db, name, params) => {
 const summary = (row) => ({ id: row.id, name: row.name, segmentIds: JSON.parse(row.segment_ids) })
 
 /** Run a command as a new user action: log it, discard the redo stack, mark the db edited. */
-export const execute = (db, name, params) =>
-  inTransaction(db, () => {
+// The book has more than one writer (the editor's routes, the agent's tools): whoever wrote, everyone following the
+// book hears about it once the write is committed. Every write goes through execute/undo/redo, so none is missed.
+const watchers = new WeakMap()  // db → Set<(change) => void>
+/** change: { opId, name, segmentIds, kind: "do" | "undo" | "redo" }. Returns the function that stops watching. */
+export const watchChanges = (db, fn) => {
+  if (!watchers.has(db)) watchers.set(db, new Set())
+  watchers.get(db).add(fn)
+  return () => watchers.get(db).delete(fn)
+}
+const announce = (db, change) => {
+  for (const fn of watchers.get(db) ?? []) {
+    try { fn(change) } catch (e) { console.error("change watcher failed:", e) }  // a watcher never undoes a committed write
+  }
+}
+
+export const execute = (db, name, params) => {
+  let change
+  const result = inTransaction(db, () => {
     const { result, forward, inverse, segmentIds } = run(db, name, params)
     db.prepare("DELETE FROM ops WHERE undone = 1").run()
-    db.prepare("INSERT INTO ops(name, params, inverse_name, inverse_params, segment_ids) VALUES (?,?,?,?,?)")
+    const { lastInsertRowid } = db.prepare("INSERT INTO ops(name, params, inverse_name, inverse_params, segment_ids) VALUES (?,?,?,?,?)")
       .run(name, JSON.stringify(forward), inverse.name, JSON.stringify(inverse.params), JSON.stringify(segmentIds))
     touch(db)
+    change = { opId: Number(lastInsertRowid), name, segmentIds, kind: "do" }
     return result
   })
+  announce(db, change)
+  return result
+}
 
-export const undo = (db) =>
-  inTransaction(db, () => {
+export const undo = (db) => {
+  const op = inTransaction(db, () => {
     const row = db.prepare("SELECT * FROM ops WHERE undone = 0 ORDER BY id DESC LIMIT 1").get()
     if (!row) return null
     run(db, row.inverse_name, JSON.parse(row.inverse_params))
@@ -529,9 +549,12 @@ export const undo = (db) =>
     touch(db)
     return summary(row)
   })
+  if (op) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "undo" })
+  return op
+}
 
-export const redo = (db) =>
-  inTransaction(db, () => {
+export const redo = (db) => {
+  const op = inTransaction(db, () => {
     const row = db.prepare("SELECT * FROM ops WHERE undone = 1 ORDER BY id ASC LIMIT 1").get()
     if (!row) return null
     run(db, row.name, JSON.parse(row.params))
@@ -539,6 +562,9 @@ export const redo = (db) =>
     touch(db)
     return summary(row)
   })
+  if (op) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "redo" })
+  return op
+}
 
 export const getBook = (db) => {
   const b = db.prepare("SELECT id, title, author FROM book ORDER BY id LIMIT 1").get()
