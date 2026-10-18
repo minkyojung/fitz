@@ -53,6 +53,9 @@ server/
     tools.mjs           MCP 도구 8개(읽기 4, 쓰기 4) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
+    host.mjs            서버의 대화들: 대화마다 세션 하나, 접은 상태, 따라가는 쪽. 소켓을 모른다
+    socket.mjs          WebSocket /agent. protocol.mjs로 검사하고 host에 넘긴다
+    chat.mjs            터미널에서 에이전트와 대화(페이지와 같은 소켓, 같은 fold)
     record.mjs          실제 한 턴을 녹화(JSONL)하는 개발용 스크립트. 세션은 임시 폴더에서 돌고 지워진다
     fixtures/           gatsby.sql(퍼블릭 도메인 책) + 녹화. 커밋하는 녹화에 번역 중인 책은 들어가지 않는다
     checks.mjs          앱이 돌리는 번역 검증. 순수 함수
@@ -121,20 +124,24 @@ Stop hook은 fail-open이다(던지거나 시간이 지나면 `{}`로 취급되�
 
 ## 7. 프로토콜 (WebSocket `/agent`)
 
+`agent/protocol.mjs`가 정본이다. 지금(4단계) 있는 것:
+
 ```
-Client → start { convId, task: "translate"|"review"|"typos"|"chat", ids, model }
-         send  { convId, text }
-         answer{ convId, requestId, decision: "allow"|"allowTask"|"deny", answers? }
-         stop  { convId }
-         open  { convId }
-Server → snapshot { convId, state }          — 열 때 한 번
-         frame    { convId, message }        — SDK 메시지 그대로(바이트 제거 뒤). 페이지가 같은 fold
-         ask      { convId, requestId, tool, input }
-         turn     { convId, turn }
-         error    { convId?, message }
+page → server  start { convId, model?, effort? }   대화를 만든다. convId는 페이지가 만든 uuid. 만든 소켓은 그 대화를 따라간다
+               open  { convId }                    대화를 따라간다: 지금의 snapshot, 그 뒤의 message 전부
+               send  { convId, text }              번역자의 메시지(20,000자까지)
+               stop  { convId }                    도는 턴을 멈춘다
+server → page  snapshot { convId, state }          fold.mjs의 상태. 따라가기 시작할 때, 그리고 프로세스가 죽어 반쯤 쓴 턴을 버렸을 때
+               message  { convId, message }        SDK 메시지 그대로. 페이지가 snapshot 위에 같은 fold로 접는다
+               error    { convId?, message }
 ```
 
-닫힌 union. 서버는 페이지가 보낸 어떤 필드도 믿지 않는다.
+5단계에 더해질 것: `answer { convId, requestId, decision }` / `ask { convId, requestId, tool, input }`. 7단계: `start`의 `task`.
+
+- 닫힌 union. 다른 모양은 이유와 함께 `error`로 거절하고 소켓은 열어 둔다. 서버는 페이지가 보낸 어떤 필드도 믿지 않는다(알려진 필드만 골라 검사한 뒤 쓴다).
+- **이 컴퓨터의 페이지만 붙는다**(`localOrigin`): Origin이 `localhost`·`127.0.0.1`·`[::1]`이거나 없을 때(터미널 `chat.mjs`, 테스트). 브라우저는 어느 사이트에서든 `ws://localhost`를 열 수 있어서, 막지 않으면 아무 웹사이트나 에이전트를 부려 책을 읽어 갈 수 있다. 메시지 하나는 256KB까지.
+- 대화는 서버(`agent/host.mjs`)가 들고 있다. Claude Code는 **첫 메시지에서** 띄운다(쓰지 않는 대화는 프로세스가 없다). 프로세스가 끝나면(죽거나 닫히면) 따라가는 쪽에 `error`, 반쯤 쓴 턴은 버린 `snapshot`을 보내고, 다음 `send`에서 같은 세션 id로 `resume`해 다시 띄운다.
+- 서버가 `SIGINT`/`SIGTERM`을 받으면 모든 세션을 닫고 나간다.
 
 ## 8. 측정된 SDK 사실
 
@@ -155,12 +162,13 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 
 - **`settingSources: []`만으로는 격리되지 않는다.** claude.ai 로그인으로 돌면 사람이 claude.ai에 연결해 둔 커넥터(Gmail·Drive·Calendar·Notion…)가 **두 번째 요청부터** 붙었다(첫 요청 뒤에 연결이 끝난다). `getContextUsage()`: MCP tools 28,091토큰(fitz 도구 4개는 662). 사람의 스킬 19개가 목록에 실렸고 자동 메모리가 켜져 있었다. → `strictMcpConfig: true` + `settings.disableClaudeAiConnectors` + `skills: []` + `autoMemoryEnabled: false` + `disableBundledSkills`로 두 번째 요청이 31,871 → 2,610토큰(Haiku 측정). 남는 것: Claude Code에 들어 있는 플러그인 3개(`cc-plugin-*`)와 그 스킬 3개, `/` 명령 39개 — 모델에게 가는 도구는 fitz 4개뿐이다.
 - **부모 Claude Code 세션의 환경이 따라온다.** 서버를 Claude Code 안(Octave의 터미널, Claude의 Bash)에서 띄우면 `process.env`에 `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_MESSAGING_SOCKET`·`_TOKEN`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_EFFORT` 등이 있다. 그대로 넘기면 우리 에이전트가 남의 세션의 자식이 된다 → `ownEnv`.
-- `allowedTools`에 이름을 넣은 도구가 있으면 프로세스마다 `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` 경고가 한 번 난다. 의도한 것(읽기는 묻지 않는다)이므로 그대로 둔다.
+- `allowedTools`에 이름을 넣은 도구가 있으면 **세션을 열 때마다** `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` 경고가 난다. 의도한 것(읽기는 묻지 않는다)이므로 그대로 둔다. 읽기까지 `canUseTool`로 허락하면 경고는 없어지지만, 읽을 때마다 세션 상태가 `requires_action`으로 바뀌어 "답을 기다리는 중"이 깜빡인다.
 - `tools: []`는 `ToolSearch`도 없앤다. 서버의 `alwaysLoad: true` 덕에 fitz 도구는 처음부터 실려 있어 문제없었다(init의 tools = fitz 4개).
 - `result.total_cost_usd`는 프로세스의 누적값이다 → 턴의 비용은 직전 누적값과의 차.
 - Opus 5.5 + `display: "summarized"`: 생각하는 동안은 `thinking_tokens`만 오고 요약 글은 거의 끝에 몰려 온다. 답의 글은 조각으로 흐른다.
 - `for await`에서 `break`하면 query가 닫힌다. 턴 끝에 `getContextUsage()` 같은 걸 부르려면 루프 안에서 부른다.
 - `deleteSession`은 세션 파일만 지우고 빈 프로젝트 폴더(`~/.claude/projects/<cwd>/`)를 남긴다.
+- **멈춘 턴**(`interrupt()`): `result`가 `terminal_reason: "aborted_streaming"`, `is_error: true`로 온다. 오류가 아니라 사람이 멈춘 것이므로 화면은 `reason`으로 가른다. 세션은 살아 있고 다음 메시지에 정상으로 답했다(Haiku, 실제 책 사본).
 
 ## 9. 지금 하지 않는 것
 
@@ -180,7 +188,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 1 | 이 문서 + 의존성 | — | `pnpm test` 48 통과, SDK import, 바이너리 2.1.302 | 2026-10-18 완료 |
 | 2 | `agent/tools.mjs` 읽기 도구 4 + 테스트 | — | 금지 필드 부재, 기존 함수와 같은 값 | 2026-10-18. 서버 테스트 62 통과. 실제 책: 26장 825단락을 `next`를 따라 39호출에 빠짐·중복 없이 읽음, 결과 최대 29,307자, 금지 필드 0 |
 | 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `agent/fixtures/` | 2026-10-18. 서버 테스트 72. Gatsby ¶4 질문(Opus 5.5/medium): `read(ids:[4], around:3)` 1회 → 생각 → 답, 21초, $0.039, 요청 2,265·3,312토큰. 실제 책 ¶36: `read` + `glossary`, 34초, $0.080(격리 전 52초, $0.327). Claude가 앞뒤 단락·사람의 댓글·이미 번역된 단락의 문체를 근거로 답함 |
-| 4 | WS 라우트 + `protocol.mjs` + 서버의 대화 관리(start·send·stop·open) + 터미널 대화 스크립트 `agent/chat.mjs` | 터미널에서 질문하고 답이 흐름 | 스텁 세션으로 프로토콜 테스트, 실제 1회 | |
+| 4 | WS 라우트 + `protocol.mjs` + 서버의 대화 관리(start·send·stop·open) + 터미널 대화 스크립트 `agent/chat.mjs` | 터미널에서 질문하고 답이 흐름 | 스텁 세션으로 프로토콜 테스트, 실제 1회 | 2026-10-18. 서버 테스트 84. 스텁 세션(녹화 메시지를 흘려 넣음)으로: 중간에 붙은 두 번째 페이지도 서버와 같은 상태, 다른 사이트 Origin은 401, 프로세스가 죽으면 다음 메시지에서 같은 세션 id로 resume. 실제: 서버(책 사본)에 `chat.mjs`로 ¶36 질문(Haiku) → `read(ids:[36], around:2)` → 답, 4.2초, $0.001. 6초에 멈춤 → `aborted_streaming`, 같은 대화의 다음 질문에 정상 답. 확인이 만든 세션 2개는 `deleteSession`으로 지움 |
 | 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | |

@@ -152,3 +152,17 @@ uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
 ## 데이터 안전
 - 에디터가 한 번이라도 쓰면 `meta.last_edit_at`이 기록되고, 이후 `pipeline.build`는 그 DB를 덮어쓰지 않는다 (다른 `--out`으로 빌드).
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
+
+## 번역 에이전트 (개발 중, 터미널에서)
+
+Claude Code를 에디터 서버 안에서 돌려, 책을 직접 읽고 답하게 한다. 설계와 진행은 `docs/agent.md`. 화면(Agent 탭)은 아직 없고 터미널에서 쓴다.
+
+```sh
+node server/index.mjs                          # 서버가 에이전트 소켓도 연다 (ws://localhost:4800/agent)
+node server/agent/chat.mjs                     # 다른 터미널에서. 예: ¶36의 뉘앙스는?
+node server/agent/chat.mjs --model claude-sonnet-5-5 --effort low
+```
+
+- Enter로 보내고, 답이 도는 중 Ctrl-C는 멈추기, 쉬는 중 Ctrl-C는 종료. 턴마다 걸린 시간과 비용(추정)이 찍힌다.
+- 에이전트가 가진 것은 책을 읽는 도구 넷(`book`, `read`, `glossary`, `search`)뿐이다. 파일·셸·웹 도구가 없으므로 PDF와 쪽 이미지는 열 수 없고, 아직 아무것도 고치지 않는다.
+- 자격: 환경에 `ANTHROPIC_API_KEY`가 있으면 그 키를, 없으면 이 Mac의 Claude 로그인을 쓴다. 서버가 시작할 때 어느 쪽인지 찍는다.

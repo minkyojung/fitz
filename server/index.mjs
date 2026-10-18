@@ -6,6 +6,8 @@ import { resolve, basename } from "node:path"
 
 import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
+import { createAgentHost } from "./agent/host.mjs"
+import { attachAgentSocket } from "./agent/socket.mjs"
 import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
@@ -84,7 +86,7 @@ const json = (res, status, body) => {
   res.end(JSON.stringify(body))
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") return json(res, 204, null)
     if (req.method === "GET" && req.url.startsWith("/pages/")) {
@@ -110,4 +112,15 @@ createServer(async (req, res) => {
   } catch (e) {
     json(res, e.status ?? 500, { error: e.message })
   }
-}).listen(PORT, () => console.log(`api  http://localhost:${PORT}/api/*   db=${DB}`))
+})
+
+// the translation agent (docs/agent.md): one socket, the server owns every Claude Code process
+const agent = createAgentHost({ db })
+attachAgentSocket(server, agent)
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { agent.close(); process.exit(0) })
+
+server.listen(PORT, () => {
+  console.log(`api  http://localhost:${PORT}/api/*   db=${DB}`)
+  // an API key in the environment is used without asking, over the Claude login
+  console.log(`agent ws://localhost:${PORT}/agent   ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY from the environment" : "the Claude login on this Mac"}`)
+})
