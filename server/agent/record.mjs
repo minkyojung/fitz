@@ -42,7 +42,9 @@ mkdirSync(cwd)
 // deleteSession removes the session file but leaves its (then empty) project folder; rmdirSync only removes it empty
 const projectDir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", realpathSync(cwd).replace(/[^A-Za-z0-9]/g, "-"))
 
-const host = createAgentHost({ db, openSession: (options) => openSession({ ...options, cwd }), sessionInfo: (id) => getSessionInfo(id, { dir: cwd }) })
+// the session is deleted afterwards, so nothing is copied for keeping
+const host = createAgentHost({ db, openSession: (options) => openSession({ ...options, cwd }), sessionInfo: (id) => getSessionInfo(id, { dir: cwd }),
+  keep: { save: () => false, restore: () => false } })
 const convId = "00000000-0000-4000-8000-000000000000"
 const frames = []
 const asks = []

@@ -12,12 +12,16 @@ import { settle, stubSessions } from "./fixtures/stubSession.mjs"
 const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
 const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
 
+/** Session copies, recorded instead of made: a test never touches the home folder. */
+const keeper = () => { const calls = []; return { calls, save: (id) => { calls.push(["save", id]); return true }, restore: (id) => { calls.push(["restore", id]); return false } } }
+
 function setup({ sessionInfo = async () => null } = {}) {
   const stubs = stubSessions()
   const db = gatsby()
-  const host = createAgentHost({ db, openSession: stubs.openSession, sessionInfo })
+  const keep = keeper()
+  const host = createAgentHost({ db, openSession: stubs.openSession, sessionInfo, keep })
   const events = []
-  return { ...stubs, db, host, events, follow: (id = ID) => host.open(id, (e) => events.push(e)) }
+  return { ...stubs, db, keep, host, events, follow: (id = ID) => host.open(id, (e) => events.push(e)) }
 }
 
 test("Claude Code starts with the first message, once, with the conversation's model and the book", () => {
@@ -113,7 +117,7 @@ function gatsby() {
 }
 function asking() {
   const stubs = stubSessions()
-  const host = createAgentHost({ db: gatsby(), openSession: stubs.openSession, sessionInfo: async () => null })
+  const host = createAgentHost({ db: gatsby(), openSession: stubs.openSession, sessionInfo: async () => null, keep: keeper() })
   const events = []
   host.start(ID)
   host.open(ID, (e) => events.push(e))
@@ -220,7 +224,7 @@ test("its session, each turn's time, cost and end, and the title Claude Code gav
 test("a conversation that exists in book.db cannot be started again", () => {
   const first = setup()
   first.host.start(ID)
-  const again = createAgentHost({ db: first.db, openSession: first.openSession, sessionInfo: async () => null })
+  const again = createAgentHost({ db: first.db, openSession: first.openSession, sessionInfo: async () => null, keep: keeper() })
   assert.throws(() => again.start(ID), { status: 409 })
 })
 
@@ -251,9 +255,10 @@ async function afterRestart() {
   await settle()
   const stubs = stubSessions()
   const reads = []
-  const host = createAgentHost({ db: before.db, openSession: stubs.openSession, sessionInfo: async () => null,
+  const keep = keeper()
+  const host = createAgentHost({ db: before.db, openSession: stubs.openSession, sessionInfo: async () => null, keep,
     sessionMessages: async (id) => { reads.push(id); return storedNuance } })
-  return { host, db: before.db, reads, ...stubs }
+  return { host, db: before.db, reads, keep, before, ...stubs }
 }
 
 test("after a restart a conversation is read back and its followers get it as it was", async () => {
@@ -283,4 +288,14 @@ test("the list is book.db's, most recently used first; an unknown conversation i
   host.start("1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11")
   assert.deepEqual(host.list().map((c) => c.id).sort(), [ID, "1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"].sort())
   assert.throws(() => host.open("2b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11", () => {}), { status: 404 })
+})
+
+test("each finished turn copies its session file; a reopened or resumed session is restored first if it was swept", async () => {
+  const { host, keep, before } = await afterRestart()
+  const sessionId = nuance.find((m) => m.subtype === "init").session_id
+  assert.deepEqual(before.keep.calls, [["save", sessionId]])
+  host.open(ID, () => {})
+  await settle()
+  await host.send(ID, "그럼 ¶5는?")
+  assert.deepEqual(keep.calls, [["restore", sessionId], ["restore", sessionId]])
 })

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto"
 import { getSessionInfo, getSessionMessages } from "@anthropic-ai/claude-agent-sdk"
 
 import { applyMessage, emptyConversation, foldStored } from "./fold.mjs"
+import { sessionKeeper } from "./keep.mjs"
 import { addConversation, getConversation, listConversations, recordTurn, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
 import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
@@ -27,12 +28,14 @@ const permission = (decision, toolName, input) => {
 }
 
 /** `openSession` is session.mjs's; `sessionInfo` and `sessionMessages` are the SDK's (the title Claude Code gives a
- *  session, and what it kept of one). Tests pass stand-ins. */
+ *  session, and what it kept of one); `keep` copies session files against Claude Code's 30-day sweep (keep.mjs).
+ *  Tests pass stand-ins for all of them, so a test never touches the person's home folder. */
 export function createAgentHost({
   db,
   openSession = openClaudeSession,
   sessionInfo = (id) => getSessionInfo(id, { dir: AGENT_CWD }),
   sessionMessages = (id) => getSessionMessages(id, { dir: AGENT_CWD }),
+  keep = sessionKeeper({ cwd: AGENT_CWD }),
 }) {
   const conversations = new Map()  // convId → { model, effort, session, keptSession, state, followers, asks, loaded, ready }
   const conversation = (record) => ({
@@ -50,7 +53,7 @@ export function createAgentHost({
     if (record.sessionId) {
       conv.loaded = false
       conv.ready = Promise.resolve()
-        .then(() => sessionMessages(record.sessionId))
+        .then(() => { restore(record.sessionId); return sessionMessages(record.sessionId) })
         .then((messages) => { conv.state = foldStored(messages ?? [], turnsOf(db, record.sessionId), record.sessionId) })
         .catch((e) => tell(conv, { type: "error", convId, message: `could not read the conversation back: ${e.message}` }))
         .then(() => { conv.loaded = true; tell(conv, { type: "snapshot", convId, state: conv.state, asks: pending(conv) }) })
@@ -79,7 +82,7 @@ export function createAgentHost({
   }
 
   /** Keep what the session file lacks. A record that fails is reported, never fatal to the conversation. */
-  function keep(convId, conv, message) {
+  function keepRecords(convId, conv, message) {
     try {
       if (message.type === "system" && message.subtype === "init" && message.session_id !== conv.keptSession) {
         setSession(db, convId, message.session_id)
@@ -88,6 +91,7 @@ export function createAgentHost({
       if (message.type === "result") {
         const turn = conv.state.items.at(-1)
         recordTurn(db, message.session_id, message.user_message_uuid ?? message.uuid, turn)
+        try { keep.save(message.session_id) } catch (e) { console.error("agent: could not copy session", message.session_id, e.message) }
         if (!getConversation(db, convId)?.title) {
           void Promise.resolve(sessionInfo(message.session_id)).then((info) => {
             const title = info?.customTitle ?? info?.summary
@@ -100,11 +104,18 @@ export function createAgentHost({
     }
   }
 
+  /** The session file back in its place if Claude Code swept it, before it is read or resumed. */
+  function restore(sessionId) {
+    try { if (keep.restore(sessionId)) console.error("agent: restored the kept copy of session", sessionId) }
+    catch (e) { console.error("agent: could not restore session", sessionId, e.message) }
+  }
+
   // Claude Code starts with the first message, not with the conversation: an unused conversation costs no process.
   // A session that ends (the process died, or was closed) is opened again on the next message, going on with the
   // same session id.
   function ensureSession(convId, conv) {
     if (conv.session) return conv.session
+    if (conv.state.sessionId) restore(conv.state.sessionId)
     const session = openSession({
       db, resume: conv.state.sessionId ?? undefined, model: conv.model, effort: conv.effort,
       ask: (toolName, input, options) => ask(convId, conv, toolName, input, options),
@@ -114,7 +125,7 @@ export function createAgentHost({
       try {
         for await (const message of session.messages) {
           conv.state = applyMessage(conv.state, message)
-          keep(convId, conv, message)
+          keepRecords(convId, conv, message)
           tell(conv, { type: "message", convId, message })
         }
       } catch (e) {
