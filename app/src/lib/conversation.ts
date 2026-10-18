@@ -1,0 +1,55 @@
+/** One conversation with Claude as the page holds it (docs/agent.md §17): what the server's fold makes of it (the same
+ *  fold.mjs), and the writes waiting for the translator. Built from the conversation's events on the live connection:
+ *  a snapshot, then every message on top of it. Pure. */
+import { applyMessage, emptyConversation, type Conversation, type SdkMessage } from "../../../server/agent/fold.mjs"
+import type { LiveEvent } from "./live.ts"
+
+export type { Conversation, Item } from "../../../server/agent/fold.mjs"
+
+/** A write Claude asks to make, with what it would do. */
+export interface Ask {
+  requestId: string
+  tool: string
+  input: Record<string, unknown>
+  preview: { summary: string; segmentId: number | null; before: string | null; after: string | null }
+}
+
+export interface ConversationView {
+  /** The server's snapshot has arrived: until then there is nothing to show. */
+  loaded: boolean
+  state: Conversation
+  asks: Ask[]
+  /** The last thing the server reported going wrong with it. */
+  error: string | null
+}
+
+export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null })
+
+/** The conversation after one of its events. */
+export function applyEvent(view: ConversationView, e: LiveEvent): ConversationView {
+  switch (e.type) {
+    case "snapshot":
+      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null }
+    case "message":
+      return { ...view, state: applyMessage(view.state, e.message as SdkMessage) }
+    case "ask":
+      return { ...view, asks: [...view.asks.filter((a) => a.requestId !== (e.ask as Ask).requestId), e.ask as Ask] }
+    case "asked":
+      return { ...view, asks: view.asks.filter((a) => a.requestId !== e.requestId) }
+    case "error":
+      return { ...view, error: String(e.message) }
+    default:
+      return view
+  }
+}
+
+/** What the translator pointed at, put before their words so Claude knows which paragraph and which words. */
+export interface Pointed { segmentId: number; side: "source" | "target"; quote: string }
+const POINTED = /^¶(\d+) \((English|translation)\): “([^”\n]*)”\n\n/
+export const withPointed = (text: string, p: Pointed | null) =>
+  p ? `¶${p.segmentId} (${p.side === "source" ? "English" : "translation"}): “${p.quote}”\n\n${text}` : text
+/** A message the translator sent, taken apart again for showing: what they pointed at, and their words. */
+export function readPointed(text: string): { pointed: Pointed | null; text: string } {
+  const m = POINTED.exec(text)
+  return m ? { pointed: { segmentId: Number(m[1]), side: m[2] === "English" ? "source" : "target", quote: m[3] }, text: text.slice(m[0].length) } : { pointed: null, text }
+}

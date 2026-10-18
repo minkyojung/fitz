@@ -1,4 +1,5 @@
 /** Data interface the UI depends on. Implementations: http.ts (dev server), later a Tauri binding. */
+import type { LiveEvent } from "@/lib/live"
 import type { TaskRun } from "@/lib/taskRun"
 
 /** ProseMirror document JSON: paragraphs of text nodes with optional marks.
@@ -172,6 +173,21 @@ export interface Suggestion {
 /** accept: the words are replaced; comment: kept as Claude's comment on them; dismiss: let go. ⌘Z undoes each. */
 export type SuggestionDecision = "accept" | "dismiss" | "comment"
 
+/** A conversation with Claude as book.db lists it (docs/agent.md §13); a task's carries its task and chapter. */
+export interface ConversationSummary {
+  id: string
+  sessionId: string | null
+  title: string | null
+  model: string
+  effort: string
+  task: TaskName | null
+  chapterId: number | null
+  createdAt: string
+  usedAt: string
+}
+/** The translator's answer to a write Claude asks for: once, for the rest of the conversation, or not. */
+export type AskDecision = "allow" | "always" | "deny"
+
 export interface OpSummary {
   id: number
   name: string
@@ -245,4 +261,12 @@ export interface Api {
   decideSuggestion(id: number, decision: SuggestionDecision): Promise<Suggestion>
   /** Start Claude on a chapter; `onRun` hears how it goes until it ends. Returns the function that stops following. */
   runTask(task: TaskName, chapterId: number, onRun: (run: TaskRun) => void): () => void
+  /** Claude's conversations, most recently used first. */
+  listConversations(): Promise<ConversationSummary[]>
+  /** Hear a conversation: its snapshot, then its messages, asks and errors; after a reconnect it is followed again. With
+   *  `start` the conversation is begun first, under this new id. Returns the function that stops listening. */
+  followConversation(convId: string, onEvent: (e: LiveEvent) => void, start?: { model: string; effort: string }): () => void
+  sendMessage(convId: string, text: string): void
+  stopTurn(convId: string): void
+  answerAsk(convId: string, requestId: string, decision: AskDecision): void
 }

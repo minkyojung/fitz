@@ -1,4 +1,4 @@
-import type { Api, BookChange } from "./api"
+import type { Api, BookChange, ConversationSummary } from "./api"
 import { createLive } from "@/lib/live"
 import { nextRun, type TaskRun } from "@/lib/taskRun"
 
@@ -93,4 +93,29 @@ export const api: Api = {
     onRun(run)
     return stop
   },
+  listConversations: () =>
+    new Promise((resolve, reject) => {
+      const connection = live()
+      const timer = setTimeout(() => { stop(); reject(new Error("the server did not answer with the conversations")) }, 10_000)
+      const stop = connection.subscribe((e) => {
+        if (e.type !== "conversations") return
+        clearTimeout(timer)
+        stop()
+        resolve(e.items as ConversationSummary[])
+      })
+      connection.send({ type: "list" })
+    }),
+  followConversation: (convId, onEvent, start) => {
+    const connection = live()
+    const stop = connection.subscribe((e) => {
+      // following ends with the connection: follow again, and the snapshot brings what was missed
+      if (e.type === "resync") return connection.send({ type: "open", convId })
+      if (e.convId === convId) onEvent(e)
+    })
+    connection.send(start ? { type: "start", convId, ...start } : { type: "open", convId })
+    return stop
+  },
+  sendMessage: (convId, text) => live().send({ type: "send", convId, text }),
+  stopTurn: (convId) => live().send({ type: "stop", convId }),
+  answerAsk: (convId, requestId, decision) => live().send({ type: "answer", convId, requestId, decision }),
 }
