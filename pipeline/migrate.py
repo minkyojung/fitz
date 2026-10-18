@@ -65,6 +65,16 @@ def migrate(path: Path) -> list[str]:
     if "version" not in {r[1] for r in conn.execute("PRAGMA table_info(segment)")}:
         conn.execute("ALTER TABLE segment ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
         done.append("segment.version column")
+    ocols = {r[1] for r in conn.execute("PRAGMA table_info(ops)")}
+    if "actor" not in ocols:
+        # every change so far came in through the editor
+        conn.execute("ALTER TABLE ops ADD COLUMN actor TEXT NOT NULL DEFAULT 'translator' CHECK (actor IN ('translator','agent'))")
+        conn.execute("ALTER TABLE ops ADD COLUMN tool_use_id TEXT")
+        done.append("ops.actor and ops.tool_use_id columns")
+    ccols = {r[1] for r in conn.execute("PRAGMA table_info(comment)")}
+    if ccols and "author" not in ccols:
+        conn.execute("ALTER TABLE comment ADD COLUMN author TEXT NOT NULL DEFAULT 'translator' CHECK (author IN ('translator','agent'))")
+        done.append("comment.author column")
     triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     if "segment_version_on_update" not in triggers:
         # the same triggers as db/schema.sql

@@ -103,6 +103,7 @@ CREATE TABLE comment (
   src_exact     TEXT, src_prefix TEXT, src_suffix TEXT, src_start INTEGER, src_end INTEGER, -- 앵커 (side가 가리키는 글 기준)
   body          TEXT NOT NULL,
   resolved      INTEGER NOT NULL DEFAULT 0,
+  author        TEXT NOT NULL DEFAULT 'translator' CHECK (author IN ('translator','agent')), -- 쓴 쪽: 번역자, 또는 번역 에이전트(Claude)
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -127,6 +128,8 @@ CREATE TABLE ops (
   inverse_name   TEXT NOT NULL,
   inverse_params TEXT NOT NULL,
   segment_ids    TEXT NOT NULL,                -- 영향받은 세그먼트 id JSON (이력 조회용)
+  actor          TEXT NOT NULL DEFAULT 'translator' CHECK (actor IN ('translator','agent')), -- 들어온 문: HTTP 경로 = 번역자, fitz 도구 = 에이전트
+  tool_use_id    TEXT,                         -- 에이전트의 쓰기면 그 도구 호출 id: 대화의 그 줄과 이어진다
   undone         INTEGER NOT NULL DEFAULT 0,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );

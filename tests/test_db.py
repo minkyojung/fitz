@@ -35,7 +35,7 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 7
+    assert len(steps) == 8
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
@@ -136,5 +136,28 @@ def test_migration_adds_segment_versions_that_only_go_up(tmp_path: Path):
     conn.execute("DELETE FROM segment WHERE id = 1")
     conn.execute("INSERT INTO segment(id, idx, source_text) VALUES (1, 0, 'a')")  # restored: a new number, never an old one
     assert v(1) == 3
+    conn.close()
+    assert migrate(p) == []
+
+
+def test_migration_records_who_made_each_change(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("""
+      CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);
+      CREATE TABLE ops (id INTEGER PRIMARY KEY, name TEXT NOT NULL, params TEXT NOT NULL, inverse_name TEXT NOT NULL,
+                        inverse_params TEXT NOT NULL, segment_ids TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0, created_at TEXT);
+      INSERT INTO ops(name, params, inverse_name, inverse_params, segment_ids) VALUES ('updateSegment', '{}', 'updateSegment', '{}', '[1]');
+      CREATE TABLE comment (id INTEGER PRIMARY KEY, segment_id INTEGER, side TEXT, parent_id INTEGER, body TEXT NOT NULL, resolved INTEGER, created_at TEXT);
+      INSERT INTO comment(segment_id, side, body) VALUES (1, 'source', 'mine');
+    """)
+    conn.commit(); conn.close()
+    steps = migrate(p)
+    assert "ops.actor and ops.tool_use_id columns" in steps and "comment.author column" in steps
+    conn = sqlite3.connect(p)
+    assert conn.execute("SELECT actor, tool_use_id FROM ops").fetchone() == ("translator", None)
+    assert conn.execute("SELECT author FROM comment").fetchone() == ("translator",)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE ops SET actor = 'someone'")
     conn.close()
     assert migrate(p) == []
