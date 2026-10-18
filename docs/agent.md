@@ -21,19 +21,24 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 | `tools` | `[]` | 내장 도구 제거. 원칙 2 |
 | `mcpServers` | `{ fitz: createSdkMcpServer({ name: "fitz", tools }) }` | 앱 프로세스 안에서 도는 MCP. 도구 이름은 `mcp__fitz__<name>` |
 | `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search` | 읽기는 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
-| `canUseTool` | 페이지에 승인 카드 | 쓰기 도구와 `AskUserQuestion`. "이 작업 동안 허용"은 앱이 기억 |
+| `canUseTool` | 페이지에 승인 카드 | 쓰기 도구가 여기로 온다. "이 작업 동안 허용"은 앱이 기억. 3단계에서는 쓰기 도구가 없으므로 모두 거절 |
 | `permissionMode` | `"default"` | bypass가 아니다. 쓰기는 물어야 한다 |
 | `systemPrompt` | 문자열 | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체 |
 | `settingSources` | `[]` | 사람의 `~/.claude`(CLAUDE.md·hook·MCP)가 섞이지 않는다 |
-| `cwd` | 빈 스크래치 폴더(`~/.fitz/agent-cwd/`) | 세션 파일이 저장되는 키이자, 저장소·PDF 경로와 분리 |
+| `strictMcpConfig` | `true` | 여기서 준 MCP 서버만. §8 |
+| `settings` | `{ disableClaudeAiConnectors: true, autoMemoryEnabled: false, disableBundledSkills: true }` | `settingSources`가 닿지 않는 것: claude.ai 커넥터, 자동 메모리, 기본 스킬. §8 |
+| `skills` | `[]` | 사람의 스킬 목록이 모델에게 가지 않는다. 생략하면 "끔"이 아니라 CLI 기본값 |
+| `cwd` | 빈 폴더 `~/.fitz/agent/` | 세션 파일이 저장되는 키이자, 저장소·PDF 경로와 분리 |
 | `includePartialMessages` | `true` | 글자 단위 스트리밍 |
+| `extraArgs` | `{ "replay-user-messages": null }` | 보낸 메시지의 메아리(uuid 포함). 기본은 꺼짐(측정) |
 | `prompt` | `AsyncIterable<SDKUserMessage>` (streaming input) | 대화 1 = `query()` 1. 여러 턴, `interrupt()`, `setModel()` |
 | `resume` | 세션 id | 서버·앱 재시작 뒤 이어가기. 지난 메시지는 `getSessionMessages()`로 |
 | `hooks.Stop` | 검증 게이트 | `{ decision: "block", reason }`로 같은 턴 안에서 되돌림 |
 | `outputFormat` | `{ type: "json_schema", schema }` | 리뷰·오탈자의 결과. `result.structured_output` |
 | `maxBudgetUsd`, `maxTurns` | 작업마다 | 상한 |
 | `model`, `effort`, `thinking` | 명시 | 번역 `opus`/`medium`, 리뷰·오탈자 `sonnet`/`low`, `{ type: "adaptive" }` |
-| `env` | `{ ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" }` | `env`를 주면 통째로 바뀌므로 펼쳐서. `USER`가 없으면 로그인을 못 찾는다 |
+| `env` | `{ ...ownEnv(process.env), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" }` | `env`를 주면 통째로 바뀌므로 펼쳐서(`USER`가 없으면 로그인을 못 찾는다). `ownEnv`는 부모 Claude Code 세션이 물려준 변수를 뺀다. §8 |
+| `stderr` | `[claude]`를 붙여 서버 stderr로 | 바이너리가 말하는 것을 잃지 않는다 |
 | `tool()`의 `extras` / `createSdkMcpServer` | 읽기에 `{ annotations: { readOnlyHint: true } }`, 서버에 `alwaysLoad: true` | 읽기 도구는 병렬로 돈다. `alwaysLoad`로 `ToolSearch` 왕복을 없앤다 |
 
 **인증.** SDK가 띄우는 바이너리는 환경에 `ANTHROPIC_API_KEY`가 있으면 묻지 않고 그 키를 쓰고, 없으면 Keychain의 Claude 로그인(이 Mac: Max)을 쓴다. 서버는 시작 시 `claude auth status`로 어느 자격으로 도는지 로그에 밝힌다. 약관(code.claude.com/docs/en/legal-and-compliance): 수정하지 않은 바이너리에 본인 구독으로 직접 로그인하는 것은 허용되며, Pro/Max 한도는 "Claude Code와 Agent SDK의 통상적 개인 사용"을 전제한다. 금지되는 것은 개발자가 자기 제품의 사용자들에게 claude.ai 로그인을 제공하거나 사용자 대신 구독으로 중계하는 것이다. fitz는 단일 사용자 로컬 도구다.
@@ -48,6 +53,8 @@ server/
     tools.mjs           MCP 도구 8개(읽기 4, 쓰기 4) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
+    record.mjs          실제 한 턴을 녹화(JSONL)하는 개발용 스크립트. 세션은 임시 폴더에서 돌고 지워진다
+    fixtures/           gatsby.sql(퍼블릭 도메인 책) + 녹화. 커밋하는 녹화에 번역 중인 책은 들어가지 않는다
     checks.mjs          앱이 돌리는 번역 검증. 순수 함수
     protocol.mjs        ClientMsg / ServerMsg 닫힌 union. 수신 시 모든 필드 검증
 app/src/
@@ -129,7 +136,9 @@ Server → snapshot { convId, state }          — 열 때 한 번
 
 닫힌 union. 서버는 페이지가 보낸 어떤 필드도 믿지 않는다.
 
-## 8. 측정된 SDK 사실 (claude-code-harness 스킬, Claude Code 2.1.287–2.1.296)
+## 8. 측정된 SDK 사실
+
+claude-code-harness 스킬에서 (Claude Code 2.1.287–2.1.296):
 
 - Stop hook은 도구를 안 쓴 턴에도 매 턴 끝에 온다 → 앱의 "작업 중" 상태로 게이트한다.
 - `block`은 같은 턴을 이어 간다. 사람은 턴 하나를 본다.
@@ -141,6 +150,17 @@ Server → snapshot { convId, state }          — 열 때 한 번
 - `includePartialMessages`의 `stream_event` 순서: `message_start` → 블록 시작 → 조각 → 그 블록의 `assistant` → … → `message_stop`.
 - 환경에 `ANTHROPIC_API_KEY`가 있으면 묻지 않고 쓴다.
 - MCP 도구 결과가 25,000토큰(`MAX_MCP_OUTPUT_TOKENS`) 또는 50,000자를 넘으면 Claude Code는 결과를 파일로 옮기고 경로만 준다(문서 `[mcp]`). 이 에이전트에는 파일을 여는 도구가 없으므로(`tools: []`) 그 결과는 사라진 것과 같다 → 도구가 스스로 나눠서 돌려준다. 10,000토큰 넘으면 경고.
+
+fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
+
+- **`settingSources: []`만으로는 격리되지 않는다.** claude.ai 로그인으로 돌면 사람이 claude.ai에 연결해 둔 커넥터(Gmail·Drive·Calendar·Notion…)가 **두 번째 요청부터** 붙었다(첫 요청 뒤에 연결이 끝난다). `getContextUsage()`: MCP tools 28,091토큰(fitz 도구 4개는 662). 사람의 스킬 19개가 목록에 실렸고 자동 메모리가 켜져 있었다. → `strictMcpConfig: true` + `settings.disableClaudeAiConnectors` + `skills: []` + `autoMemoryEnabled: false` + `disableBundledSkills`로 두 번째 요청이 31,871 → 2,610토큰(Haiku 측정). 남는 것: Claude Code에 들어 있는 플러그인 3개(`cc-plugin-*`)와 그 스킬 3개, `/` 명령 39개 — 모델에게 가는 도구는 fitz 4개뿐이다.
+- **부모 Claude Code 세션의 환경이 따라온다.** 서버를 Claude Code 안(Octave의 터미널, Claude의 Bash)에서 띄우면 `process.env`에 `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_MESSAGING_SOCKET`·`_TOKEN`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_EFFORT` 등이 있다. 그대로 넘기면 우리 에이전트가 남의 세션의 자식이 된다 → `ownEnv`.
+- `allowedTools`에 이름을 넣은 도구가 있으면 프로세스마다 `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` 경고가 한 번 난다. 의도한 것(읽기는 묻지 않는다)이므로 그대로 둔다.
+- `tools: []`는 `ToolSearch`도 없앤다. 서버의 `alwaysLoad: true` 덕에 fitz 도구는 처음부터 실려 있어 문제없었다(init의 tools = fitz 4개).
+- `result.total_cost_usd`는 프로세스의 누적값이다 → 턴의 비용은 직전 누적값과의 차.
+- Opus 5.5 + `display: "summarized"`: 생각하는 동안은 `thinking_tokens`만 오고 요약 글은 거의 끝에 몰려 온다. 답의 글은 조각으로 흐른다.
+- `for await`에서 `break`하면 query가 닫힌다. 턴 끝에 `getContextUsage()` 같은 걸 부르려면 루프 안에서 부른다.
+- `deleteSession`은 세션 파일만 지우고 빈 프로젝트 폴더(`~/.claude/projects/<cwd>/`)를 남긴다.
 
 ## 9. 지금 하지 않는 것
 
@@ -159,7 +179,7 @@ Server → snapshot { convId, state }          — 열 때 한 번
 |---|---|---|---|---|
 | 1 | 이 문서 + 의존성 | — | `pnpm test` 48 통과, SDK import, 바이너리 2.1.302 | 2026-10-18 완료 |
 | 2 | `agent/tools.mjs` 읽기 도구 4 + 테스트 | — | 금지 필드 부재, 기존 함수와 같은 값 | 2026-10-18. 서버 테스트 62 통과. 실제 책: 26장 825단락을 `next`를 따라 39호출에 빠짐·중복 없이 읽음, 결과 최대 29,307자, 금지 필드 0 |
-| 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `test/fixtures/` | |
+| 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `agent/fixtures/` | 2026-10-18. 서버 테스트 72. Gatsby ¶4 질문(Opus 5.5/medium): `read(ids:[4], around:3)` 1회 → 생각 → 답, 21초, $0.039, 요청 2,265·3,312토큰. 실제 책 ¶36: `read` + `glossary`, 34초, $0.080(격리 전 52초, $0.327). Claude가 앞뒤 단락·사람의 댓글·이미 번역된 단락의 문체를 근거로 답함 |
 | 4 | WS 라우트 + `protocol.mjs` + 페이지 Agent 탭 | 패널에서 질문, 스트리밍, Stop, 비용 | e2e(가짜 프레임) | |
 | 5 | 쓰기 도구 4 + 승인 카드 | 번역 작업, 승인, ⌘Z로 되돌림 | e2e | |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | "Checked" 줄, 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
