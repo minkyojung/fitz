@@ -128,7 +128,7 @@ app/src/
 
 | # | 무엇 | 파일 | 확인 |
 |---|---|---|---|
-| 0 | **먼저 잰다**: `outputFormat`이 `tools: []`·streaming input과 함께 도는가(구조화 출력이 지운 내장 도구에 기대지 않는가), `structured_output`이 어디에 오고 세션 파일에 남는가 | 임시 스크립트(Haiku) | 결과를 §8에 기록, 아래 3의 저장 방식을 정한다 |
+| 0 ✓ | **먼저 잰다**: `outputFormat`이 `tools: []`·streaming input과 함께 도는가(구조화 출력이 지운 내장 도구에 기대지 않는가), `structured_output`이 어디에 오고 세션 파일에 남는가 | 임시 스크립트(Haiku) | 결과를 §8에 기록, 아래 3의 저장 방식을 정한다 |
 | 1 | 작업 정의: 두 작업의 지시문, 범위(장)로 만든 첫 메시지, 결과의 JSON 스키마(zod → draft-07) | `server/agent/tasks.mjs` 새로 | 순수 테스트 |
 | 2 | 작업별 세션: 작업 대화는 읽기 도구만 + `outputFormat` + 상한(`maxTurns`, `maxBudgetUsd`). `start { convId, task, chapterId }` | `session.mjs`, `tools.mjs`(쓰기 도구를 뺀 서버), `host.mjs`, `protocol.mjs` | 스텁 세션 테스트 |
 | 3 | 제안 저장: `agent_suggestion`(대화, 종류, 단락, 쪽(원문/번역), 구절, 제안, 이유, 중요도, 그때의 단락 버전, 상태 open·accepted·dismissed·commented). 결과가 오면 구절이 그 글에 정확히 한 번 있는 것만 저장 | `db/schema.sql`, `pipeline/migrate.py`, `server/agent/suggestions.mjs` 새로 | 순수 테스트, 작업 DB 백업 후 마이그레이션 |
@@ -209,6 +209,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 - Opus 5.5 + `display: "summarized"`: 생각하는 동안은 `thinking_tokens`만 오고 요약 글은 거의 끝에 몰려 온다. 답의 글은 조각으로 흐른다.
 - `for await`에서 `break`하면 query가 닫힌다. 턴 끝에 `getContextUsage()` 같은 걸 부르려면 루프 안에서 부른다.
 - `deleteSession`은 세션 파일만 지우고 빈 프로젝트 폴더(`~/.claude/projects/<cwd>/`)를 남긴다.
+- **`outputFormat`은 `tools: []`에서도 돈다**(Haiku, 2026-10-18): Claude Code가 `StructuredOutput` 도구를 스스로 더하고(init의 tools 맨 앞), Claude는 그 도구로 결과를 낸다. `canUseTool`을 거치지 않는다(모두 거절해도 통과). 결과는 `result.structured_output`(그리고 `result.result`에 같은 JSON 글). 세션 파일에는 `StructuredOutput` tool_use로 남아 다시 열어도 보인다. 같은 대화의 다음 메시지에도 다시 결과를 낸다(빈 목록도). → 대화 화면에서 `StructuredOutput` 줄은 숨긴다. 제안의 상태(열림·반영·무시)는 기록에 없으므로 DB에 둔다.
 - Claude Code가 MCP 도구의 "항상 허용"으로 주는 제안은 `addRules` → `localSettings`(파일)다. 그대로 돌려주면 `~/.fitz/agent/.claude/settings.local.json`에 적혀 다음 대화에서도 묻지 않게 된다 → 앱이 `destination: "session"` 규칙을 직접 만든다.
 - 쓰기를 거절하면(`deny` + 메시지) Claude는 다른 길로 시도하지 않고 그 사실과 대안을 말했다(Haiku, 실제 책 사본: "다른 방식으로도 시도하지 않았습니다").
 - 묻는 동안 `session_state_changed`가 `requires_action`, 답하면 `running`(녹화 `translate.jsonl`).
