@@ -167,3 +167,8 @@ test("the page asks for the conversations and gets them", async (t) => {
   await page.until((r) => r.some((e) => e.type === "conversations"))
   assert.deepEqual(page.received.find((e) => e.type === "conversations").items.map((c) => c.id), [ID])
 })
+
+test("a socket opened under another name (DNS rebinding) is refused", async (t) => {
+  const srv = await serve(t)
+  await assert.rejects(connect(srv, { headers: { host: "evil.example" } }), /401/)
+})

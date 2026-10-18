@@ -8,6 +8,7 @@ import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachLive } from "./live.mjs"
+import { corsHeaders, fromThisMachine } from "./origin.mjs"
 import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
@@ -82,23 +83,26 @@ const routes = {
   redo: () => redo(db),
 }
 
-const json = (res, status, body) => {
-  res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*",
+const json = (res, status, body, cors = {}) => {
+  res.writeHead(status, { "content-type": "application/json", ...cors,
     "access-control-allow-headers": "content-type", "access-control-allow-methods": "POST, GET, OPTIONS" })
   res.end(JSON.stringify(body))
 }
 
 const server = createServer(async (req, res) => {
+  // a page from another site, or a request addressed by another name (DNS rebinding), never reaches the book
+  if (!fromThisMachine(req)) return json(res, 403, { error: "only this machine may use the server" })
+  const cors = corsHeaders(req.headers.origin)
   try {
-    if (req.method === "OPTIONS") return json(res, 204, null)
+    if (req.method === "OPTIONS") return json(res, 204, null, cors)
     if (req.method === "GET" && req.url.startsWith("/pages/")) {
       const file = basename(req.url)  // basename defeats path traversal
       const png = await readFile(resolve(PAGES, file))
-      res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=86400", "access-control-allow-origin": "*" })
+      res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=86400", ...cors })
       return res.end(png)
     }
     const m = req.url.match(/^\/api\/(\w+)$/)
-    if (!m || req.method !== "POST" || !(m[1] in routes)) return json(res, 404, { error: "not found" })
+    if (!m || req.method !== "POST" || !(m[1] in routes)) return json(res, 404, { error: "not found" }, cors)
     let body = ""
     for await (const chunk of req) body += chunk
     const result = await routes[m[1]](body ? JSON.parse(body) : {})
@@ -106,13 +110,13 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, {
         "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
-        "access-control-allow-origin": "*", "access-control-expose-headers": "content-disposition",
+        ...cors, "access-control-expose-headers": "content-disposition",
       })
       return res.end(result.file)
     }
-    json(res, 200, result ?? null)
+    json(res, 200, result ?? null, cors)
   } catch (e) {
-    json(res, e.status ?? 500, { error: e.message })
+    json(res, e.status ?? 500, { error: e.message }, cors)
   }
 })
 

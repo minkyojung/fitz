@@ -5,12 +5,12 @@ import { WebSocketServer } from "ws"
 
 import { watchChanges } from "./commands.mjs"
 import { parseClientMessage } from "./agent/protocol.mjs"
-import { localOrigin } from "./origin.mjs"
+import { localHost, localOrigin } from "./origin.mjs"
 
 export const HEARTBEAT_MS = 30_000
 
 export function attachLive(server, { db, host, heartbeatMs = HEARTBEAT_MS }) {
-  const wss = new WebSocketServer({ server, path: "/live", maxPayload: 256 * 1024, verifyClient: ({ origin }) => localOrigin(origin) })
+  const wss = new WebSocketServer({ server, path: "/live", maxPayload: 256 * 1024, verifyClient: ({ origin, req }) => localOrigin(origin) && localHost(req.headers.host) })
   // a page that went away without closing (sleep, a dropped network) is found by its missing pong and let go
   const alive = new WeakSet()
   const beat = setInterval(() => {

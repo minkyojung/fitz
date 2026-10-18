@@ -150,6 +150,7 @@ uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
 `ocr_text` 완전 일치 → 분할·병합된 단락은 같은 쪽 안에서 유사 일치(90+) → 못 찾으면 비움.
 
 ## 데이터 안전
+- 서버는 이 컴퓨터만 쓸 수 있다. 다른 웹사이트에서 온 요청(Origin)과 이 컴퓨터가 아닌 이름으로 온 요청(Host, DNS 리바인딩)은 처리 전에 거절하고, CORS는 그 페이지의 Origin만 돌려준다. 원서 글과 쪽 이미지가 브라우저의 다른 탭으로 새지 않고, 다른 사이트가 쓰기를 실행할 수도 없다. 터미널 스크립트처럼 Origin이 없는 로컬 프로그램은 쓸 수 있다.
 - 에디터가 한 번이라도 쓰면 `meta.last_edit_at`이 기록되고, 이후 `pipeline.build`는 그 DB를 덮어쓰지 않는다 (다른 `--out`으로 빌드).
 - 단락마다 `version`이 있어, 저장할 때 편집을 시작한 뒤 다른 쪽(번역 에이전트, 다른 창)이 바꿨으면 덮지 않고 거절한다. 쓰던 글은 "Unsaved — the paragraph changed since"로 남아 Recover(내 글로 다시 저장)나 Discard를 고른다. 저장이 성공하기 전에는 쓰던 글을 지우지 않는다. 버전 칸이 없는 옛 DB는 서버가 열지 않으니 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
