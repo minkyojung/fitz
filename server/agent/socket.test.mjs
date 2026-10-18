@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
+import { DatabaseSync } from "node:sqlite"
 
 import WebSocket from "ws"
 
@@ -13,10 +14,10 @@ import { settle, stubSessions } from "./fixtures/stubSession.mjs"
 const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
 const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
 
-async function serve(t) {
+async function serve(t, db = {}) {
   const stubs = stubSessions()
   const server = createServer()
-  attachAgentSocket(server, createAgentHost({ db: {}, openSession: stubs.openSession }))
+  attachAgentSocket(server, createAgentHost({ db, openSession: stubs.openSession }))
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
   const clients = []
   // the server closes only once its connections are gone: end them first, in one place
@@ -91,4 +92,20 @@ test("a page from another site cannot connect; this machine's pages can", async 
   assert.equal(localOrigin("http://127.0.0.1:4173"), true)
   assert.equal(localOrigin("http://localhost.evil.example"), false)
   assert.equal(localOrigin("null"), false)
+})
+
+test("over the socket: a write is asked, and the page's answer reaches Claude Code", async (t) => {
+  const book = new DatabaseSync(":memory:")
+  book.exec(readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8"))
+  book.exec(readFileSync(new URL("./fixtures/gatsby.sql", import.meta.url), "utf8"))
+  const srv = await serve(t, book)
+  const page = await connect(srv)
+  page.say({ type: "start", convId: ID })
+  page.say({ type: "send", convId: ID, text: "q" })
+  await page.until(() => srv.opened.length === 1)
+  const answered = srv.opened[0].options.ask("mcp__fitz__add_comment", { segmentId: 1, side: "source", body: "b" }, {})
+  await page.until((r) => r.some((e) => e.type === "ask"))
+  const { ask } = page.received.find((e) => e.type === "ask")
+  page.say({ type: "answer", convId: ID, requestId: ask.requestId, decision: "deny" })
+  assert.equal((await answered).behavior, "deny")
 })

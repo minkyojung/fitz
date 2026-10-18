@@ -6,12 +6,16 @@
 //   open  { convId }                    follow a conversation: a snapshot now, its messages from then on
 //   send  { convId, text }              the translator's message
 //   stop  { convId }                    stop the turn that is going
+//   answer { convId, requestId, decision }  allow | always (this tool, for the rest of the session) | deny
 // server → page
-//   snapshot { convId, state }          the conversation as fold.mjs has it
+//   snapshot { convId, state, asks }    the conversation as fold.mjs has it, and the writes waiting for an answer
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
+//   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
+//   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)
 //   error    { convId?, message }
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+export const DECISIONS = ["allow", "always", "deny"]
 export const MAX_TEXT = 20000
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -31,6 +35,11 @@ export function parseClientMessage(raw) {
       if (m.model !== undefined) out.model = typeof m.model === "string" && MODEL.test(m.model) ? m.model : fail("model is not a model name")
       if (m.effort !== undefined) out.effort = EFFORTS.includes(m.effort) ? m.effort : fail(`effort must be one of ${EFFORTS.join(", ")}`)
       return out
+    }
+    case "answer": {
+      const requestId = typeof m.requestId === "string" && UUID.test(m.requestId) ? m.requestId : fail("requestId must be a uuid")
+      if (!DECISIONS.includes(m.decision)) fail(`decision must be one of ${DECISIONS.join(", ")}`)
+      return { type: "answer", convId: convId(m.convId), requestId, decision: m.decision }
     }
     case "open":
     case "stop":

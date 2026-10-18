@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { pmDoc } from "../commands.mjs"
-import { READ_BUDGET, book, fitzServer, glossary, read, readTools, searchBook } from "./tools.mjs"
+import { pmDoc, undo } from "../commands.mjs"
+import { CLAUDE_PREFIX, READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -164,4 +164,79 @@ test("MCP: the server is in-process, named fitz, and keeps its tools loaded", ()
   assert.equal(server.type, "sdk")
   assert.equal(server.name, "fitz")
   assert.ok(server.instance)
+})
+
+// --- writes: every one goes through execute(), so ⌘Z takes it back
+
+const seg = (db, id) => db.prepare("SELECT target_text, target_doc, status, updated_at FROM segment WHERE id = ?").get(id)
+const readAt = (db, id) => read(db, { ids: [id] }).segments[0].updatedAt
+
+test("set_translation writes the paragraph as draft, one block per line, and ⌘Z takes it back", () => {
+  const db = fixture()
+  const out = setTranslation(db, { segmentId: 2, text: "제무레이의 배.\n\n  두 번째 블록  ", expectUpdatedAt: readAt(db, 2) })
+  assert.deepEqual({ ...out, updatedAt: typeof out.updatedAt }, { segmentId: 2, status: "draft", updatedAt: "string", targetText: "제무레이의 배.\n두 번째 블록" })
+  assert.equal(JSON.parse(seg(db, 2).target_doc).content.length, 2)
+  assert.deepEqual(plain(undo(db)), { id: 1, name: "updateSegment", segmentIds: [2] })
+  assert.deepEqual({ ...seg(db, 2), updated_at: null }, { target_text: null, target_doc: null, status: "untranslated", updated_at: null })
+})
+
+test("set_translation over a reviewed paragraph makes it draft again: confirming is the translator's", () => {
+  const db = fixture()
+  setTranslation(db, { segmentId: 1, text: "제1장", expectUpdatedAt: readAt(db, 1) })
+  assert.equal(seg(db, 1).status, "draft")
+})
+
+test("set_translation is refused when the paragraph changed since it was read, or when there is nothing to write", () => {
+  const db = fixture()
+  assert.throws(() => setTranslation(db, { segmentId: 2, text: "x", expectUpdatedAt: "2000-01-01 00:00:00" }), { status: 409, message: /changed since you read it/ })
+  assert.throws(() => setTranslation(db, { segmentId: 2, text: " \n ", expectUpdatedAt: readAt(db, 2) }), { status: 400, message: /empty/ })
+  assert.throws(() => setTranslation(db, { segmentId: 99, text: "x", expectUpdatedAt: "" }), { status: 404 })
+  assert.equal(seg(db, 2).target_text, null)
+})
+
+test("set_glossary_term adds a term, changes one keeping what was not given, and ⌘Z takes it back", () => {
+  const db = fixture()
+  setGlossaryTerm(db, { term: "Selma", translation: "셀마", kind: "place" })
+  setGlossaryTerm(db, { term: "Zemurray", translation: "제머리" })
+  const terms = Object.fromEntries(glossary(db).terms.map((t) => [t.term, t]))
+  assert.deepEqual([terms.Selma.translation, terms.Selma.kind], ["셀마", "place"])
+  assert.deepEqual([terms.Zemurray.translation, terms.Zemurray.aliases, terms.Zemurray.kind], ["제머리", "샘 제무레이", "person"])
+  undo(db)
+  undo(db)
+  assert.deepEqual(glossary(db).terms.map((t) => `${t.term}=${t.translation}`), ["boat=", "Zemurray=제무레이"])
+})
+
+test("add_comment is marked as Claude's and pinned to the quoted words; read shows it", () => {
+  const db = fixture()
+  addComment(db, { segmentId: 2, side: "source", body: "누구의 배인지 확인 필요", quote: "boat" })
+  const c = read(db, { ids: [2] }).segments[0].comments.at(-1)
+  assert.deepEqual([c.body, c.quote, c.side], [`${CLAUDE_PREFIX}누구의 배인지 확인 필요`, "boat", "source"])
+  const row = db.prepare("SELECT src_start, src_end FROM comment WHERE id = ?").get(c.id)
+  assert.deepEqual(plain(row), { src_start: 11, src_end: 15 })
+  assert.throws(() => addComment(db, { segmentId: 2, side: "source", body: "x", quote: "ship" }), { status: 400, message: /"ship" is not in the paragraph's source/ })
+  assert.throws(() => addComment(db, { segmentId: 3, side: "target", body: "x", quote: "나" }), { status: 400, message: /more than once/ })
+})
+
+test("add_translator_note is pinned in the translation, and needs one to be there", () => {
+  const db = fixture()
+  addTranslatorNote(db, { segmentId: 3, body: "남미산 품종.", quote: "바나나" })
+  assert.deepEqual(read(db, { ids: [3] }).segments[0].notes.map((n) => [n.kind, n.text, n.quote]), [["translator", "열대 과일.", "바나나"], ["translator", "남미산 품종.", "바나나"]])
+  assert.throws(() => addTranslatorNote(db, { segmentId: 2, body: "x", quote: "boat" }), { status: 400, message: /no translation yet/ })
+})
+
+test("each write is described for the translator before it happens", () => {
+  const db = fixture()
+  assert.deepEqual(describeWrite(db, "set_translation", { segmentId: 1, text: "제1장" }),
+    { summary: "Write the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
+  assert.deepEqual(describeWrite(db, "set_glossary_term", { term: "Zemurray", translation: "제머리" }),
+    { summary: "Glossary: Zemurray → 제머리", segmentId: null, before: "Zemurray → 제무레이", after: "Zemurray → 제머리" })
+  assert.equal(describeWrite(db, "add_comment", { segmentId: 2, body: "b" }).after, `${CLAUDE_PREFIX}b`)
+  assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
+  assert.throws(() => describeWrite(db, "set_translation", { segmentId: 99, text: "x" }), { status: 404 })
+})
+
+test("MCP: four write tools beside the four read tools, none of them marked read-only", () => {
+  const db = fixture()
+  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"])
+  for (const t of writeTools(db)) assert.notEqual(t.annotations?.readOnlyHint, true, t.name)
 })

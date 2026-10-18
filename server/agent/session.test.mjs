@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
-import { READ_TOOLS, ownEnv } from "./session.mjs"
+import { READ_TOOLS, WRITE_TOOLS, ownEnv } from "./session.mjs"
 
 test("ownEnv drops what a parent Claude Code session hands its children, and keeps the rest", () => {
   const env = ownEnv({
@@ -13,14 +13,17 @@ test("ownEnv drops what a parent Claude Code session hands its children, and kee
   assert.deepEqual(env, { HOME: "/h", USER: "u", PATH: "/bin", ANTHROPIC_API_KEY: "k", CLAUDE_CONFIG_DIR: "/c", CLAUDE_CODE_USE_BEDROCK: "1" })
 })
 
-test("the recorded session offered the model the four fitz tools and nothing else", () => {
-  const frames = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
-  const init = frames.find((m) => m.type === "system" && m.subtype === "init")
-  assert.deepEqual([...init.tools].sort(), [...READ_TOOLS].sort())
-  assert.deepEqual(init.mcp_servers.map((s) => s.name), ["fitz"])
-  assert.equal(init.memory_paths?.auto, undefined)
-  // every model request stayed small: no connector tools joined later (they once added 28,000 tokens)
-  const prompts = [...new Map(frames.filter((m) => m.type === "assistant").map((m) => [m.message.id, m.message.usage])).values()]
-    .map((u) => u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens)
-  for (const n of prompts) assert.ok(n < 8000, `a request carried ${n} prompt tokens`)
-})
+for (const name of ["nuance", "translate"]) {
+  test(`the recorded ${name} session offered the model fitz tools and nothing else`, () => {
+    const frames = readFileSync(new URL(`./fixtures/${name}.jsonl`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    const init = frames.find((m) => m.type === "system" && m.subtype === "init")
+    assert.ok(init.tools.every((t) => [...READ_TOOLS, ...WRITE_TOOLS].includes(t)), init.tools.join(", "))
+    assert.ok(READ_TOOLS.every((t) => init.tools.includes(t)))
+    assert.deepEqual(init.mcp_servers.map((s) => s.name), ["fitz"])
+    assert.equal(init.memory_paths?.auto, undefined)
+    // every model request stayed small: no connector tools joined later (they once added 28,000 tokens)
+    const prompts = [...new Map(frames.filter((m) => m.type === "assistant").map((m) => [m.message.id, m.message.usage])).values()]
+      .map((u) => u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens)
+    for (const n of prompts) assert.ok(n < 8000, `a request carried ${n} prompt tokens`)
+  })
+}

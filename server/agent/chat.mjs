@@ -1,7 +1,8 @@
 // Talk to the translation agent from a terminal, through the same /agent socket and the same fold the page uses.
 // usage: node server/agent/chat.mjs [--port 4800] [--model claude-opus-5-5] [--effort medium]
-// Start the server first (node server/index.mjs). Type a message and Enter. Ctrl-C stops a turn that is going;
-// Ctrl-C with nothing going quits.
+// Start the server first (node server/index.mjs). Type a message and Enter. When Claude wants to write, the change
+// is shown and the next line answers it: y (allow), a (allow this kind of write for the rest of the conversation),
+// n (decline). Ctrl-C stops a turn that is going; Ctrl-C with nothing going quits.
 import { randomUUID } from "node:crypto"
 import { createInterface } from "node:readline"
 
@@ -15,6 +16,8 @@ const arg = (name, dflt) => {
 }
 const dim = (s) => `\x1b[2m${s}\x1b[0m`
 const red = (s) => `\x1b[31m${s}\x1b[0m`
+const green = (s) => `\x1b[32m${s}\x1b[0m`
+const bold = (s) => `\x1b[1m${s}\x1b[0m`
 const out = (s) => process.stdout.write(s)
 
 const convId = randomUUID()
@@ -24,6 +27,17 @@ let state = emptyConversation()
 let shown = 0       // characters of the block being written that are already on screen
 let busy = false
 let ending = false  // input is over: quit once the turn that is going ends
+let asks = []       // writes waiting for an answer, oldest first; the next line answers the first
+const ANSWERS = { y: "allow", yes: "allow", a: "always", always: "always", n: "deny", no: "deny" }
+
+function showAsk(ask) {
+  const p = ask.preview
+  out(`\n${bold(`Claude wants to: ${p.summary}`)}\n`)
+  if (p.before) out(red(p.before.split("\n").map((l) => `- ${l}`).join("\n")) + "\n")
+  out(green(p.after.split("\n").map((l) => `+ ${l}`).join("\n")) + "\n")
+  rl?.setPrompt("allow? y / a (always, this conversation) / n › ")
+  rl?.prompt()
+}
 
 const toolLine = (t) => `${t.name} ${JSON.stringify(t.input)}`
 const toolResult = (t) => (t.status === "error" ? red(`  ✗ ${t.result}`) : dim(`  ✓ ${t.result?.segments ? `${t.result.segments.length} paragraphs${t.result.next ? ", more to read" : ""}` : t.result?.terms ? `${t.result.terms.length} terms` : t.result?.hits ? `${t.result.hits.length} hits` : "done"}`))
@@ -67,6 +81,15 @@ ws.on("open", () => {
 ws.on("message", (raw) => {
   const event = JSON.parse(String(raw))
   if (event.type === "error") { out(red(`\n${event.message}\n`)); if (busy && !state.live) { busy = false; rl?.prompt() } return }
+  if (event.type === "ask") { asks.push(event.ask); if (asks.length === 1) showAsk(event.ask); return }
+  if (event.type === "asked") {
+    asks = asks.filter((a) => a.requestId !== event.requestId)
+    out(dim(`  (${event.decision === "cancelled" ? "not answered: the turn stopped" : event.decision === "deny" ? "declined" : "allowed"})\n`))
+    if (asks.length) showAsk(asks[0])
+    else rl?.setPrompt("\n› ")
+    return
+  }
+  if (event.type === "snapshot") { asks = event.asks ?? []; if (asks.length) showAsk(asks[0]) }
   const prev = state
   state = event.type === "snapshot" ? event.state : applyMessage(state, event.message)
   if (event.type === "message") show(prev, state)
@@ -77,6 +100,11 @@ ws.on("close", () => { out(dim("\nconnection closed\n")); process.exit(0) })
 function listen() {
   rl = createInterface({ input: process.stdin, output: process.stdout, prompt: "\n› " })
   rl.on("line", (line) => {
+    if (asks.length) {
+      const decision = ANSWERS[line.trim().toLowerCase()]
+      if (!decision) return showAsk(asks[0])
+      return ws.send(JSON.stringify({ type: "answer", convId, requestId: asks[0].requestId, decision }))
+    }
     if (!line.trim()) return rl.prompt()
     busy = true
     ws.send(JSON.stringify({ type: "send", convId, text: line }))

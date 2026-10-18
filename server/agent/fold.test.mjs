@@ -91,3 +91,21 @@ test("each turn's cost is what it added to the process's running total", () => {
   const turns = foldMessages([result(0.3), result(0.5)]).items
   assert.deepEqual(turns.map((t) => Math.round(t.cost * 10) / 10), [0.3, 0.2])
 })
+
+// A real turn with a write: "¶3을 번역해서 번역문에 넣어줘", recorded through host.mjs with the write allowed.
+const translate = recording("translate")
+
+test("a recorded write: the call, the wait for the translator, and the draft it wrote", () => {
+  const s = foldMessages(translate)
+  const write = s.items.find((i) => i.kind === "tool" && i.name === "set_translation")
+  assert.equal(write.status, "done")
+  assert.equal(write.input.segmentId, 3)
+  assert.deepEqual([write.result.segmentId, write.result.status], [3, "draft"])
+  assert.equal(write.result.targetText, write.input.text)
+  assert.equal(s.items.at(-1).kind, "turn")
+  // while the translator was being asked, Claude Code said the session was waiting
+  const statuses = []
+  translate.reduce((state, m) => { const next = applyMessage(state, m); if (next.status !== state.status) statuses.push(next.status); return next }, emptyConversation())
+  assert.ok(statuses.includes("requires_action"), statuses.join(" → "))
+  assert.equal(s.status, "idle")
+})

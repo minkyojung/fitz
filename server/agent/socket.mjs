@@ -23,6 +23,7 @@ export function attachAgentSocket(server, host) {
         else if (m.type === "open") follow(m.convId)
         else if (m.type === "send") host.send(m.convId, m.text)
         else if (m.type === "stop") host.stop(m.convId)
+        else if (m.type === "answer") host.answer(m.convId, m.requestId, m.decision)
       } catch (e) {
         send({ type: "error", ...(m?.convId && { convId: m.convId }), message: e.message })
       }

@@ -21,7 +21,7 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 | `tools` | `[]` | 내장 도구 제거. 원칙 2 |
 | `mcpServers` | `{ fitz: createSdkMcpServer({ name: "fitz", tools }) }` | 앱 프로세스 안에서 도는 MCP. 도구 이름은 `mcp__fitz__<name>` |
 | `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search` | 읽기는 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
-| `canUseTool` | 페이지에 승인 카드 | 쓰기 도구가 여기로 온다. "이 작업 동안 허용"은 앱이 기억. 3단계에서는 쓰기 도구가 없으므로 모두 거절 |
+| `canUseTool` | 쓰기 도구 → host의 `ask`(번역자에게 묻는다), 그 밖 → 거절 | 답: 허락 / 이 세션 동안 항상(`addRules` + `destination: "session"`) / 거절. Claude Code가 제안하는 "항상" 규칙은 `localSettings` 파일에 적혀 대화가 끝나도 남으므로 쓰지 않는다 |
 | `permissionMode` | `"default"` | bypass가 아니다. 쓰기는 물어야 한다 |
 | `systemPrompt` | 문자열 | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체 |
 | `settingSources` | `[]` | 사람의 `~/.claude`(CLAUDE.md·hook·MCP)가 섞이지 않는다 |
@@ -92,6 +92,10 @@ app/src/
 | `add_comment(segmentId, side, body, quote?)` | `addComment` | `quote`가 있으면 `makeAnchor`로 앵커 |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
 
+- `set_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.
+- Claude가 남긴 댓글은 본문 앞에 `Claude: `(`CLAUDE_PREFIX`)를 붙인다. `comment` 테이블에 작성자가 없어서, 붙이지 않으면 번역자의 메모와 구별되지 않는다. 역주는 출판될 글이므로 붙이지 않는다. 작성자 칸을 둘지는 9단계(화면)에서 정한다.
+- `quote`는 그 쪽 글에서 한 번만 나와야 한다. 없거나 두 번 이상이면 거절("더 길게 인용하라").
+- 미리보기(`describeWrite`): `{ summary, segmentId, before, after }`. 번역자는 무엇이 어떻게 바뀌는지 보고 답한다. 미리보기를 만들 수 없는 쓰기(없는 단락 등)는 묻지 않고 바로 거절한다.
 - 쓰기 넷을 하나로 합치지 않는다. 본문을 바꾸는 것, 책 전체 표기를 바꾸는 것, 출판되지 않는 메모, 출판되는 역주는 승인 카드에서 무게가 다르다.
 - 결과는 `structuredContent`(객체)로 돌려준다. 모델은 그 JSON을 받는다.
 - 오류는 던지지 않고 `isError: true`로 모델이 읽을 문장을 준다.
@@ -136,7 +140,16 @@ server → page  snapshot { convId, state }          fold.mjs의 상태. 따라�
                error    { convId?, message }
 ```
 
-5단계에 더해질 것: `answer { convId, requestId, decision }` / `ask { convId, requestId, tool, input }`. 7단계: `start`의 `task`.
+5단계에서 더한 것:
+
+```
+page → server  answer { convId, requestId, decision }   allow | always(이 세션 동안 이 도구) | deny
+server → page  ask    { convId, ask }                   { requestId, tool, input, preview } — 번역자의 답을 기다리는 쓰기
+               asked  { convId, requestId, decision }   답해짐. "cancelled": 답하기 전에 턴이 멈췄거나 프로세스가 끝남
+               snapshot에 asks                          따라가기 시작할 때 기다리는 쓰기가 있으면 함께
+```
+
+7단계: `start`의 `task`.
 
 - 닫힌 union. 다른 모양은 이유와 함께 `error`로 거절하고 소켓은 열어 둔다. 서버는 페이지가 보낸 어떤 필드도 믿지 않는다(알려진 필드만 골라 검사한 뒤 쓴다).
 - **이 컴퓨터의 페이지만 붙는다**(`localOrigin`): Origin이 `localhost`·`127.0.0.1`·`[::1]`이거나 없을 때(터미널 `chat.mjs`, 테스트). 브라우저는 어느 사이트에서든 `ws://localhost`를 열 수 있어서, 막지 않으면 아무 웹사이트나 에이전트를 부려 책을 읽어 갈 수 있다. 메시지 하나는 256KB까지.
@@ -168,6 +181,9 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 - Opus 5.5 + `display: "summarized"`: 생각하는 동안은 `thinking_tokens`만 오고 요약 글은 거의 끝에 몰려 온다. 답의 글은 조각으로 흐른다.
 - `for await`에서 `break`하면 query가 닫힌다. 턴 끝에 `getContextUsage()` 같은 걸 부르려면 루프 안에서 부른다.
 - `deleteSession`은 세션 파일만 지우고 빈 프로젝트 폴더(`~/.claude/projects/<cwd>/`)를 남긴다.
+- Claude Code가 MCP 도구의 "항상 허용"으로 주는 제안은 `addRules` → `localSettings`(파일)다. 그대로 돌려주면 `~/.fitz/agent/.claude/settings.local.json`에 적혀 다음 대화에서도 묻지 않게 된다 → 앱이 `destination: "session"` 규칙을 직접 만든다.
+- 쓰기를 거절하면(`deny` + 메시지) Claude는 다른 길로 시도하지 않고 그 사실과 대안을 말했다(Haiku, 실제 책 사본: "다른 방식으로도 시도하지 않았습니다").
+- 묻는 동안 `session_state_changed`가 `requires_action`, 답하면 `running`(녹화 `translate.jsonl`).
 - **멈춘 턴**(`interrupt()`): `result`가 `terminal_reason: "aborted_streaming"`, `is_error: true`로 온다. 오류가 아니라 사람이 멈춘 것이므로 화면은 `reason`으로 가른다. 세션은 살아 있고 다음 메시지에 정상으로 답했다(Haiku, 실제 책 사본).
 
 ## 9. 지금 하지 않는 것
@@ -189,11 +205,13 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 2 | `agent/tools.mjs` 읽기 도구 4 + 테스트 | — | 금지 필드 부재, 기존 함수와 같은 값 | 2026-10-18. 서버 테스트 62 통과. 실제 책: 26장 825단락을 `next`를 따라 39호출에 빠짐·중복 없이 읽음, 결과 최대 29,307자, 금지 필드 0 |
 | 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `agent/fixtures/` | 2026-10-18. 서버 테스트 72. Gatsby ¶4 질문(Opus 5.5/medium): `read(ids:[4], around:3)` 1회 → 생각 → 답, 21초, $0.039, 요청 2,265·3,312토큰. 실제 책 ¶36: `read` + `glossary`, 34초, $0.080(격리 전 52초, $0.327). Claude가 앞뒤 단락·사람의 댓글·이미 번역된 단락의 문체를 근거로 답함 |
 | 4 | WS 라우트 + `protocol.mjs` + 서버의 대화 관리(start·send·stop·open) + 터미널 대화 스크립트 `agent/chat.mjs` | 터미널에서 질문하고 답이 흐름 | 스텁 세션으로 프로토콜 테스트, 실제 1회 | 2026-10-18. 서버 테스트 84. 스텁 세션(녹화 메시지를 흘려 넣음)으로: 중간에 붙은 두 번째 페이지도 서버와 같은 상태, 다른 사이트 Origin은 401, 프로세스가 죽으면 다음 메시지에서 같은 세션 id로 resume. 실제: 서버(책 사본)에 `chat.mjs`로 ¶36 질문(Haiku) → `read(ids:[36], around:2)` → 답, 4.2초, $0.001. 6초에 멈춤 → `aborted_streaming`, 같은 대화의 다음 질문에 정상 답. 확인이 만든 세션 2개는 `deleteSession`으로 지움 |
-| 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | |
+| 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | 2026-10-18. 서버 테스트 102. 실제 책 사본(Haiku): "¶36을 번역해 넣어줘" → `read`·`glossary` → `set_translation` 미리보기 → 허락 → ¶36 draft, ops에 `updateSegment` 1행, `/api/undo`로 untranslated로 복귀. "Zemurray를 제머리로 등록" → 거절 → 등록 없음, Claude는 다른 길을 찾지 않고 현재 표기(샘 저머레이)와의 차이를 알림. 실제 책 쪽 두 턴: 9.7초 $0.002, 2.7초 $0.0004. Gatsby 녹화 `translate.jsonl`(Opus 5.5, 허락): `read` → `book` → `set_translation`, 13.7초, $0.062 |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | |
 | 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | |
-| 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), README | 에디터 안에서 전부 | e2e(녹화 프레임) | |
+| 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), 에이전트가 쓴 것을 에디터가 다시 읽기, README | 에디터 안에서 전부 | e2e(녹화 프레임) | |
+
+9단계에서 꼭 할 것: 지금 에디터 화면은 에이전트가 DB에 쓴 것을 모른다. 열어 둔 채 Claude가 쓰면 화면은 옛 글을 보이고, 그 단락을 편집해 저장하면 Claude가 쓴 것을 덮는다(에이전트 쪽은 `expectUpdatedAt`으로 막지만 화면 쪽은 막는 것이 없다). 서버가 쓰기마다 "바뀐 단락"을 소켓으로 알리고 화면이 그 단락을 다시 읽는다.
 
 순서의 이유: 4~8은 백엔드다. 화면은 백엔드가 주는 데이터(대화, 승인 요청, 검증 결과, 리뷰 목록)가 정해진 뒤에 그리는 편이 쉽고, 그동안은 `chat.mjs`로 터미널에서 직접 써 본다. 쓰면서 화면에 무엇이 필요한지가 드러난다.
 

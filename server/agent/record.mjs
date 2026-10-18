@@ -1,8 +1,9 @@
 // Records one real turn of the agent as JSONL: the fixture fold.mjs is tested against (docs/agent.md §11).
 // usage: node server/agent/record.mjs --out <file.jsonl> --prompt "<what the translator asks>"
-//          [--db out/book.db] [--model claude-opus-5-5] [--effort medium]
+//          [--answer allow|always|deny] [--db out/book.db] [--model claude-opus-5-5] [--effort medium]
+// It runs through host.mjs, as the server does; a write Claude asks for is answered with --answer (default deny).
 // Without --db the book is fixtures/gatsby.sql (public domain), so committed recordings never hold the book being
-// translated. With --db the database is copied first; the agent only reads, but the original is never opened.
+// translated. With --db the database is copied first, so even an allowed write never reaches the original.
 // The session runs in a fresh temporary folder and is deleted afterwards. What Claude Code kept of it on disk
 // (getSessionMessages) is written beside the recording as <out>.stored.json, for the stored-vs-live fold test.
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs"
@@ -12,6 +13,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { deleteSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk"
 
+import { createAgentHost } from "./host.mjs"
 import { openSession } from "./session.mjs"
 
 const arg = (name, dflt) => {
@@ -20,7 +22,8 @@ const arg = (name, dflt) => {
 }
 const out = arg("out")
 const prompt = arg("prompt")
-if (!out || !prompt) throw new Error("usage: record.mjs --out <file.jsonl> --prompt <text> [--db <book.db>] [--model <id>] [--effort <level>]")
+const answer = arg("answer", "deny")
+if (!out || !prompt) throw new Error("usage: record.mjs --out <file.jsonl> --prompt <text> [--answer allow|always|deny] [--db <book.db>] [--model <id>] [--effort <level>]")
 const TIMEOUT_MS = 5 * 60_000
 
 const work = mkdtempSync(join(tmpdir(), "fitz-record-"))
@@ -39,19 +42,25 @@ mkdirSync(cwd)
 // deleteSession removes the session file but leaves its (then empty) project folder; rmdirSync only removes it empty
 const projectDir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", realpathSync(cwd).replace(/[^A-Za-z0-9]/g, "-"))
 
-const session = openSession({ db, cwd, model: arg("model", "claude-opus-5-5"), effort: arg("effort", "medium") })
+const host = createAgentHost({ db, openSession: (options) => openSession({ ...options, cwd }) })
+const convId = "00000000-0000-4000-8000-000000000000"
 const frames = []
+const asks = []
 const started = Date.now()
-const timer = setTimeout(() => { console.error("timed out; interrupting"); session.interrupt() }, TIMEOUT_MS)
 let sessionId = null
-let result = null
-session.send(prompt)
-for await (const m of session.messages) {
-  frames.push({ ms: Date.now() - started, ...m })
-  sessionId ??= m.session_id ?? null
-  if (m.type === "result") { result = m; break }
-}
-clearTimeout(timer)
+const result = await new Promise((resolve) => {
+  host.start(convId, { model: arg("model", "claude-opus-5-5"), effort: arg("effort", "medium") })
+  host.open(convId, (event) => {
+    if (event.type === "ask") { asks.push(`${event.ask.preview.summary} → ${answer}`); host.answer(convId, event.ask.requestId, answer) }
+    if (event.type !== "message") return
+    frames.push({ ms: Date.now() - started, ...event.message })
+    sessionId ??= event.message.session_id ?? null
+    if (event.message.type === "result") resolve(event.message)
+  })
+  host.send(convId, prompt)
+  setTimeout(() => { console.error("timed out; stopping"); host.stop(convId) }, TIMEOUT_MS).unref()
+})
+host.close()
 
 // the home folder becomes ~ so a committed recording names no one
 const anon = (text) => text.replaceAll(homedir(), "~")
@@ -59,15 +68,14 @@ writeFileSync(out, anon(frames.map((f) => JSON.stringify(f)).join("\n") + "\n"))
 if (sessionId) {
   const stored = await getSessionMessages(sessionId, { dir: cwd })
   writeFileSync(out.replace(/\.jsonl$/, ".stored.json"), anon(JSON.stringify(stored, null, 1) + "\n"))
-  session.close()
   await deleteSession(sessionId, { dir: cwd })
   rmdirSync(projectDir)
-} else session.close()
+}
 rmSync(work, { recursive: true, force: true })
 
 const counts = frames.reduce((c, f) => ({ ...c, [f.type + (f.subtype ? `/${f.subtype}` : "")]: (c[f.type + (f.subtype ? `/${f.subtype}` : "")] ?? 0) + 1 }), {})
 console.log(JSON.stringify({
-  out, frames: frames.length, counts,
+  out, frames: frames.length, counts, asks,
   result: result && { subtype: result.subtype, isError: result.is_error, ms: result.duration_ms, turns: result.num_turns, costUsd: result.total_cost_usd },
   // prompt tokens per model request: what Claude Code put in front of the model each time
   requests: [...new Map(frames.filter((f) => f.type === "assistant").map((f) => [f.message.id, f.message.usage])).values()]

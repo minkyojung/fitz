@@ -1,10 +1,12 @@
 // The agent's tools over book.db, one per question it asks (docs/agent.md §3).
 // Read tools return plain text only: no ProseMirror JSON, no OCR original, no page boxes or file paths,
-// so nothing but the book's text can reach the model.
+// so nothing but the book's text can reach the model. Write tools go through execute(), like every edit the
+// translator makes: each is logged and undone with ⌘Z. Claude Code asks the app before each write (session.mjs).
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 
-import { anchorOf, getBook, httpError, listChapters, listGlossary, search } from "../commands.mjs"
+import { makeAnchor } from "../anchor.mjs"
+import { anchorOf, execute, getBook, httpError, listChapters, listGlossary, search } from "../commands.mjs"
 
 /** Characters of text one `read` returns before it stops and hands back `next`. Claude Code moves an MCP
  *  result over 25,000 tokens or 50,000 characters into a file, which this agent has no tool to open. */
@@ -75,6 +77,83 @@ export const glossary = (db) =>
 
 export const searchBook = (db, { query }) => ({ hits: search(db, { query }) })
 
+// --- writes
+
+const KINDS = ["person", "place", "org", "work", "other"]
+/** What marks a comment as Claude's: the comment table has no author, and a memo must not pass for the translator's. */
+export const CLAUDE_PREFIX = "Claude: "
+
+function segmentAt(db, id) {
+  const row = db.prepare("SELECT * FROM segment WHERE id = ?").get(id)
+  if (!row) throw httpError(404, `segment ${id} not found`)
+  return row
+}
+/** Translation text as blocks: one per line, blank lines dropped. */
+const blocksOf = (text) => text.split("\n").map((l) => l.trim()).filter(Boolean)
+/** A quote must be found once, so the anchor points at one place. */
+function quoteAnchor(text, quote, where) {
+  if (quote === undefined) return null
+  const at = text.indexOf(quote)
+  if (!quote || at === -1) throw httpError(400, `"${quote}" is not in the paragraph's ${where}`)
+  if (text.indexOf(quote, at + 1) !== -1) throw httpError(400, `"${quote}" appears more than once in the paragraph's ${where}; quote more of it`)
+  return makeAnchor(text, at, at + quote.length)
+}
+
+/** Write a paragraph's translation, always as draft: confirming is the translator's. Refused when the paragraph
+ *  changed since the agent read it (expectUpdatedAt is the updatedAt read gave). */
+export function setTranslation(db, { segmentId, text, expectUpdatedAt }) {
+  const cur = segmentAt(db, segmentId)
+  if (cur.updated_at !== expectUpdatedAt) throw httpError(409, `¶${segmentId} changed since you read it; read it again before writing`)
+  const blocks = blocksOf(text)
+  if (!blocks.length) throw httpError(400, "the translation is empty")
+  const targetDoc = { type: "doc", content: blocks.map((b) => ({ type: "paragraph", content: [{ type: "text", text: b }] })) }
+  const seg = execute(db, "updateSegment", { id: segmentId, targetDoc, status: "draft" })
+  return { segmentId, status: seg.status, updatedAt: segmentAt(db, segmentId).updated_at, targetText: seg.targetText }
+}
+
+/** Agree a term's Korean form. Aliases and kind not given keep what the entry had. */
+export function setGlossaryTerm(db, { term, translation, aliases, kind }) {
+  const bookId = getBook(db).id
+  const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
+  return execute(db, "setGlossaryTerm", { bookId, term, translation, aliases: aliases ?? cur?.aliases ?? "", kind: kind ?? cur?.kind ?? "other" })
+}
+
+export function addComment(db, { segmentId, side, body, quote }) {
+  const cur = segmentAt(db, segmentId)
+  const anchor = quoteAnchor(side === "source" ? cur.source_text : cur.target_text ?? "", quote, side === "source" ? "source" : "translation")
+  const c = execute(db, "addComment", { segmentId, side, anchor, body: CLAUDE_PREFIX + body })
+  return { id: c.id, segmentId, side, quote: quote ?? null }
+}
+
+/** A translator's note sits in the translation: its quote is found there. */
+export function addTranslatorNote(db, { segmentId, body, quote }) {
+  const cur = segmentAt(db, segmentId)
+  if (quote !== undefined && !cur.target_text) throw httpError(400, `¶${segmentId} has no translation yet to place the note in`)
+  const n = execute(db, "addNote", { segmentId, anchor: quoteAnchor(cur.target_text ?? "", quote, "translation"), body })
+  return { id: n.id, segmentId, quote: quote ?? null }
+}
+
+/** What a write would do, for the translator to approve: a line saying what, and the text before and after. */
+export function describeWrite(db, tool, input) {
+  switch (tool) {
+    case "set_translation": {
+      const cur = segmentAt(db, input.segmentId)
+      const demoted = cur.status === "reviewed" || cur.status === "final"
+      return { summary: `Write the translation of ¶${cur.id}${demoted ? ` (it is ${cur.status}; it becomes draft)` : ""}`, segmentId: cur.id, before: cur.target_text || null, after: blocksOf(input.text).join("\n") }
+    }
+    case "set_glossary_term": {
+      const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(getBook(db).id, input.term)
+      return { summary: `Glossary: ${input.term} → ${input.translation}`, segmentId: null, before: cur ? `${cur.term} → ${cur.translation}` : null, after: `${input.term} → ${input.translation}${input.aliases ? ` (also ${input.aliases})` : ""}` }
+    }
+    case "add_comment":
+      return { summary: `Comment on ¶${segmentAt(db, input.segmentId).id}${input.quote ? ` at "${input.quote}"` : ""}`, segmentId: input.segmentId, before: null, after: CLAUDE_PREFIX + input.body }
+    case "add_translator_note":
+      return { summary: `Translator's note on ¶${segmentAt(db, input.segmentId).id}${input.quote ? ` after "${input.quote}"` : ""} — it will be printed`, segmentId: input.segmentId, before: null, after: input.body }
+    default:
+      throw httpError(400, `${tool} is not a write tool`)
+  }
+}
+
 // --- MCP: the same functions as tools. A thrown error reaches the model as an error result and the turn goes on.
 
 const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data })
@@ -103,4 +182,46 @@ export const readTools = (db) => [
 
 /** The in-process MCP server handed to query() as mcpServers.fitz. alwaysLoad keeps the schemas in the prompt,
  *  so the first call is not preceded by a ToolSearch round trip. */
-export const fitzServer = (db) => createSdkMcpServer({ name: "fitz", version: "0.1.0", alwaysLoad: true, tools: readTools(db) })
+export const writeTools = (db) => [
+  tool("set_translation",
+    "Write the Korean translation of one paragraph, replacing what is there. It is saved as a draft for the translator to confirm. " +
+    "Pass the paragraph's `updatedAt` from your last read as `expectUpdatedAt`; if the paragraph changed since, the write is refused and you should read it again. " +
+    "Separate blocks with a newline. The translator is asked before it is written.",
+    {
+      segmentId: z.number().int(),
+      text: z.string().min(1).describe("The whole translation of the paragraph"),
+      expectUpdatedAt: z.string().describe("updatedAt of the paragraph as read returned it"),
+    },
+    async (args) => result(setTranslation(db, args))),
+  tool("set_glossary_term",
+    "Agree the Korean form of a source term (a name, place, title…) for the whole book, or change it. The translator is asked first.",
+    {
+      term: z.string().min(1).describe("The term as it appears in the English source"),
+      translation: z.string().min(1).describe("Its agreed Korean form"),
+      aliases: z.string().optional().describe("Other accepted Korean forms, comma-separated"),
+      kind: z.enum(KINDS).optional(),
+    },
+    async (args) => result(setGlossaryTerm(db, args))),
+  tool("add_comment",
+    "Leave a working comment on a paragraph for the translator (never printed). `quote` pins it to exact words in that side's text. The translator is asked first.",
+    {
+      segmentId: z.number().int(),
+      side: z.enum(["source", "target"]).describe("source: the English; target: the translation"),
+      body: z.string().min(1),
+      quote: z.string().optional().describe("Exact words from that side, found once"),
+    },
+    async (args) => result(addComment(db, args))),
+  tool("add_translator_note",
+    "Add a translator's note (역주) to a paragraph; it is printed in the book. `quote` places its mark right after exact words of the translation. The translator is asked first.",
+    {
+      segmentId: z.number().int(),
+      body: z.string().min(1).describe("The note's text, in Korean"),
+      quote: z.string().optional().describe("Exact words of the translation, found once"),
+    },
+    async (args) => result(addTranslatorNote(db, args))),
+]
+
+export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
+export const WRITE_TOOL_NAMES = ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"]
+
+export const fitzServer = (db) => createSdkMcpServer({ name: "fitz", version: "0.1.0", alwaysLoad: true, tools: [...readTools(db), ...writeTools(db)] })
