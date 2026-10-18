@@ -67,17 +67,19 @@ export function useTranslate({ segments, onPatch, focusMode, notes }: Props) {
     [segments], // eslint-disable-line react-hooks/exhaustive-deps
   )
   const step = useCallback((from: number, delta: 1 | -1) => { setCaretEdge("end"); flow(from, delta) }, [flow])
-  /** ⌘Enter: save as reviewed, then open the next unconfirmed pair. */
+  /** ⌘Enter: save as reviewed, then open the next unconfirmed pair. Stays put when nothing was saved. */
   const confirm = useCallback(
-    async (id: number, doc: DocJSON) => {
+    async (id: number, doc: DocJSON, expectVersion: number | undefined) => {
       const hasText = doc.content.some((p) => (p.content ?? []).some((n) => n.text.trim()))
-      await onPatch(id, hasText ? { targetDoc: doc, status: "reviewed" } : { targetDoc: null })
+      const saved = await onPatch(id, hasText ? { targetDoc: doc, status: "reviewed", expectVersion } : { targetDoc: null, expectVersion })
+      if (!saved) return false
       const i = indexOf(id)
       const next = segments.slice(i + 1).find(unconfirmed)
-      if (!next) { setEditingId(null); return }
+      if (!next) { setEditingId(null); return true }
       setCaretEdge("end")
       setSelectedId(next.id)
       setEditingId(next.id)
+      return true
     },
     [onPatch, segments], // eslint-disable-line react-hooks/exhaustive-deps
   )
@@ -105,7 +107,7 @@ export function useTranslate({ segments, onPatch, focusMode, notes }: Props) {
             onSelect={() => setSelectedId(s.id)}
             onEditingChange={(on) => setEditingId(on ? s.id : null)}
             onPatch={(patch) => onPatch(s.id, patch)}
-            onConfirm={(doc) => void confirm(s.id, doc)}
+            onConfirm={(doc, expectVersion) => confirm(s.id, doc, expectVersion)}
             onStep={(d) => step(s.id, d)}
             onFlow={(d) => flow(s.id, d)}
           />

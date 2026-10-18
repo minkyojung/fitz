@@ -92,20 +92,21 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   }
   const [, bump] = useState(0)
   const discard = () => { drafts?.clear(s.id); bump((n) => n + 1) }
-  /** A draft is only offered while the server text is what it was based on; otherwise it is stale and dropped. */
+  /** An unsaved draft is never dropped silently: if the paragraph changed since it was written, it says so. */
   const draft = !editing && drafts ? drafts.load(s.id) : null
-  const recoverable = draft && draft.baseText === s.sourceText ? draft : null
-  useEffect(() => {
-    if (draft && !recoverable) drafts?.clear(s.id) // stale: the server text moved on
-  }, [draft, recoverable, drafts, s.id])
+  const changedSince = draft !== null && draft.baseText !== s.sourceText
   const [editDoc, setEditDoc] = useState<DocJSON | null>(null)
+  const shownDoc = (): DocJSON => s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }
+  // What this edit started from. A save names its version, so it never overwrites what another writer did meanwhile.
+  const base = useRef<{ version: number; text: string; doc: DocJSON } | null>(null)
 
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
   }, [selected])
   useEffect(() => {
-    if (!editing) { closing.current = false; clickOffset.current = null }
-  }, [editing])
+    if (!editing) { closing.current = false; clickOffset.current = null; base.current = null }
+    else base.current ??= { version: s.version, text: s.sourceText, doc: shownDoc() }
+  }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps -- the base is what was shown when editing began
 
   /** Clicking the text starts editing right there. The offset is measured on the read view before
    *  anything scrolls, so it survives the selection's scrollIntoView. */
@@ -117,19 +118,27 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     setEditing(true)
   }
 
-  /** Persist the edited doc (if changed) and leave edit mode. Guarded: blur and Enter can both fire.
-   *  The draft is cleared only once the server accepted the change. */
+  /** After a save: the draft goes once the server took the text; otherwise the text stays as a draft. */
+  const settle = useCallback(
+    (saved: boolean, doc: DocJSON, from: typeof base.current) => {
+      if (saved) drafts?.clear(s.id)
+      else { drafts?.save(s.id, doc, from?.text ?? s.sourceText); bump((n) => n + 1) }
+    },
+    [drafts, s.id, s.sourceText],
+  )
+  /** Persist the edited doc (if changed from where the edit started) and leave edit mode. Guarded: blur and Enter can
+   *  both fire. The draft is cleared only once the server accepted the change. */
   const commit = useCallback(
     async (doc: DocJSON) => {
       if (closing.current) return
       closing.current = true
+      const from = base.current
       setEditing(false)
       setEditDoc(null)
-      if (JSON.stringify(doc) === JSON.stringify(s.sourceDoc)) { drafts?.clear(s.id); return }
-      const saved = await onPatch({ sourceDoc: doc })
-      if (saved) drafts?.clear(s.id)
+      if (JSON.stringify(doc) === JSON.stringify(from?.doc ?? s.sourceDoc)) { drafts?.clear(s.id); return }
+      settle(Boolean(await onPatch({ sourceDoc: doc, expectVersion: from?.version })), doc, from)
     },
-    [onPatch, s.sourceDoc, s.id, setEditing, drafts],
+    [onPatch, s.sourceDoc, s.id, setEditing, drafts, settle],
   )
   const cancel = useCallback(() => {
     closing.current = true
@@ -137,10 +146,10 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     setEditDoc(null)
     drafts?.clear(s.id)
   }, [setEditing, drafts, s.id])
-  const saveDraft = useCallback((doc: DocJSON) => drafts?.save(s.id, doc, s.sourceText), [drafts, s.id, s.sourceText])
+  const saveDraft = useCallback((doc: DocJSON) => drafts?.save(s.id, doc, base.current?.text ?? s.sourceText), [drafts, s.id, s.sourceText])
   const recover = () => {
-    if (!recoverable) return
-    setEditDoc(recoverable.doc)
+    if (!draft) return
+    setEditDoc(draft.doc)
     onSelect()
     setEditing(true)
   }
@@ -151,8 +160,13 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     const offset = caretOffset(e)
     const doc = e.getJSON() as DocJSON
     closing.current = true
+    const from = base.current
     setEditing(false)
-    if (JSON.stringify(doc) !== JSON.stringify(s.sourceDoc)) await onPatch({ sourceDoc: doc })
+    if (JSON.stringify(doc) !== JSON.stringify(from?.doc ?? s.sourceDoc)) {
+      const saved = Boolean(await onPatch({ sourceDoc: doc, expectVersion: from?.version }))
+      settle(saved, doc, from)
+      if (!saved) return  // the offset is in text that was not saved: do not split there
+    }
     await onSplit(offset)
   }
   const onReady = useCallback((e: Editor) => { editorRef.current = e }, [])
@@ -197,9 +211,10 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
         {suspects.length > 0 && <span data-suspects className="text-muted-foreground tabular-nums">Suspects {suspects.length}</span>}
         <EditedDot ocr={s.ocrText} text={s.sourceText} />
-        {recoverable && (
-          <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        {draft && (
+          <span data-unsaved className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
+            {changedSince && <span className="text-muted-foreground">the paragraph changed since</span>}
             <Button size="xs" variant="outline" onClick={recover}>Recover</Button>
             <Button size="xs" variant="ghost" onClick={discard}>Discard</Button>
           </span>
@@ -225,7 +240,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       </div>
       {editing ? (
         <SegmentEditor
-          doc={editDoc ?? s.sourceDoc ?? { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: s.sourceText }] }] }}
+          doc={editDoc ?? shownDoc()}
           caretOffset={clickOffset.current}
           selectAll={s.sourceText === CAPTION_PLACEHOLDER}
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}

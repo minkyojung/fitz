@@ -9,7 +9,7 @@ async function call<T>(method: string, body: unknown = {}): Promise<T> {
     body: JSON.stringify(body),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data?.error ?? `${method} failed (${res.status})`)
+  if (!res.ok) throw Object.assign(new Error(data?.error ?? `${method} failed (${res.status})`), { status: res.status })
   return data as T
 }
 
@@ -35,7 +35,7 @@ export const api: Api = {
   listChapters: () => call("listChapters"),
   listSegments: (chapterId) => call("listSegments", { chapterId }),
   listPages: () => call("listPages"),
-  updateSegment: (id, patch) => call("updateSegment", { id, patch }),
+  updateSegment: (id, { expectVersion, ...patch }) => call("updateSegment", { id, patch, expectVersion }),
   splitSegment: (id, offset) => call("splitSegment", { id, offset }),
   mergeWithNext: (id) => call("mergeWithNext", { id }),
   listUnanchoredNotes: () => call("listUnanchoredNotes"),
@@ -60,4 +60,12 @@ export const api: Api = {
   replaceAll: (query, replacement) => call("replaceAll", { query, replacement }),
   exportSummary: (input) => call("exportSummary", input),
   exportDocx: (input) => callBlob("exportDocx", input),
+  watchChanges: (onChange) => {
+    // server-sent events: the browser reconnects by itself; after a reconnect, changes may have been missed
+    const source = new EventSource(`${BASE}/api/events`)
+    let opened = false
+    source.addEventListener("open", () => { if (opened) onChange({ kind: "resync" }); opened = true })
+    source.addEventListener("change", (e) => onChange(JSON.parse((e as MessageEvent).data)))
+    return () => source.close()
+  },
 }

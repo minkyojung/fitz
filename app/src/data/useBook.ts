@@ -123,17 +123,33 @@ export function useBook() {
     if (chapterId !== null) { void refreshSegments(chapterId); void refreshAnnotations(chapterId) }
   }, [chapterId, refreshSegments, refreshAnnotations])
 
-  /** Persist a change, then replace the row in place and refresh chapter counts. */
+  // the segments on screen, for a save to name the version it was based on
+  const shown = useRef(segments)
+  useEffect(() => { shown.current = segments }, [segments])
+
+  /** Persist a change, then replace the row in place and refresh chapter counts. A change of text or status names the
+   *  version it was based on — the editors pass the one they started editing from, anything else the one on screen —
+   *  so it never overwrites what another writer (the agent, another window) did meanwhile: the server refuses (409)
+   *  and writes nothing. Flags (verified, kind) name none: the server keeps every other field as stored. */
   const updateSegment = useCallback(
     (id: number, patch: SegmentPatch) =>
       mutate("Save", async () => {
-        const updated = await api.updateSegment(id, patch)
-        setSegments((list) => list.map((s) => (s.id === id ? updated : s)))
-        void refreshChapters()
-        if (patch.sourceDoc !== undefined || patch.sourceText !== undefined) void refreshCorpus()
-        return updated
+        const current = shown.current.find((s) => s.id === id)
+        const content = patch.sourceDoc !== undefined || patch.sourceText !== undefined || patch.targetDoc !== undefined || patch.status !== undefined
+        const expectVersion = patch.expectVersion ?? (content ? current?.version : undefined)
+        try {
+          const updated = await api.updateSegment(id, { ...patch, expectVersion })
+          setSegments((list) => list.map((s) => (s.id === id ? updated : s)))
+          void refreshChapters()
+          if (patch.sourceDoc !== undefined || patch.sourceText !== undefined) void refreshCorpus()
+          return updated
+        } catch (e) {
+          if ((e as { status?: number }).status !== 409) throw e
+          if (current) void refreshSegments(current.chapterId)  // show what is there now
+          throw new Error("This paragraph changed meanwhile (the agent or another window wrote it), so nothing was saved. It now shows the current text; what you were writing is kept as an unsaved draft.", { cause: e })
+        }
       }),
-    [mutate, refreshChapters, refreshCorpus],
+    [mutate, refreshChapters, refreshCorpus, refreshSegments],
   )
 
   /** Comments and notes: every action is a logged command; the chapter's annotations reload afterwards. */
@@ -222,11 +238,28 @@ export function useBook() {
     [mutate, refreshNotes],
   )
 
-  /** Undo/redo may touch any table, so reload everything the screen shows. */
-  const reloadAll = useCallback(async () => {
-    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null, chapterId !== null ? refreshAnnotations(chapterId) : null, refreshCorpus()])
+  /** What the screen shows of the book, reloaded: chapters and their counts, the chapter's paragraphs and annotations,
+   *  unlinked notes, the glossary. */
+  const reloadShown = useCallback(async () => {
+    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null, chapterId !== null ? refreshAnnotations(chapterId) : null])
     if (book) await refreshWords(book.id)
-  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshCorpus, refreshWords, book])
+  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshWords, book])
+  /** Undo/redo may touch any table, source text included, so reload everything the screen shows and the corpus. */
+  const reloadAll = useCallback(async () => { await Promise.all([reloadShown(), refreshCorpus()]) }, [reloadShown, refreshCorpus])
+
+  // Another writer (the agent, another window, an undo there) changed the book: show it. Changes come in bursts, so
+  // they are gathered for a moment. The spelling corpus is not reloaded: it moves only with the source text, which
+  // the agent never writes, and this page's own source edits refresh it.
+  const reloadShownLater = useRef(reloadShown)
+  useEffect(() => { reloadShownLater.current = reloadShown }, [reloadShown])
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const stop = api.watchChanges(() => {
+      clearTimeout(timer)
+      timer = setTimeout(() => void reloadShownLater.current(), 150)
+    })
+    return () => { clearTimeout(timer); stop() }
+  }, [])
 
   const undo = useCallback(
     () =>

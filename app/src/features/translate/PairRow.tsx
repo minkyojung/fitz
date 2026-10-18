@@ -34,8 +34,10 @@ interface Props {
   markers: Map<number, string>
   onSelect: () => void
   onEditingChange: (editing: boolean) => void
+  /** Resolves to the saved segment, or null when nothing was saved. */
   onPatch: (patch: SegmentPatch) => Promise<unknown>
-  onConfirm: (doc: DocJSON) => void
+  /** ⌘Enter: save as reviewed. Resolves true once saved. */
+  onConfirm: (doc: DocJSON, expectVersion: number | undefined) => Promise<boolean>
   onStep: (delta: 1 | -1) => void
   onFlow: (delta: 1 | -1) => void
 }
@@ -54,32 +56,55 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
   const missing = useMemo(() => (editing ? [] : missingTerms(terms, s.targetText)), [terms, s.targetText, editing])
 
   useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest" }) }, [selected])
-  useEffect(() => { if (!editing) { closing.current = false; clickPos.current = null } }, [editing])
+  // What this edit started from. A save names its version, so it never overwrites what another writer (the agent,
+  // another window) did meanwhile; "unchanged" means unchanged from it, not from whatever the screen shows now.
+  const base = useRef<{ version: number; text: string; doc: DocJSON } | null>(null)
+  useEffect(() => {
+    if (!editing) { closing.current = false; clickPos.current = null; base.current = null }
+    else base.current ??= { version: s.version, text: s.targetText, doc: s.targetDoc ?? emptyDoc() }
+  }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps -- the base is what was shown when editing began
 
+  // An unsaved draft is never dropped silently: if the paragraph changed since it was written, it says so.
   const draft = !editing && drafts ? drafts.load(s.id, "target") : null
-  const recoverable = draft && draft.baseText === s.targetText ? draft : null
-  useEffect(() => { if (draft && !recoverable) drafts?.clear(s.id, "target") }, [draft, recoverable, drafts, s.id])
+  const changedSince = draft !== null && draft.baseText !== s.targetText
 
   const currentDoc = s.targetDoc ?? emptyDoc()
   const same = (a: DocJSON, b: DocJSON) => JSON.stringify(a) === JSON.stringify(b)
+  /** After a save: the draft goes once the server took the text; otherwise the text stays as a draft. */
+  const settle = useCallback(
+    (saved: boolean, doc: DocJSON, from: typeof base.current) => {
+      if (saved) drafts?.clear(s.id, "target")
+      else { drafts?.save(s.id, doc, from?.text ?? s.targetText, "target"); bump((n) => n + 1) }
+    },
+    [drafts, s.id, s.targetText],
+  )
 
   const commit = useCallback(
     async (doc: DocJSON) => {
       if (closing.current) return
       closing.current = true
+      const from = base.current
       onEditingChange(false)
       setEditDoc(null)
       const text = docPlainText(doc).trim()
       const next: DocJSON | null = text ? doc : null
-      if (same(doc, currentDoc) || (!text && !s.targetDoc)) { drafts?.clear(s.id, "target"); return }
-      const saved = await onPatch({ targetDoc: next })
-      if (saved) drafts?.clear(s.id, "target")
+      if (same(doc, from?.doc ?? currentDoc) || (!text && !from?.text)) { drafts?.clear(s.id, "target"); return }
+      settle(Boolean(await onPatch({ targetDoc: next, expectVersion: from?.version })), doc, from)
     },
-    [onEditingChange, onPatch, currentDoc, s.targetDoc, s.id, drafts],
+    [onEditingChange, onPatch, currentDoc, s.id, drafts, settle],
   )
   const cancel = useCallback(() => { closing.current = true; onEditingChange(false); setEditDoc(null); drafts?.clear(s.id, "target") }, [onEditingChange, drafts, s.id])
-  const saveDraft = useCallback((doc: DocJSON) => drafts?.save(s.id, doc, s.targetText, "target"), [drafts, s.id, s.targetText])
-  const confirm = useCallback((doc: DocJSON) => { closing.current = true; onEditingChange(false); setEditDoc(null); drafts?.clear(s.id, "target"); onConfirm(doc) }, [onEditingChange, drafts, s.id, onConfirm])
+  const saveDraft = useCallback((doc: DocJSON) => drafts?.save(s.id, doc, base.current?.text ?? s.targetText, "target"), [drafts, s.id, s.targetText])
+  const confirm = useCallback(
+    async (doc: DocJSON) => {
+      closing.current = true
+      const from = base.current
+      onEditingChange(false)
+      setEditDoc(null)
+      settle(await onConfirm(doc, from?.version), doc, from)
+    },
+    [onEditingChange, onConfirm, settle],
+  )
   const onReady = useCallback((_e: Editor) => undefined, [])
 
   const startEdit = (e: React.MouseEvent<HTMLElement>) => {
@@ -114,10 +139,11 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
         <AnnotatedText text={s.sourceText} segmentId={s.id} side="source" renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} terms={terms} />} />
       </p>
       <div className="min-w-0">
-        {recoverable && !editing && (
-          <div className="mb-1 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
+        {draft && !editing && (
+          <div data-unsaved className="mb-1 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
-            <Button size="xs" variant="outline" onClick={() => { setEditDoc(recoverable.doc); onSelect(); onEditingChange(true) }}>Recover</Button>
+            {changedSince && <span className="text-muted-foreground">the paragraph changed since</span>}
+            <Button size="xs" variant="outline" onClick={() => { setEditDoc(draft.doc); onSelect(); onEditingChange(true) }}>Recover</Button>
             <Button size="xs" variant="ghost" onClick={() => { drafts?.clear(s.id, "target"); bump((n) => n + 1) }}>Discard</Button>
           </div>
         )}
@@ -130,7 +156,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
             className={cn("reading text-[15px] outline-none [&_p+p]:mt-3", s.kind === "heading" && "font-semibold")}
             onCommit={(doc) => void commit(doc)}
             onCancel={cancel}
-            onConfirm={confirm}
+            onConfirm={(doc) => void confirm(doc)}
             onStep={onStep}
             onFlow={onFlow}
             onDraft={saveDraft}

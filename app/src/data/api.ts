@@ -50,6 +50,8 @@ export interface Segment {
   boxes: Box[]
   verified: boolean
   status: SegmentStatus
+  /** Raised by the database on every change of content. A save names the version it was based on (expectVersion). */
+  version: number
 }
 
 export interface Page {
@@ -130,7 +132,13 @@ export interface SegmentPatch {
   status?: SegmentStatus
   kind?: SegmentKind
   verified?: boolean
+  /** The version this change is based on: if the segment changed since (another window, the agent), nothing is
+   *  written and the call fails with status 409. Editors pass the version they started editing from. */
+  expectVersion?: number
 }
+
+/** A committed write, announced to every open page whoever made it; "resync" after a reconnect, when some may have been missed. */
+export type BookChange = { kind: "do" | "undo" | "redo"; opId: number; name: string; segmentIds: number[] } | { kind: "resync" }
 
 export interface OpSummary {
   id: number
@@ -196,4 +204,6 @@ export interface Api {
   /** What an export would contain (chapters omitted = all), and the Word file itself. */
   exportSummary(input: { chapterIds?: number[]; scheme: ExportScheme }): Promise<ExportSummary>
   exportDocx(input: { chapterIds?: number[]; scheme: ExportScheme }): Promise<{ blob: Blob; filename: string }>
+  /** Hear every change to the book. Returns the function that stops listening. */
+  watchChanges(onChange: (change: BookChange) => void): () => void
 }

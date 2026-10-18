@@ -151,7 +151,7 @@ uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
 
 ## 데이터 안전
 - 에디터가 한 번이라도 쓰면 `meta.last_edit_at`이 기록되고, 이후 `pipeline.build`는 그 DB를 덮어쓰지 않는다 (다른 `--out`으로 빌드).
-- 단락마다 `version`이 있어, 저장할 때 내가 본 뒤 다른 쪽(예: 번역 에이전트)이 바꿨으면 덮지 않고 거절한다. 버전 칸이 없는 옛 DB는 서버가 열지 않으니 `uv run python -m pipeline.migrate out/book.db`로 올린다.
+- 단락마다 `version`이 있어, 저장할 때 편집을 시작한 뒤 다른 쪽(번역 에이전트, 다른 창)이 바꿨으면 덮지 않고 거절한다. 쓰던 글은 "Unsaved — the paragraph changed since"로 남아 Recover(내 글로 다시 저장)나 Discard를 고른다. 저장이 성공하기 전에는 쓰던 글을 지우지 않는다. 버전 칸이 없는 옛 DB는 서버가 열지 않으니 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 
 ## 번역 에이전트 (개발 중, 터미널에서)
@@ -167,5 +167,5 @@ node server/agent/chat.mjs --model claude-sonnet-5-5 --effort low
 - Enter로 보내고, 답이 도는 중 Ctrl-C는 멈추기, 쉬는 중 Ctrl-C는 종료. 턴마다 걸린 시간과 비용(추정)이 찍힌다.
 - 에이전트가 가진 것은 책을 읽는 도구 넷(`book`, `read`, `glossary`, `search`)과 쓰는 도구 넷(`set_translation`, `set_glossary_term`, `add_comment`, `add_translator_note`)뿐이다. 파일·셸·웹 도구가 없으므로 PDF와 쪽 이미지는 열 수 없다.
 - 쓰기 전에는 반드시 묻는다. 바뀔 내용(전/후)이 보이고 `y` 허락, `a` 이 대화 동안 그 종류는 항상 허락, `n` 거절. 번역문은 늘 draft로 들어가고(확정은 사람), 모든 쓰기는 명령으로 기록되어 ⌘Z로 되돌아간다. Claude가 남긴 댓글은 `Claude:`로 시작한다.
-- 아직 에디터 화면은 에이전트가 쓴 것을 자동으로 다시 읽지 않는다. 화면을 새로고침해서 확인한다.
+- 에이전트가 쓴 것(그리고 다른 창의 저장, ⌘Z)은 에디터에 바로 나타난다(서버의 `GET /api/events`).
 - 자격: 환경에 `ANTHROPIC_API_KEY`가 있으면 그 키를, 없으면 이 Mac의 Claude 로그인을 쓴다. 서버가 시작할 때 어느 쪽인지 찍는다.
