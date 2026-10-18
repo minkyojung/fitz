@@ -242,3 +242,61 @@ ProseMirror의 공동 편집(`prosemirror-collab`)은 같은 버전 원리에 "�
 실제 서버로 확인(책 사본): 본 버전으로 저장 → 성공, 같은 옛 버전으로 다시 → 409, 알림 통로에 저장과 ⌘Z가 한 번씩. 버전 없는 DB로 띄우면 마이그레이션 명령을 말하고 종료(코드 1).
 
 기존 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다. 버전 칸이 없는 DB는 서버가 열지 않는다(조용히 덮어쓰게 두지 않는다). 2026-10-18 작업 DB를 올림: 백업 `out/book.db.bak-2026-10-18-before-versions`, 825단락, 무결성 정상.
+
+## 13. 대화 저장과 이어가기 (8단계 설계, 2026-10-18 조사)
+
+지금은 대화(conversation)가 서버 메모리에만 있다. 서버를 다시 켜면 화면이 그 대화로 돌아갈 길이 없다. 대화의 **내용**은 잃지 않는다: Claude Code가 디스크에 쓰고 있다. 빠진 것은 "목록을 보여 주고, 다시 열어 그리고, 이어 가는" 앱 쪽이다.
+
+출처: `[sessions]` code.claude.com/docs/en/agent-sdk/sessions, `[session-storage]` …/agent-sdk/session-storage, SDK 0.3.302 `sdk.d.ts`, claude-code-harness 스킬의 측정(2.1.287–296).
+
+### 13.1 Claude Code가 이미 하는 것 — 그대로 쓴다
+
+| 기능 | API | fitz에서 |
+|---|---|---|
+| 대화를 디스크에 자동 기록 | `~/.claude/projects/<cwd의 글자·숫자 아닌 것을 -로>/<세션 id>.jsonl` `[sessions]` | cwd가 fitz 전용(`~/.fitz/agent`)이라 그 폴더에는 fitz의 대화만 있다 |
+| 세션 id를 앱이 정함 | 옵션 `sessionId`(uuid). `resume`·`continue`와는 `forkSession`일 때만 함께 (`d.ts`) | **convId를 그대로 세션 id로 쓴다** → 대화↔세션 대응표가 필요 없다 |
+| 이어가기 | 옵션 `resume: 세션 id`. 대화·모델은 돌아오고, 시작 옵션은 다시 줘야 한다 `[sessions]` | host가 프로세스가 죽었을 때 이미 쓴다. 서버 재시작 뒤에도 같은 길 |
+| 목록 | `listSessions({ dir: AGENT_CWD, includeWorktrees: false })` → id, `summary`(제목), `customTitle`, `firstPrompt`, `lastModified`, `createdAt`, `tag` | 대화 목록의 정본 |
+| 내용 | `getSessionMessages(id, { dir })` — 압축 뒤라면 요약 이후의, Claude가 보는 사슬 `[session-storage]` | 다시 연 대화를 그리는 재료 |
+| 제목 | 첫 메시지로 자동 생성(측정: 1.5초 안, 메시지는 오지 않는다 → `getSessionInfo`로 읽는다). 새 세션은 `title` 옵션, 바꾸기는 `renameSession` | 목록의 이름 |
+| 정리 | `deleteSession`, `tagSession`, `forkSession` | 삭제, 보관함 |
+
+측정된 것(하네스): 이어 갈 때 지난 메시지는 흐름으로 다시 오지 않는다(→ `getSessionMessages`). 세션 파일을 직접 파싱하지 않는다("scripts that parse these files directly can break on any release").
+
+### 13.2 Claude Code가 하지 않는 것 — 앱이 지킨다
+
+| 빠진 것 | 근거 | 앱이 할 일 |
+|---|---|---|
+| 턴의 시간·비용·끝난 이유 | 세션 파일에는 `result`가 없다(측정) | `agent_turn`(session_id, user_uuid, reason, ms, cost, at): `result`마다 서버가 쓰고, 다시 열 때 붙인다 |
+| 대화별 모델·effort | 세션 정보에 없다 | `agent_conversation`(session_id, model, effort, created_at) |
+| 다시 연 대화의 모양 | 흐름과 파일이 다르다: 파일엔 `stream_event`·`result`가 없고, 구조화된 도구 결과가 `tool_use_result`가 아니라 `toolUseResult`, 압축 뒤엔 요약 이후만 | `foldStored(messages, turns)`: fold.mjs와 **같은 items 모양**을 만드는 순수 함수. 녹화의 `*.stored.json`으로 "다시 연 것 = 살아서 본 것(공통 부분)" 테스트를 둔다 |
+| 30일 뒤 자동 삭제 | `cleanupPeriodDays` 기본 30. 청소는 세션마다 그 세션의 설정으로 돈다 — 사람이 터미널에서 띄운 claude는 자기 값(30)으로 같은 `projects/` 폴더를 쓸 수 있다(하네스의 추론, 문서에 명시 없음) | 13.3 |
+
+### 13.3 보존 — 문서가 드는 세 길
+
+| 길 | 무엇 | 좋은 점 | 걸리는 점 |
+|---|---|---|---|
+| A. 로컬 파일 + 긴 `cleanupPeriodDays` | 세션 `settings`로 보존일을 늘린다 | 가장 단순 | 사람의 터미널 claude의 청소는 그쪽 설정으로 돈다 → 지켜진다는 보장이 없다 |
+| B. 세션 파일 사본 | 턴이 끝날 때 `<id>.jsonl`을 `~/.fitz/sessions/`로 통째 복사하고, resume 전에 원본이 없으면 되돌려 놓는다(`[sessions]`의 "Move the session file") | 단순. 로그인 그대로. 되살린 파일로 resume되는 것은 측정됨(하네스). 우리는 파일을 해석하지 않고 복사만 한다 | 파일 모양이 내부용이라는 점은 그대로(해석하지 않으니 영향 없음) |
+| C. `sessionStore` 어댑터 → SQLite | SDK가 기록마다 `append`로 우리 저장소에 미러하고, resume은 저장소에서 `load` `[session-storage]` | SDK의 정식 보존 장치. 보존 규칙을 앱이 쥔다 | **저장소에서 resume하면 임시 `CLAUDE_CONFIG_DIR`로 돈다.** TS SDK는 자격 *파일*·`.claude.json`·settings를 복사하는데, 이 Mac의 Max 로그인은 Keychain에 있다 → 로그인을 찾는지 **미측정**. `@alpha`. 미러는 best-effort(실패 시 `mirror_error`) |
+
+**결정: B로 시작한다.** 로그인과 동작이 지금과 같고 코드가 가장 적다. C는 "임시 config dir에서 Keychain 로그인을 찾는가"를 실제로 재고, 통과하면 옮긴다(SQLite 한 곳에 책과 대화가 함께 있게 된다).
+
+### 13.4 8단계에서 만들 것
+
+1. `host.start`가 `sessionId: convId`로 세션을 만든다.
+2. 대화 목록 = `listSessions({ dir: AGENT_CWD })` + `agent_conversation`의 모델·effort. 화면에 보내는 메시지 하나(`conversations`).
+3. `open(convId)`가 메모리에 없는 대화면: `getSessionMessages` + `agent_turn` → `foldStored`로 상태를 만들어 snapshot. 프로세스는 띄우지 않는다(다음 `send`에서 `resume`).
+4. `result`마다: `agent_turn` 한 행 + 세션 파일 사본(B).
+5. 삭제: `deleteSession` + 사본 + 행.
+6. 테스트: `foldStored(stored) ≈ fold(live)`(녹화 둘), 서버 재시작 시나리오(스텁), 실제 1회(재시작 뒤 이어서 묻기).
+
+## 14. 남은 설계 문제 — 조사 (2026-10-18)
+
+**되돌리기가 쓴 사람을 가리지 않는다.** ⌘Z는 `ops`의 마지막 행을 되돌린다: Claude가 방금 쓴 것을 번역자의 ⌘Z가 되돌릴 수 있다. 다른 제품: 공동 편집기는 "내 변경만 되돌린다"(선택적 되돌리기). Yjs `UndoManager`는 `trackedOrigins`에 든 출처의 변경만 되돌리고, ProseMirror는 남의 변경을 `addToHistory: false`로 넣어 내 기록에서 빼며 "selective undo"를 한다. AI 편집 도구(Claude Code의 rewind, 편집기의 accept/reject)는 에이전트의 변경을 따로 되돌린다. → fitz: `ops`에 `actor`를 두고, ⌘Z는 번역자의 것만, 에이전트의 것은 대화 안의 그 도구 호출에서 되돌린다. 되돌릴 때도 버전 확인(§12)을 거친다(그 뒤에 다른 쪽이 고쳤으면 되돌리지 않는다).
+
+**쓴 사람을 SDK에서 아는 길(측정, Claude Code 2.1.302).** 도구 함수의 두 번째 인자 `extra._meta["claudecode/toolUseId"]`가 그 도구 호출의 id다 — 흐름의 `tool_use.id`, `canUseTool`의 `toolUseID`와 같은 값. 그래서 에이전트의 쓰기마다 `actor = agent`, 세션 id, toolUseId를 기록하면 DB의 변경 하나가 대화의 그 줄과 이어진다. 번역자의 쓰기는 `actor = translator`.
+
+**화면 연결이 둘(WebSocket + SSE).** Octave는 페이지당 WebSocket 하나(`/`)로 대화와 앱 상태 전부(`claude_message`, `claude_ask`, 목록, 모델…)를 나르고, 터미널만 따로(`/pty`) 둔다. 업계의 단순한 형은 둘: (가) 실시간은 WebSocket 하나에 모두(Octave, 하네스 §1) — 한 연결 안에서 snapshot과 그 뒤 메시지의 순서가 보장된다, (나) 동작은 HTTP POST, 알림은 SSE 하나에 모두(MCP의 Streamable HTTP 형) — 다시 붙기가 공짜지만 snapshot과 이벤트의 순서를 맞출 번호가 따로 필요하다. 화면이 에이전트와 양방향으로 말해야 하므로 (가)가 맞다: 9단계에서 페이지의 연결을 만들 때 책 변경 알림(`changed`)을 그 WebSocket으로 옮기고 SSE를 걷는다.
+
+**Claude의 댓글 표시.** 지금은 본문 앞 `Claude: `. `actor`가 생기면 댓글을 만든 op에서 작성자를 알 수 있지만, 화면 표시는 `comment.author` 칸이 단순하다. 9단계에서 정한다.
