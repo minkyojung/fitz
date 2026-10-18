@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "./http"
-import type { Annotations, Book, Chapter, GlossaryTerm, Note, Page, Segment, SegmentPatch, TextAnchor } from "./api"
+import type { Annotations, Book, Chapter, GlossaryTerm, Note, Page, Segment, SegmentPatch, Suggestion, SuggestionDecision, TaskName, TaskRun, TextAnchor } from "./api"
 import { createDraftStore } from "@/lib/draftStore"
 import { buildCorpus, type Corpus } from "@/lib/corpus"
 import { loadEnglishSpeller, type Speller } from "@/lib/spell"
@@ -26,7 +26,9 @@ export const OP_LABEL: Record<string, string> = {
   addNote: "Translator's note",
   setNote: "Note",
   deleteNote: "Delete note",
+  decideSuggestion: "Claude's suggestion",
 }
+const DECISION_LABEL: Record<SuggestionDecision, string> = { accept: "Accept", dismiss: "Dismiss", comment: "Keep as comment" }
 
 export const CAPTION_PLACEHOLDER = "Caption"
 
@@ -48,6 +50,9 @@ export function useBook() {
   const [userWords, setUserWords] = useState<ReadonlySet<string>>(new Set())
   const [glossary, setGlossary] = useState<GlossaryTerm[]>([])
   const [annotations, setAnnotations] = useState<Annotations>({ comments: [], notes: [] })
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  /** Claude's runs on chapters, by task and chapter ("review:3"). */
+  const [runs, setRuns] = useState<Record<string, TaskRun>>({})
   const pending = useRef(0)
 
   /** Every write goes through here: one place owns the save indicator and the error toast. */
@@ -87,6 +92,10 @@ export function useBook() {
     (id: number) => api.listAnnotations(id).then(setAnnotations).catch(() => undefined),
     [],
   )
+  const refreshSuggestions = useCallback(
+    (id: number) => api.listSuggestions(id).then(setSuggestions).catch(() => undefined),
+    [],
+  )
 
   const refreshCorpus = useCallback(
     () => api.listSourceTexts().then((rows) => setCorpus(buildCorpus(rows.map((r) => r.text)))).catch(() => undefined),
@@ -120,8 +129,8 @@ export function useBook() {
   }, [])
 
   useEffect(() => {
-    if (chapterId !== null) { void refreshSegments(chapterId); void refreshAnnotations(chapterId) }
-  }, [chapterId, refreshSegments, refreshAnnotations])
+    if (chapterId !== null) { void refreshSegments(chapterId); void refreshAnnotations(chapterId); void refreshSuggestions(chapterId) }
+  }, [chapterId, refreshSegments, refreshAnnotations, refreshSuggestions])
 
   // the segments on screen, for a save to name the version it was based on
   const shown = useRef(segments)
@@ -238,12 +247,12 @@ export function useBook() {
     [mutate, refreshNotes],
   )
 
-  /** What the screen shows of the book, reloaded: chapters and their counts, the chapter's paragraphs and annotations,
-   *  unlinked notes, the glossary. */
+  /** What the screen shows of the book, reloaded: chapters and their counts, the chapter's paragraphs, annotations and
+   *  Claude's suggestions, unlinked notes, the glossary. */
   const reloadShown = useCallback(async () => {
-    await Promise.all([refreshChapters(), refreshNotes(), chapterId !== null ? refreshSegments(chapterId) : null, chapterId !== null ? refreshAnnotations(chapterId) : null])
+    await Promise.all([refreshChapters(), refreshNotes(), ...(chapterId !== null ? [refreshSegments(chapterId), refreshAnnotations(chapterId), refreshSuggestions(chapterId)] : [])])
     if (book) await refreshWords(book.id)
-  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshWords, book])
+  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshSuggestions, refreshWords, book])
   /** Undo/redo may touch any table, source text included, so reload everything the screen shows and the corpus. */
   const reloadAll = useCallback(async () => { await Promise.all([reloadShown(), refreshCorpus()]) }, [reloadShown, refreshCorpus])
 
@@ -296,6 +305,21 @@ export function useBook() {
     [mutate, reloadAll],
   )
 
+  /** Claude's suggestions (docs/agent.md §4): run a task on a chapter, and decide what it found. A decision is a logged
+   *  command like any edit; what it changed is read again (an accepted OCR fix changes the source, so the corpus too).
+   *  New suggestions arrive by themselves: the server announces them and the screen reloads. */
+  const suggest = useMemo(() => ({
+    runs,
+    run: (task: TaskName, id: number) => {
+      api.runTask(task, id, (run) => setRuns((r) => ({ ...r, [`${task}:${id}`]: run })))
+    },
+    decide: (s: Suggestion, decision: SuggestionDecision) =>
+      mutate(DECISION_LABEL[decision], async () => {
+        await api.decideSuggestion(s.id, decision)
+        await Promise.all([reloadShown(), s.side === "source" && decision === "accept" ? refreshCorpus() : null])
+      }),
+  }), [runs, mutate, reloadShown, refreshCorpus])
+
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
   // stable identity: every row subscribes to this, so it must only change when its parts do
   const spell = useMemo(() => ({ speller, corpus, userWords, addWord, glossary, setTerm }), [speller, corpus, userWords, addWord, glossary, setTerm])
@@ -306,6 +330,6 @@ export function useBook() {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
     unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption, replaceAll,
-    spell, annotations, annotate,
+    spell, annotations, annotate, suggestions, suggest,
   }
 }

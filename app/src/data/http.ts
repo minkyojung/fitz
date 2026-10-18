@@ -1,5 +1,6 @@
 import type { Api, BookChange } from "./api"
 import { createLive } from "@/lib/live"
+import { nextRun, type TaskRun } from "@/lib/taskRun"
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4800"
 
@@ -31,6 +32,10 @@ async function callBlob(method: string, body: unknown = {}): Promise<{ blob: Blo
 
 export const pageImageUrl = (url: string) => `${BASE}${url}`
 
+/** The page's one live connection (docs/agent.md §15), opened on first use and kept for the page's life. */
+let shared: ReturnType<typeof createLive> | null = null
+const live = () => (shared ??= createLive(`${BASE.replace(/^http/, "ws")}/live`))
+
 export const api: Api = {
   getBook: () => call("getBook"),
   listChapters: () => call("listChapters"),
@@ -61,13 +66,31 @@ export const api: Api = {
   replaceAll: (query, replacement) => call("replaceAll", { query, replacement }),
   exportSummary: (input) => call("exportSummary", input),
   exportDocx: (input) => callBlob("exportDocx", input),
-  watchChanges: (onChange) => {
-    // the page's live connection carries the book's changes; after it reconnects, some may have been missed
-    const live = createLive(`${BASE.replace(/^http/, "ws")}/live`)
-    const stop = live.subscribe((e) => {
+  // after the connection comes back, some changes may have been missed
+  watchChanges: (onChange) =>
+    live().subscribe((e) => {
       if (e.type === "resync") onChange({ kind: "resync" })
       else if (e.type === "changed") onChange(e as unknown as BookChange)
+      else if (e.type === "suggested") onChange({ kind: "suggested", segmentIds: e.segmentIds as number[] })
+    }),
+  listSuggestions: (chapterId) => call("listSuggestions", { chapterId }),
+  decideSuggestion: (id, decision) => call("decideSuggestion", { id, decision }),
+  runTask: (task, chapterId, onRun) => {
+    const convId = crypto.randomUUID()
+    const connection = live()
+    let run: TaskRun = { state: "running" }
+    const stop = connection.subscribe((e) => {
+      // following ends with the connection: follow again, and the snapshot tells whether it ended meanwhile
+      if (e.type === "resync") return connection.send({ type: "open", convId })
+      if (e.convId !== convId) return
+      const next = nextRun(run, e)
+      if (next === run) return
+      run = next
+      onRun(run)
+      if (run.state !== "running") stop()
     })
-    return () => { stop(); live.close() }
+    connection.send({ type: "start", convId, task, chapterId })
+    onRun(run)
+    return stop
   },
 }

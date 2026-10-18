@@ -1,4 +1,5 @@
 /** Data interface the UI depends on. Implementations: http.ts (dev server), later a Tauri binding. */
+import type { TaskRun } from "@/lib/taskRun"
 
 /** ProseMirror document JSON: paragraphs of text nodes with optional marks.
  *  Source docs hold exactly one paragraph; a translation may hold several (blocks inside one pair). */
@@ -139,8 +140,37 @@ export interface SegmentPatch {
   expectVersion?: number
 }
 
-/** A committed write, announced to every open page whoever made it; "resync" after a reconnect, when some may have been missed. */
-export type BookChange = { kind: "do" | "undo" | "redo"; opId: number; name: string; segmentIds: number[]; actor: OpSummary["actor"] } | { kind: "resync" }
+/** A committed write, announced to every open page whoever made it; Claude's new suggestions; "resync" after a
+ *  reconnect, when some may have been missed. */
+export type BookChange =
+  | { kind: "do" | "undo" | "redo"; opId: number; name: string; segmentIds: number[]; actor: OpSummary["actor"] }
+  | { kind: "suggested"; segmentIds: number[] }
+  | { kind: "resync" }
+
+/** The tasks Claude runs on a chapter (docs/agent.md §4): the review of the translation, the hunt for OCR errors in the source. */
+export type TaskName = "review" | "typos"
+export type { TaskRun }
+
+/** What Claude found: the quoted words of one paragraph (the translation for a review, the source for OCR errors) and
+ *  what should replace them. It stays open until the translator decides it. */
+export interface Suggestion {
+  id: number
+  conversationId: string
+  task: TaskName
+  segmentId: number
+  side: "source" | "target"
+  quote: string
+  replacement: string
+  why: string
+  /** The review's: high = the meaning is wrong, medium = unnatural or inconsistent, low = a better choice. */
+  level: "high" | "medium" | "low" | null
+  /** The paragraph's version when Claude suggested it. */
+  baseVersion: number
+  status: "open" | "accepted" | "dismissed" | "commented"
+  createdAt: string
+}
+/** accept: the words are replaced; comment: kept as Claude's comment on them; dismiss: let go. ⌘Z undoes each. */
+export type SuggestionDecision = "accept" | "dismiss" | "comment"
 
 export interface OpSummary {
   id: number
@@ -210,4 +240,9 @@ export interface Api {
   exportDocx(input: { chapterIds?: number[]; scheme: ExportScheme }): Promise<{ blob: Blob; filename: string }>
   /** Hear every change to the book. Returns the function that stops listening. */
   watchChanges(onChange: (change: BookChange) => void): () => void
+  /** Claude's open suggestions on a chapter, in book order. */
+  listSuggestions(chapterId: number): Promise<Suggestion[]>
+  decideSuggestion(id: number, decision: SuggestionDecision): Promise<Suggestion>
+  /** Start Claude on a chapter; `onRun` hears how it goes until it ends. Returns the function that stops following. */
+  runTask(task: TaskName, chapterId: number, onRun: (run: TaskRun) => void): () => void
 }

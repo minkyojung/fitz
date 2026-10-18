@@ -145,7 +145,7 @@ app/src/
 | 리뷰 | `read` → `glossary` → `StructuredOutput` | 7.3초, 4턴 | $0.025 | ¶4 "서둘러 내리는" → "유보하는", high. 이유에 번역자의 댓글(reserved와의 말장난)까지 반영 |
 
 녹화 둘이 테스트가 된다: 다시 읽은 대화 = 실시간 대화(`fold.test`), 쓰기 도구 없음(`session.test`), 진짜 답이 그대로 저장됨(`host.test`). `pnpm test:real`(Haiku)의 오탈자 실행 8.8–10.7초. 상한(60턴·$5)은 폭주를 막는 값이다.
-| 6 | 화면의 데이터: 제안 타입·경로, `/live`로 작업 시작(보내기 + 대기열은 이때 `lib/live.ts`에) | `app/src/data/api.ts`, `http.ts`, `lib/live.ts`, `useBook.ts` | 단위 테스트 |
+| 6 ✓ | 화면의 데이터: 제안 타입·경로, `/live`로 작업 시작(보내기 + 대기열은 이때 `lib/live.ts`에). 페이지의 연결은 하나를 같이 쓴다. 작업의 진행(달리는 중·끝·실패)은 대화의 사건에서 읽는다(`lib/taskRun.ts`, 다시 붙으면 `open`으로 다시 따라가 스냅숏이 그사이 끝났는지 말한다) | `app/src/data/api.ts`, `http.ts`, `lib/live.ts`, `lib/taskRun.ts`, `useBook.ts` | 단위 테스트 |
 | 7 | 화면: 패널 **Suggestions** 탭(시작 줄, 카드), 번역문·원문의 제안 표시(맞춤법 표시 코드를 함께 쓴다) | `features/suggestions/` 새로, `ReviewPanel.tsx`, `PairRow.tsx`, `SourceText.tsx` | e2e: 제안을 e2e DB에 넣고 Accept·Dismiss·Keep·⌘Z·"글이 바뀐 제안" |
 | 8 | README, 이 문서에 결과 | | |
 
