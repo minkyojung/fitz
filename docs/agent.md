@@ -120,6 +120,8 @@ app/src/
 | 리뷰 | 구글 독스 제안 모드 + Grammarly 목록 | 번역문의 그 구절에 취소선 + 초록 제안(맞춤법 표시와 같은 diff 표현), 패널 **Suggestions** 탭에 카드(¶, 중요도, 구절 → 제안, 이유) | **Accept**(번역문이 바뀜, ⌘Z) / **Dismiss** / **Keep as comment**(못 정한 것을 Claude의 댓글로) |
 | 오탈자 | 워드의 맞춤법 밑줄 | 원문에 지금의 맞춤법 표시와 **같은 모양**. 사전이 찾는 것(없는 단어)과 Claude가 찾는 것(문맥상 틀린 실제 단어: reverse→reserve, boars→bores)이 나란히 | **Accept** / **Dismiss**. 확인은 검수 화면의 스캔과 대조해서(Claude는 스캔을 보지 않는다) |
 
+**본문은 보여 주기만, 결정은 패널에서**(댓글과 같은 방식): 본문의 제안 표시를 누르면 Suggestions 탭의 그 카드가 선택되고, 카드를 누르면 본문의 그 자리가 강조된다. Accept·Dismiss·Keep as comment는 카드의 버튼으로만 — 본문 클릭으로는 아무것도 바뀌지 않는다. 사전 맞춤법 표시(지금 있는 기능)는 그대로 둔다.
+
 원칙: Claude는 찾기만 한다(두 작업에는 쓰기 도구가 없다). 책이 바뀌는 것은 사람이 누를 때뿐이고, 그 쓰기는 사람의 것(`actor = translator`)이다. 패널 맨 위 한 줄이 시작·진행·끝을 보인다("Review this chapter with Claude" → "Claude is reading the chapter…" → "3 suggestions").
 
 ### 4.2 만드는 순서 (행 = 커밋)

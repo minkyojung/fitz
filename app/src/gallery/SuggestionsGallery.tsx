@@ -35,18 +35,17 @@ const REVIEW: Suggestion[] = [
 
 const SOURCE = [
   "In consequence, I'm inclined to reverse all judgments, a habit that has opened up many curious natures to me and also made me the victim of not a few veteran boars.",
-  "The abnormal mind is quick to detect and attach itse1f to this quality when it appears in a normal person, and so it came about that in college I was unjustly accused of being a politician.",
+  "The abnormal mind is quick to detect and attach itself to this quality when it appears in a normal person, and so it came about that in college I was unjustly accused of being a politician.",
 ]
-// what the dictionary already finds: words it cannot form
-const DICTIONARY = [{ para: 1, word: "itse1f", fix: "itself" }]
 // what Claude finds: real words that are wrong here
 const TYPOS: Suggestion[] = [
   { id: 11, para: 0, quote: "reverse", replacement: "reserve", why: "앞 문장의 reserved와 이어지는 reserve judgment(판단을 미루다)입니다. reverse는 OCR이 글자를 바꿔 읽은 것으로 보입니다." },
   { id: 12, para: 0, quote: "boars", replacement: "bores", why: "'따분한 사람들'(bores)이 문맥에 맞습니다. boars(멧돼지)는 OCR 오인으로 보입니다." },
 ]
 
-/** The diff language the spelling marks already use: the words struck on a warning tint, the fix in green. */
-function Marked({ text, marks, onAccept }: { text: string; marks: { quote: string; replacement: string; id: number; why?: string }[]; onAccept: (id: number) => void }) {
+/** The diff language the spelling marks already use: the words struck on a warning tint, the fix in green. For
+ *  Claude's suggestions it only shows: clicking selects the card in the panel, as clicking a comment does. */
+function Marked({ text, marks, selected, onPick }: { text: string; marks: { quote: string; replacement: string; id: number; why?: string }[]; selected: number | null; onPick: (id: number) => void }) {
   const parts: React.ReactNode[] = []
   let rest = text
   let key = 0
@@ -55,10 +54,10 @@ function Marked({ text, marks, onAccept }: { text: string; marks: { quote: strin
     if (at === -1) continue
     parts.push(rest.slice(0, at))
     parts.push(
-      <span key={key++} title={m.why}>
+      <span key={key++} title={m.why} role="button" tabIndex={0} onClick={() => onPick(m.id)} onKeyDown={(e) => e.key === "Enter" && onPick(m.id)}
+        className={cn("cursor-pointer rounded-sm", selected === m.id && "outline-2 outline-offset-2 outline-ring")}>
         <mark className="border-b-2 border-mark-warning bg-mark-warning/40 text-inherit line-through decoration-mark-warning-ink">{m.quote}</mark>{" "}
-        <ins role="button" tabIndex={0} onClick={() => onAccept(m.id)} title="Click to accept"
-          className="cursor-pointer border-b-2 border-mark-term bg-mark-term/40 px-0.5 no-underline hover:bg-mark-term/70">{m.replacement}</ins>
+        <ins className="border-b-2 border-mark-term bg-mark-term/40 px-0.5 no-underline">{m.replacement}</ins>
       </span>,
     )
     rest = rest.slice(at + m.quote.length)
@@ -78,9 +77,9 @@ function Run({ label, state, done, start }: { label: string; state: State; done:
   )
 }
 
-function Card({ s, label, onAccept, onDismiss, onComment }: { s: Suggestion; label: string; onAccept: () => void; onDismiss: () => void; onComment?: () => void }) {
+function Card({ s, label, selected, onPick, onAccept, onDismiss, onComment }: { s: Suggestion; label: string; selected: boolean; onPick: () => void; onAccept: () => void; onDismiss: () => void; onComment?: () => void }) {
   return (
-    <li className="space-y-1.5 border-b px-3 py-2 text-sm">
+    <li onClick={onPick} className={cn("cursor-pointer space-y-1.5 border-b border-l-2 border-l-transparent px-3 py-2 text-sm", selected && "border-l-ring bg-muted")}>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="tabular-nums">¶{s.para + 2}</span>
         {s.level && <Badge variant={s.level === "high" ? "destructive" : "secondary"}>{s.level}</Badge>}
@@ -88,7 +87,7 @@ function Card({ s, label, onAccept, onDismiss, onComment }: { s: Suggestion; lab
       </div>
       <p><span className="line-through decoration-destructive/60">{s.quote}</span> → <span className="text-mark-term-ink">{s.replacement}</span></p>
       <p className="text-xs text-muted-foreground">{s.why}</p>
-      <div className="flex gap-1">
+      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
         <Button size="xs" onClick={onAccept}><IconCheck data-icon="inline-start" />Accept</Button>
         <Button size="xs" variant="ghost" onClick={onDismiss}><IconX data-icon="inline-start" />Dismiss</Button>
         {onComment && <Button size="xs" variant="ghost" onClick={onComment}><IconMessage data-icon="inline-start" />Keep as comment</Button>}
@@ -115,6 +114,7 @@ export function SuggestionsGallery() {
   const [en, setEn] = useState(SOURCE)
   const [open, setOpen] = useState<number[]>([...REVIEW, ...TYPOS].map((s) => s.id))
   const [log, setLog] = useState<string[]>([])
+  const [picked, setPicked] = useState<number | null>(null)
   const close = (id: number, what: string) => { setOpen((o) => o.filter((x) => x !== id)); setLog((l) => [what, ...l]) }
   const acceptReview = (id: number) => {
     const s = REVIEW.find((x) => x.id === id)!
@@ -132,7 +132,7 @@ export function SuggestionsGallery() {
   return (
     <div className="mx-auto max-w-6xl space-y-8 p-8">
       <h1 className="text-xs font-medium text-muted-foreground">
-        Claude 제안 갤러리 · 리뷰는 구글 독스 제안 모드 + Grammarly 목록처럼, OCR 오류는 맞춤법 밑줄처럼 · Claude는 찾기만, 바뀌는 건 누를 때만
+        Claude 제안 갤러리 · 본문의 표시는 보여 주기만(누르면 오른쪽 카드가 선택됨), 수락은 카드의 Accept로만 — 댓글과 같은 방식
       </h1>
 
       <section className="grid grid-cols-[1fr_340px] overflow-hidden rounded-md border">
@@ -143,7 +143,7 @@ export function SuggestionsGallery() {
               <div key={i} className="contents">
                 <p className="reading text-[15px] text-muted-foreground" lang="en">{p.en}</p>
                 <p className="reading text-[15px]" lang="ko">
-                  <Marked text={ko[i]} marks={review.filter((s) => s.para === i)} onAccept={acceptReview} />
+                  <Marked text={ko[i]} marks={review.filter((s) => s.para === i)} selected={picked} onPick={setPicked} />
                 </p>
               </div>
             ))}
@@ -154,7 +154,7 @@ export function SuggestionsGallery() {
           <Run label="Review this chapter with Claude" state={reviewState} start={startReview}
             done={review.length ? `${review.length} suggestion${review.length > 1 ? "s" : ""} · Claude read 3 paragraphs` : "All suggestions handled"} />
           <ul>{review.map((s) => (
-            <Card key={s.id} s={s} label="Claude" onAccept={() => acceptReview(s.id)} onDismiss={() => close(s.id, `¶${s.para + 2} dismissed`)}
+            <Card key={s.id} s={s} label="Claude" selected={picked === s.id} onPick={() => setPicked(s.id)} onAccept={() => acceptReview(s.id)} onDismiss={() => close(s.id, `¶${s.para + 2} dismissed`)}
               onComment={() => close(s.id, `¶${s.para + 2} kept as a comment by Claude`)} />
           ))}</ul>
         </aside>
@@ -162,15 +162,14 @@ export function SuggestionsGallery() {
 
       <section className="grid grid-cols-[1fr_340px] overflow-hidden rounded-md border">
         <div className="space-y-3 p-4">
-          <p className="text-xs font-medium text-muted-foreground">Review · OCR 오류 — 노란 표시: 사전이 찾은 것(지금 있는 기능) / Claude가 찾은 것(새 기능), 모양은 같다</p>
+          <p className="text-xs font-medium text-muted-foreground">Review · OCR 오류 — Claude가 찾은 것. 맞춤법 표시와 같은 모양, 누르면 카드가 선택된다</p>
           {en.map((text, i) => {
-            const dict = DICTIONARY.filter((d) => d.para === i && text.includes(d.word)).map((d, k) => ({ id: 100 + k, quote: d.word, replacement: d.fix, why: "Dictionary: not a word" }))
             const claude = typos.filter((s) => s.para === i).map((s) => ({ ...s, why: `Claude: ${s.why}` }))
             return (
               <div key={i} className="rounded-md border bg-muted/40 px-2 py-1.5">
                 <p className="mb-1 text-xs text-muted-foreground">¶{i + 4} · Paragraph</p>
                 <p className="reading text-[15px]" lang="en">
-                  <Marked text={text} marks={[...dict, ...claude]} onAccept={(id) => (id >= 100 ? setEn((e) => e.map((t, k) => (k === i ? t.replace(dict[id - 100].quote, dict[id - 100].replacement) : t))) : acceptTypo(id))} />
+                  <Marked text={text} marks={claude} selected={picked} onPick={setPicked} />
                 </p>
               </div>
             )
@@ -181,7 +180,7 @@ export function SuggestionsGallery() {
           <Run label="Find OCR errors with Claude" state={typoState} start={startTypos}
             done={typos.length ? `${typos.length} likely OCR error${typos.length > 1 ? "s" : ""} · check them against the scan` : "All suggestions handled"} />
           <ul>{typos.map((s) => (
-            <Card key={s.id} s={{ ...s, para: s.para + 2 }} label="Claude · OCR" onAccept={() => acceptTypo(s.id)} onDismiss={() => close(s.id, `¶${s.para + 4} dismissed`)} />
+            <Card key={s.id} s={{ ...s, para: s.para + 2 }} label="Claude · OCR" selected={picked === s.id} onPick={() => setPicked(s.id)} onAccept={() => acceptTypo(s.id)} onDismiss={() => close(s.id, `¶${s.para + 4} dismissed`)} />
           ))}</ul>
         </aside>
       </section>
