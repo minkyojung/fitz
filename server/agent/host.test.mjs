@@ -104,7 +104,7 @@ test("a follower that stops following hears nothing more; close ends every sessi
   opened[0].feed(nuance[0])
   await settle()
   assert.deepEqual(events.map((e) => e.type), ["snapshot"])
-  host.close()
+  await host.close()
   assert.equal(opened[0].closed, true)
 })
 
@@ -378,4 +378,21 @@ test("a free conversation's result keeps no suggestions", async () => {
   opened[0].feed(...nuance.map((m) => (m.type === "result" ? { ...m, structured_output: { suggestions: [{ segmentId: 2, quote: "쉽게 상처받던", replacement: "x", why: "-", level: "low" }] } } : m)))
   await settle()
   assert.equal(db.prepare("SELECT count(*) n FROM agent_suggestion").get().n, 0)
+})
+
+test("the real recorded answers are kept: the OCR errors planted in the source, the reversed meaning in the translation", async () => {
+  const { host, opened, db } = setup()
+  db.exec(readFileSync(new URL("./fixtures/gatsby-tasks.sql", import.meta.url), "utf8"))
+  const recorded = (name) => readFileSync(new URL(`./fixtures/${name}.jsonl`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  host.start(ID, { task: "typos", chapterId: 1 })
+  host.start(ID2, { task: "review", chapterId: 1 })
+  opened[0].feed(...recorded("typos"))
+  opened[1].feed(...recorded("review"))
+  await settle()
+  const kept = db.prepare("SELECT task, segment_id, side, quote, replacement, level FROM agent_suggestion ORDER BY id").all().map((r) => ({ ...r }))
+  assert.deepEqual(kept.filter((s) => s.task === "typos").map((s) => [s.segment_id, s.side, s.quote, s.replacement]),
+    [[2, "source", "tuming", "turning"], [4, "source", "matures", "natures"], [5, "source", "rnind", "mind"], [5, "source", "unjust1y", "unjustly"]])
+  const review = kept.filter((s) => s.task === "review")
+  assert.deepEqual(review.map((s) => [s.segment_id, s.side, s.level]), [[4, "target", "high"]])
+  assert.match(review[0].quote, /서둘러 내리는/)
 })

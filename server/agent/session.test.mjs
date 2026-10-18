@@ -27,3 +27,12 @@ for (const name of ["nuance", "translate"]) {
     for (const n of prompts) assert.ok(n < 8000, `a request carried ${n} prompt tokens`)
   })
 }
+
+for (const name of ["review", "typos"]) {
+  test(`the recorded ${name} session was offered the read tools and the tool its answer goes in, nothing that writes`, () => {
+    const frames = readFileSync(new URL(`./fixtures/${name}.jsonl`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    const init = frames.find((m) => m.type === "system" && m.subtype === "init")
+    assert.deepEqual([...init.tools].sort(), [...READ_TOOLS, "StructuredOutput"].sort())
+    assert.ok(frames.find((m) => m.type === "result").structured_output)
+  })
+}

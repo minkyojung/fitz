@@ -99,6 +99,9 @@ export function openSession({ db, resume, model, effort, ask, task, cwd = AGENT_
       return uuid
     },
     interrupt: () => q.interrupt(),
-    close() { input.close(); q.close() },
+    // return(), not close(): the same cleanup, but it resolves once Claude Code has exited (measured in the SDK, 0.3.302:
+    // it ends the input, waits up to 2 s, then sends SIGTERM). On its way out Claude Code still writes to the session
+    // file (the title it gave the conversation), so whatever follows a close must wait for this.
+    close() { input.close(); return q.return() },
   }
 }

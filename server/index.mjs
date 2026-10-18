@@ -128,7 +128,8 @@ const server = createServer(async (req, res) => {
 // carries its conversations and the book's changes
 const agent = createAgentHost({ db })
 attachLive(server, { db, host: agent })
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { agent.close(); process.exit(0) })
+// Claude Code finishes writing its session files before the server goes
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void agent.close().finally(() => process.exit(0)) })
 
 server.listen(PORT, () => {
   console.log(`api  http://localhost:${PORT}/api/*   db=${DB}`)

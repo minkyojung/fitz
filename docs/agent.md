@@ -111,7 +111,7 @@ app/src/
 
 자유 질문("이 단락 뉘앙스는?")은 어느 스레드에서나 가능하다. 도구는 읽기만.
 
-리뷰·오탈자 대화(`tasks.mjs`): 앱이 장 하나로 시작하면 서버가 첫 메시지를 바로 보낸다. 기본 모델 Sonnet 5.5 / low, 상한 60턴·$5(실측 전의 값, 5행에서 고친다). 다시 열어도 같은 작업으로 이어진다.
+리뷰·오탈자 대화(`tasks.mjs`): 앱이 장 하나로 시작하면 서버가 첫 메시지를 바로 보낸다. 기본 모델 Sonnet 5.5 / low, 상한 60턴·$5(실측은 §4.2 5행 아래). 다시 열어도 같은 작업으로 이어진다.
 
 ### 4.1 리뷰·오탈자의 화면 — 익숙한 제품을 따른다 (7단계 설계, 2026-10-18)
 
@@ -135,7 +135,16 @@ app/src/
 | 2 ✓ | 작업별 세션: 작업 대화는 읽기 도구만 + `outputFormat` + 상한(`maxTurns`, `maxBudgetUsd`). `start { convId, task, chapterId }` | `session.mjs`, `tools.mjs`(쓰기 도구를 뺀 서버), `host.mjs`, `protocol.mjs` | 스텁 세션 테스트 |
 | 3 ✓ | 제안 저장: `agent_suggestion`(대화, 종류, 단락, 쪽(원문/번역), 구절, 제안, 이유, 중요도, 그때의 단락 버전, 상태 open·accepted·dismissed·commented). 결과가 오면 구절이 그 글에 정확히 한 번 있는 것만 저장(바꾸는 것이 없거나, 열린 제안과 겹치면 — 같은 장을 다시 돌린 경우 — 저장하지 않는다) | `db/schema.sql`, `pipeline/migrate.py`, `server/agent/suggestions.mjs` 새로 | 순수 테스트, 작업 DB 백업 후 마이그레이션 |
 | 4 ✓ | 제안 다루기: 명령 하나 `decideSuggestion`(accept·dismiss·comment) — 결정과 그 결정이 한 일을 한 걸음으로 남겨 ⌘Z 한 번에 둘 다 돌아온다. Accept = 지금 글에서 구절을 다시 찾아(정확히 한 번이 아니면 409 "글이 바뀜") 그 자리만 바꾼다(첫 글자의 표시를 이어받음, 번역자의 쓰기) / Dismiss / Keep as comment = Claude의 댓글(`author: agent`, 구절이 없어졌으면 단락에). 결정은 다른 쓰기처럼 `changed`로, 새 제안은 `suggested { segmentIds }`로 알린다 | `commands.mjs`(명령·목록), `suggestions.mjs`(알림), `index.mjs`(경로 둘: `listSuggestions`, `decideSuggestion`), `live.mjs` | 서버 테스트 + 실제 HTTP |
-| 5 | 진짜로 한 번: 두 작업을 Gatsby로 녹화(`record.mjs --task`), `pnpm test:real`에 "스키마에 맞고 구절이 글에 있는 제안이 온다" | `record.mjs`, `real.test.mjs`, `fixtures/` | 실측 기록 |
+| 5 ✓ | 진짜로 한 번: 두 작업을 Gatsby로 녹화(`record.mjs --task`), `pnpm test:real`에 "스키마에 맞고 구절이 글에 있는 제안이 온다" | `record.mjs`, `real.test.mjs`, `fixtures/` | 실측 기록 |
+
+**5행 실측**(2026-10-18, Sonnet 5.5 / low, `fixtures/gatsby-tasks.sql`: 원문에 OCR 오류 넷 — tuming·matures(실제 단어)·rnind·unjust1y — 과 오류 아닌 것 하나(Fitzgerald의 "any one"), ¶4 번역에 뜻을 뒤집은 "모든 판단을 서둘러 내리는"):
+
+| 작업 | 도구 호출 | 시간 | 비용 | 결과 |
+|---|---|---|---|---|
+| 오탈자 | `read({chapterId:1})` 1회 → `StructuredOutput` | 6.0초, 3턴 | $0.022 | 넷 다 찾고 넷 다 저장, "any one"은 건드리지 않음 |
+| 리뷰 | `read` → `glossary` → `StructuredOutput` | 7.3초, 4턴 | $0.025 | ¶4 "서둘러 내리는" → "유보하는", high. 이유에 번역자의 댓글(reserved와의 말장난)까지 반영 |
+
+녹화 둘이 테스트가 된다: 다시 읽은 대화 = 실시간 대화(`fold.test`), 쓰기 도구 없음(`session.test`), 진짜 답이 그대로 저장됨(`host.test`). `pnpm test:real`(Haiku)의 오탈자 실행 8.8–10.7초. 상한(60턴·$5)은 폭주를 막는 값이다.
 | 6 | 화면의 데이터: 제안 타입·경로, `/live`로 작업 시작(보내기 + 대기열은 이때 `lib/live.ts`에) | `app/src/data/api.ts`, `http.ts`, `lib/live.ts`, `useBook.ts` | 단위 테스트 |
 | 7 | 화면: 패널 **Suggestions** 탭(시작 줄, 카드), 번역문·원문의 제안 표시(맞춤법 표시 코드를 함께 쓴다) | `features/suggestions/` 새로, `ReviewPanel.tsx`, `PairRow.tsx`, `SourceText.tsx` | e2e: 제안을 e2e DB에 넣고 Accept·Dismiss·Keep·⌘Z·"글이 바뀐 제안" |
 | 8 | README, 이 문서에 결과 | | |
@@ -216,6 +225,9 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 - 쓰기를 거절하면(`deny` + 메시지) Claude는 다른 길로 시도하지 않고 그 사실과 대안을 말했다(Haiku, 실제 책 사본: "다른 방식으로도 시도하지 않았습니다").
 - 묻는 동안 `session_state_changed`가 `requires_action`, 답하면 `running`(녹화 `translate.jsonl`).
 - **멈춘 턴**(`interrupt()`): `result`가 `terminal_reason: "aborted_streaming"`, `is_error: true`로 온다. 오류가 아니라 사람이 멈춘 것이므로 화면은 `reason`으로 가른다. 세션은 살아 있고 다음 메시지에 정상으로 답했다(Haiku, 실제 책 사본).
+- **닫기는 `close()`가 아니라 `return()`**(SDK 코드, 0.3.302): `close()`는 메시지 흐름을 바로 끝내고 기다리지 않는다. 프로세스는 입력이 끝난 뒤에도 세션 파일에 쓴다(대화 제목 `ai-title`) — 실제 테스트가 세션을 지운 뒤 그 줄이 파일을 되살렸다. `return()`은 같은 정리를 하되 프로세스가 끝날 때까지(최대 2초, 그 뒤 SIGTERM) 기다린다 → `session.close()`가 그것을 돌려주고, 서버 종료·테스트·녹화는 그걸 기다린 뒤에 지운다.
+- 작업 대화의 init `tools`는 읽기 도구 넷과 `StructuredOutput`뿐(녹화 `review.jsonl`·`typos.jsonl`). 쓰기 도구는 서버에 없으니 Claude에게 보이지도 않는다.
+- 읽기 도구를 `allowedTools`에 두면 SDK가 세션마다 `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` 경고를 낸다("canUseTool이 읽기 도구에는 불리지 않는다"). 의도한 그대로다(읽기는 묻지 않는다, §1).
 
 ## 9. 지금 하지 않는 것
 

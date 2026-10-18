@@ -197,8 +197,9 @@ export function createAgentHost({
     stop(convId) {
       void get(convId).session?.interrupt().catch(() => {})
     },
+    /** Resolves once every Claude Code process has exited. */
     close() {
-      for (const conv of conversations.values()) conv.session?.close()
+      return Promise.all([...conversations.values()].map((conv) => conv.session?.close()))
     },
   }
 }

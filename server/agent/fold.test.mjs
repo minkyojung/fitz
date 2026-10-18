@@ -121,7 +121,8 @@ const keptTurn = (frames) => {
 }
 const shape = (state) => state.items.map(({ id: _, ...item }) => item)
 
-for (const [name, frames] of [["nuance", nuance], ["translate", translate]]) {
+// the review and the OCR-error hunt (Sonnet 5.5, fixtures/gatsby-tasks.sql): the answer is a StructuredOutput tool call
+for (const [name, frames] of [["nuance", nuance], ["translate", translate], ["review", recording("review")], ["typos", recording("typos")]]) {
   test(`${name}: the conversation read back from disk is the conversation seen live`, () => {
     const live = foldMessages(frames)
     const back = foldStored(stored(name), keptTurn(frames), live.sessionId)
