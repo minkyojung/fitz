@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite"
 
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { expect, test, type APIRequestContext, type Page, type WebSocketRoute } from "@playwright/test"
 
 // The book has two writers: this editor and another (the translation agent, another window). Here the other writer
 // is the test calling the server directly, through the same updateSegment the agent's set_translation uses.
@@ -94,4 +94,24 @@ test("a comment Claude left says so in the notes panel; the translator's does no
     db.prepare("DELETE FROM comment WHERE id IN (?, ?)").run(mine, claudes)
     db.close()
   }
+})
+
+test("when the live connection drops, the editor reconnects by itself and shows what changed meanwhile", async ({ page, request }) => {
+  // every /live connection the page makes passes through here to the real server, so the test can drop one
+  const connections: WebSocketRoute[] = []
+  await page.routeWebSocket("**/live", (ws) => { ws.connectToServer(); connections.push(ws) })
+  const { pair, id } = await openChapter(page)
+  await expect.poll(() => connections.length).toBe(1)
+
+  await connections[0].close()
+  await otherWrites(request, id, "끊긴 사이에 쓴 번역")
+  expect(connections.length, "written while the page had no connection: the change cannot reach it as an event").toBe(1)
+
+  await expect.poll(() => connections.length).toBe(2)  // it came back by itself
+  await expect(pair.locator("[data-target]")).toContainText("끊긴 사이에 쓴 번역")  // and caught up on what it missed
+
+  await otherWrites(request, id, "다시 붙은 뒤의 번역")
+  await expect(pair.locator("[data-target]")).toContainText("다시 붙은 뒤의 번역")
+  await undoOnServer(request)
+  await undoOnServer(request)
 })
