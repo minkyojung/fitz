@@ -277,6 +277,10 @@ agent_turn(session_id TEXT, user_uuid TEXT, reason TEXT, origin TEXT, ms INTEGER
 
 **Octave보다 하나 더: 세션 파일 사본.** 번역은 몇 달 가는 일이라 Claude Code의 30일 청소에 대화를 잃을 수 있다. 턴이 끝날 때 `<세션 id>.jsonl`을 `~/.fitz/sessions/`로 통째 복사하고, `resume` 전에 원본이 없으면 되돌려 놓는다(`[sessions]`의 "Move the session file", 하네스에서 되살린 파일로 resume되는 것을 측정). 파일을 해석하지 않고 복사만 한다. SDK의 `sessionStore`는 임시 `CLAUDE_CONFIG_DIR`로 resume해 Keychain의 Max 로그인을 찾는지 미측정이라 지금은 쓰지 않는다.
 
+**2026-10-18 완료**(커밋 다섯: 표 둘 / 서버가 대화·턴 기록 / 목록과 다시 열기(`foldStored`) / 세션 파일 사본 / 터미널 `--list`·`--open`). 작업 DB 백업 `out/book.db.bak-2026-10-18-before-conversations` 후 마이그레이션. 서버 테스트 134: 녹화 둘 모두 "디스크에서 다시 읽은 대화 = 살아서 본 대화"(질문·도구 호출과 결과·생각·답·턴), 재시작 뒤 같은 세션으로 resume, 사본 저장·복원. 테스트와 녹화는 사본 기능에 가짜를 넣어 홈 폴더를 건드리지 않는다.
+실제로 확인(책 사본, Haiku): 질문 → `--list`에 Claude Code가 지은 제목("¶36 'send for' 뜻") → 서버 재시작 → `--open`으로 지난 내용이 그려지고 "처음에 뭘 물었지?"에 첫 질문을 답함 → Claude Code의 원본 파일을 치운 뒤(30일 청소 흉내) 재시작·`--open` → 서버가 사본을 되돌려 놓고("restored the kept copy") "몇 번 물었지?"에 3. 확인이 만든 세션·사본은 지웠다.
+측정된 사실: `result.user_message_uuid`가 그 턴을 시작한 메시지의 uuid이고 세션 파일의 그 메시지 uuid와 같다(턴 기록의 열쇠). `getSessionMessages`의 도구 결과에는 구조화된 결과가 없고 모델이 읽은 글만 있다 — fitz 도구는 JSON으로 답하므로 다시 객체로 읽는다. 파이프 입력의 터미널 대화는 입력이 답보다 먼저 끝나므로 닫힌 입력에 프롬프트를 띄우지 않는다.
+
 ## 14. 되돌리기 — 쓰는 쪽이 둘일 때 (설계)
 
 지금 ⌘Z는 `ops`의 마지막 행을 되돌린다: Claude가 방금 쓴 것을 번역자의 ⌘Z가 되돌릴 수 있다.
