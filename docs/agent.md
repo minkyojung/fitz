@@ -106,10 +106,35 @@ app/src/
 | 작업 | 입력 | 도구 | 끝 |
 |---|---|---|---|
 | **번역** | 세그먼트 id들(선택 단락 또는 장) | 읽기 + `set_translation` (+ 용어 등록) | Stop hook이 `checks`를 돌린다 → 실패분을 되돌려 보낸다(TRIES = 3) → 통과해도 `draft`. 사람이 reviewed |
-| **리뷰** | 번역된 단락 id들 | 읽기만 | `outputFormat`: `{ findings: [{ segmentId, severity, quote, issue, suggestion }] }` → 댓글 후보 카드, 사람이 "Add as comment" |
-| **오탈자** | 장 | 읽기만 | `outputFormat`: `{ fixes: [{ segmentId, from, to, reason }] }` → 기존 SpellMark diff 모양으로 표시, 클릭 수락(`updateSegment`) |
+| **리뷰** | 장(번역된 단락) | 읽기만 | `outputFormat` → 제안 목록 → 번역문에 제안 표시 + 패널 카드, 사람이 Accept / Dismiss / Keep as comment |
+| **오탈자** | 장 | 읽기만 | `outputFormat` → 제안 목록 → 원문에 맞춤법 표시와 같은 모양 + 패널 카드, 사람이 Accept / Dismiss |
 
 자유 질문("이 단락 뉘앙스는?")은 어느 스레드에서나 가능하다. 도구는 읽기만.
+
+### 4.1 리뷰·오탈자의 화면 — 익숙한 제품을 따른다 (7단계 설계, 2026-10-18)
+
+갤러리: `?gallery&suggestions`(`app/src/gallery/SuggestionsGallery.tsx`, 예문은 『위대한 개츠비』).
+
+| 기능 | 닮은 것 | 화면 | 사람이 하는 것 |
+|---|---|---|---|
+| 리뷰 | 구글 독스 제안 모드 + Grammarly 목록 | 번역문의 그 구절에 취소선 + 초록 제안(맞춤법 표시와 같은 diff 표현), 패널 **Suggestions** 탭에 카드(¶, 중요도, 구절 → 제안, 이유) | **Accept**(번역문이 바뀜, ⌘Z) / **Dismiss** / **Keep as comment**(못 정한 것을 Claude의 댓글로) |
+| 오탈자 | 워드의 맞춤법 밑줄 | 원문에 지금의 맞춤법 표시와 **같은 모양**. 사전이 찾는 것(없는 단어)과 Claude가 찾는 것(문맥상 틀린 실제 단어: reverse→reserve, boars→bores)이 나란히 | **Accept** / **Dismiss**. 확인은 검수 화면의 스캔과 대조해서(Claude는 스캔을 보지 않는다) |
+
+원칙: Claude는 찾기만 한다(두 작업에는 쓰기 도구가 없다). 책이 바뀌는 것은 사람이 누를 때뿐이고, 그 쓰기는 사람의 것(`actor = translator`)이다. 패널 맨 위 한 줄이 시작·진행·끝을 보인다("Review this chapter with Claude" → "Claude is reading the chapter…" → "3 suggestions").
+
+### 4.2 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 파일 | 확인 |
+|---|---|---|---|
+| 0 | **먼저 잰다**: `outputFormat`이 `tools: []`·streaming input과 함께 도는가(구조화 출력이 지운 내장 도구에 기대지 않는가), `structured_output`이 어디에 오고 세션 파일에 남는가 | 임시 스크립트(Haiku) | 결과를 §8에 기록, 아래 3의 저장 방식을 정한다 |
+| 1 | 작업 정의: 두 작업의 지시문, 범위(장)로 만든 첫 메시지, 결과의 JSON 스키마(zod → draft-07) | `server/agent/tasks.mjs` 새로 | 순수 테스트 |
+| 2 | 작업별 세션: 작업 대화는 읽기 도구만 + `outputFormat` + 상한(`maxTurns`, `maxBudgetUsd`). `start { convId, task, chapterId }` | `session.mjs`, `tools.mjs`(쓰기 도구를 뺀 서버), `host.mjs`, `protocol.mjs` | 스텁 세션 테스트 |
+| 3 | 제안 저장: `agent_suggestion`(대화, 종류, 단락, 쪽(원문/번역), 구절, 제안, 이유, 중요도, 그때의 단락 버전, 상태 open·accepted·dismissed·commented). 결과가 오면 구절이 그 글에 정확히 한 번 있는 것만 저장 | `db/schema.sql`, `pipeline/migrate.py`, `server/agent/suggestions.mjs` 새로 | 순수 테스트, 작업 DB 백업 후 마이그레이션 |
+| 4 | 제안 다루기: Accept = 지금 글에서 구절을 다시 찾아(없으면 "글이 바뀌어 적용할 수 없음") `updateSegment`로 바꾼다(번역자의 쓰기, ⌘Z) / Dismiss / Keep as comment = `addComment(author: agent)`. 제안이 바뀌면 `/live`로 알린다 | `suggestions.mjs`, `index.mjs`(경로 셋 + 목록), `live.mjs` | 서버 테스트 |
+| 5 | 진짜로 한 번: 두 작업을 Gatsby로 녹화(`record.mjs --task`), `pnpm test:real`에 "스키마에 맞고 구절이 글에 있는 제안이 온다" | `record.mjs`, `real.test.mjs`, `fixtures/` | 실측 기록 |
+| 6 | 화면의 데이터: 제안 타입·경로, `/live`로 작업 시작(보내기 + 대기열은 이때 `lib/live.ts`에) | `app/src/data/api.ts`, `http.ts`, `lib/live.ts`, `useBook.ts` | 단위 테스트 |
+| 7 | 화면: 패널 **Suggestions** 탭(시작 줄, 카드), 번역문·원문의 제안 표시(맞춤법 표시 코드를 함께 쓴다) | `features/suggestions/` 새로, `ReviewPanel.tsx`, `PairRow.tsx`, `SourceText.tsx` | e2e: 제안을 e2e DB에 넣고 Accept·Dismiss·Keep·⌘Z·"글이 바뀐 제안" |
+| 8 | README, 이 문서에 결과 | | |
 
 ## 5. 검증 (`checks.mjs`)
 

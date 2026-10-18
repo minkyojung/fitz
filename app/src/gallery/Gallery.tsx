@@ -5,6 +5,7 @@ import { BilingualGallery } from "./BilingualGallery"
 import { NotesGallery } from "./NotesGallery"
 import { SchemeGallery } from "./SchemeGallery"
 import { AuthorNoteGallery } from "./AuthorNoteGallery"
+import { SuggestionsGallery } from "./SuggestionsGallery"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -49,6 +50,7 @@ function Row({ title, ocr, text }: (typeof CASES)[number]) {
 }
 
 export function Gallery() {
+  if (location.search.includes("suggestions")) return <SuggestionsGallery />
   if (location.search.includes("spell")) return <SpellGallery />
   if (location.search.includes("authornote")) return <AuthorNoteGallery />
   if (location.search.includes("scheme")) return <SchemeGallery />
