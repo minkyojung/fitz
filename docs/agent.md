@@ -378,7 +378,7 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 
 | 정한 것 | 왜 |
 |---|---|
-| 화면은 서버의 `fold.mjs`를 그대로 쓴다(별칭 `@agent`, 타입은 `fold.d.mts`) | 대화가 무엇인지는 한 곳에서. 중간에 연 창도 서버와 같은 상태(하네스 원칙) |
+| 화면은 서버의 `fold.mjs`를 그대로 쓴다(상대 경로로 가져오고 타입은 옆의 `fold.d.mts`, Vite 개발 서버는 그 파일만 허용) | 대화가 무엇인지는 한 곳에서. 중간에 연 창도 서버와 같은 상태(하네스 원칙) |
 | Suggestions는 Claude 탭 머리의 한 줄로 접힌다. 머리 = 대화 메뉴(지난 대화, New conversation) + Suggestions | 탭 수를 늘리지 않는다. Claude가 한 일은 한 곳에 |
 | 탭은 빈 새 대화로 열린다. 지난 대화는 메뉴에서. 목록에는 자유 대화만(작업 대화는 제안으로 보인다) | Claude.ai와 같다. 예측 가능 |
 | 모델·강도는 새 대화의 첫 메시지 전에 고른다. 그 뒤에는 보이기만 | 대화 하나 = 세션 하나 = 모델 하나(지금의 host). 도중 변경(SDK `setModel`)은 나중 |
@@ -389,7 +389,7 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 
 | # | 무엇 | 파일 | 확인 |
 |---|---|---|---|
-| 1 | 화면이 서버와 같은 fold를 쓴다 | `server/agent/fold.d.mts`, `app/vite.config.ts`, `app/tsconfig*.json`, `app/src/lib/fold.test.ts` | 녹화 넷을 화면 쪽에서 접어 서버와 같은지 |
+| 1 ✓ | 화면이 서버와 같은 fold를 쓴다 | `server/agent/fold.d.mts`, `app/vite.config.ts`, `app/tsconfig*.json`, `app/src/lib/fold.test.ts` | 녹화 넷을 화면 쪽에서 접어 서버와 같은지 |
 | 2 | 대화 데이터: `/live`로 start·open·send·stop·answer·list, 스냅숏 + 메시지 fold + 허락 대기, 다시 붙으면 다시 따라감 | `api.ts`, `http.ts`, `lib/conversation.ts`(+test), `data/useConversation.ts` | 단위 |
 | 3 | Claude 탭 화면(Suggestions를 머리로), Streamdown | `features/agent/*`, `ReviewPanel.tsx`, `App.tsx` | e2e: 녹화 프레임을 `/live`로 흘려 대화·허락·Stop |
 | 4 | Ask Claude: 선택 툴바 + ⌘L, 구절이 입력에 붙고 보낼 때 단락 id와 함께 | `FloatingToolbar.tsx`, `lib/keymap.ts`, `features/agent/*` | e2e |
