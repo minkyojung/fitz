@@ -20,7 +20,7 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 |---|---|---|
 | `tools` | `[]` | 내장 도구 제거. 원칙 2 |
 | `mcpServers` | `{ fitz: createSdkMcpServer({ name: "fitz", tools }) }` | 앱 프로세스 안에서 도는 MCP. 도구 이름은 `mcp__fitz__<name>` |
-| `allowedTools` | 읽기 도구 7개 | 읽기는 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
+| `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search` | 읽기는 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
 | `canUseTool` | 페이지에 승인 카드 | 쓰기 도구와 `AskUserQuestion`. "이 작업 동안 허용"은 앱이 기억 |
 | `permissionMode` | `"default"` | bypass가 아니다. 쓰기는 물어야 한다 |
 | `systemPrompt` | 문자열 | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체 |
@@ -34,7 +34,7 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 | `maxBudgetUsd`, `maxTurns` | 작업마다 | 상한 |
 | `model`, `effort`, `thinking` | 명시 | 번역 `opus`/`medium`, 리뷰·오탈자 `sonnet`/`low`, `{ type: "adaptive" }` |
 | `env` | `{ ...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" }` | `env`를 주면 통째로 바뀌므로 펼쳐서. `USER`가 없으면 로그인을 못 찾는다 |
-| `tool()`의 `extras` | `{ annotations: { readOnlyHint: true }, alwaysLoad: true }` | 읽기 도구는 병렬로 돈다. `alwaysLoad`로 `ToolSearch` 왕복을 없앤다 |
+| `tool()`의 `extras` / `createSdkMcpServer` | 읽기에 `{ annotations: { readOnlyHint: true } }`, 서버에 `alwaysLoad: true` | 읽기 도구는 병렬로 돈다. `alwaysLoad`로 `ToolSearch` 왕복을 없앤다 |
 
 **인증.** SDK가 띄우는 바이너리는 환경에 `ANTHROPIC_API_KEY`가 있으면 묻지 않고 그 키를 쓰고, 없으면 Keychain의 Claude 로그인(이 Mac: Max)을 쓴다. 서버는 시작 시 `claude auth status`로 어느 자격으로 도는지 로그에 밝힌다. 약관(code.claude.com/docs/en/legal-and-compliance): 수정하지 않은 바이너리에 본인 구독으로 직접 로그인하는 것은 허용되며, Pro/Max 한도는 "Claude Code와 Agent SDK의 통상적 개인 사용"을 전제한다. 금지되는 것은 개발자가 자기 제품의 사용자들에게 claude.ai 로그인을 제공하거나 사용자 대신 구독으로 중계하는 것이다. fitz는 단일 사용자 로컬 도구다.
 
@@ -45,7 +45,7 @@ server/
   index.mjs             기존 JSON 라우트 그대로 + WebSocket /agent 하나
   commands.mjs          COMMANDS · execute · undo · redo  — 그대로. 에이전트의 모든 쓰기가 지난다
   agent/
-    tools.mjs           MCP 도구 11개 = 기존 routes/commands의 얇은 포장
+    tools.mjs           MCP 도구 8개(읽기 4, 쓰기 4) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
     checks.mjs          앱이 돌리는 번역 검증. 순수 함수
@@ -57,17 +57,20 @@ app/src/
 
 ## 3. 도구 (MCP 서버 `fitz`)
 
-읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음:
+도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 8개: 읽기 4, 쓰기 4. Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
 
-| 도구 | 인자 | 돌려주는 것 |
-|---|---|---|
-| `get_book` | — | `{ id, title, author }` |
-| `list_chapters` | — | `Chapter[]` (`listChapters` 라우트와 동일) |
-| `get_segments` | `chapterId` 또는 `ids[]` | `{ id, idx, kind, pageStart, sourceText, targetText, status }[]` — `boxes` 없음 |
-| `get_context` | `segmentId, before=3, after=3` | 앞뒤 단락 원문 + 이 단락 원문·번역문 + 걸린 용어 + 앵커된 저자 주 |
-| `list_glossary` | — | `{ term, translation, aliases, kind }[]` |
-| `list_notes` | `segmentId` | 저자 주·역주·댓글 |
-| `search` | `query` | `search()` 결과 |
+읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음, 병렬로 돈다:
+
+| 도구 | 하는 일 | 인자 | 돌려주는 것 | 기존 코드 |
+|---|---|---|---|---|
+| `book` | 책과 차례 | — | `{ id, title, author, chapters: [{ id, idx, title, startPage, segmentCount, confirmedCount }] }` | `getBook`, `listChapters` |
+| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다 | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, updatedAt, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
+| `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
+| `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로) | `query` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
+
+- `read`가 주석·용어를 동봉하므로 단락 하나를 번역하는 데 읽기 호출은 1번이다.
+- 평문만 준다. `source_doc`/`target_doc`(JSON), `ocr_text`, `boxes`(좌표), `image_path`, `source_pdf`는 어떤 도구 결과에도 없다.
+- `updatedAt`은 쓰기 도구의 `expectUpdatedAt`으로 되돌려 받는다.
 
 쓰기 — `canUseTool`로 묻는다. 전부 `execute()`:
 
@@ -78,7 +81,8 @@ app/src/
 | `add_comment(segmentId, side, body, quote?)` | `addComment` | `quote`가 있으면 `makeAnchor`로 앵커 |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
 
-- 결과는 `structuredContent`로 돌려준다(모델은 JSON을 받는다). 모양은 `segRow`·`noteRow`·`commentRow`에서 `boxes`·경로만 뺀 것 — 화면 타입과 같다.
+- 쓰기 넷을 하나로 합치지 않는다. 본문을 바꾸는 것, 책 전체 표기를 바꾸는 것, 출판되지 않는 메모, 출판되는 역주는 승인 카드에서 무게가 다르다.
+- 결과는 `structuredContent`(객체)로 돌려준다. 모델은 그 JSON을 받는다.
 - 오류는 던지지 않고 `isError: true`로 모델이 읽을 문장을 준다.
 - `pmDoc`(평문 → 문단 1개 doc)은 이미 있다. 여러 블록은 줄바꿈으로 가른다(`docText`의 역).
 
@@ -152,7 +156,7 @@ Server → snapshot { convId, state }          — 열 때 한 번
 | # | 조각 | 사람이 보는 것 | 검증 | 결과 |
 |---|---|---|---|---|
 | 1 | 이 문서 + 의존성 | — | `pnpm test` 48 통과, SDK import, 바이너리 2.1.302 | 2026-10-18 완료 |
-| 2 | `agent/tools.mjs` 읽기 도구 7 + 테스트 | — | 금지 필드 부재, `segOut`과 동일 | |
+| 2 | `agent/tools.mjs` 읽기 도구 4 + 테스트 | — | 금지 필드 부재, 기존 함수와 같은 값 | |
 | 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `test/fixtures/` | |
 | 4 | WS 라우트 + `protocol.mjs` + 페이지 Agent 탭 | 패널에서 질문, 스트리밍, Stop, 비용 | e2e(가짜 프레임) | |
 | 5 | 쓰기 도구 4 + 승인 카드 | 번역 작업, 승인, ⌘Z로 되돌림 | e2e | |
