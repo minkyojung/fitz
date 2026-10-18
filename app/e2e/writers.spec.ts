@@ -42,6 +42,7 @@ test("⌘Enter while another writer changed the paragraph: nothing is overwritte
   // recovering is the translator's choice: it opens what they wrote, and saving it now is deliberate
   await unsaved.getByRole("button", { name: "Recover" }).click()
   await expect(pair.getByRole("textbox", { name: "Edit translation" })).toContainText("내가 쓰던 번역")
+  await expect(pair.getByRole("textbox", { name: "Edit translation" })).toBeFocused()
   await page.keyboard.press("Meta+Enter")
   await expect(pair.locator("[data-target]")).toContainText("내가 쓰던 번역")
   await expect(pair.locator("[data-unsaved]")).toHaveCount(0)

@@ -1,4 +1,5 @@
-import type { Api } from "./api"
+import type { Api, BookChange } from "./api"
+import { createLive } from "@/lib/live"
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4800"
 
@@ -61,11 +62,12 @@ export const api: Api = {
   exportSummary: (input) => call("exportSummary", input),
   exportDocx: (input) => callBlob("exportDocx", input),
   watchChanges: (onChange) => {
-    // server-sent events: the browser reconnects by itself; after a reconnect, changes may have been missed
-    const source = new EventSource(`${BASE}/api/events`)
-    let opened = false
-    source.addEventListener("open", () => { if (opened) onChange({ kind: "resync" }); opened = true })
-    source.addEventListener("change", (e) => onChange(JSON.parse((e as MessageEvent).data)))
-    return () => source.close()
+    // the page's live connection carries the book's changes; after it reconnects, some may have been missed
+    const live = createLive(`${BASE.replace(/^http/, "ws")}/live`)
+    const stop = live.subscribe((e) => {
+      if (e.type === "resync") onChange({ kind: "resync" })
+      else if (e.type === "changed") onChange(e as unknown as BookChange)
+    })
+    return () => { stop(); live.close() }
   },
 }
