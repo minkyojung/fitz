@@ -1,3 +1,5 @@
+import { DatabaseSync } from "node:sqlite"
+
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 
 // The book has two writers: this editor and another (the translation agent, another window). Here the other writer
@@ -64,4 +66,32 @@ test("saving with Tab after another writer changed the paragraph keeps your text
   await pair.locator("[data-unsaved]").getByRole("button", { name: "Discard" }).click()
   await expect(pair.locator("[data-unsaved]")).toHaveCount(0)
   await undoOnServer(request)
+})
+
+// The agent's comments come in only through its fitz tool (there is no HTTP door for "agent"), so this test puts one
+// straight into the e2e copy of the book (playwright.config.ts) to see how the editor shows it, and takes it out after.
+const E2E_DB = "/tmp/fitz-e2e.db"
+
+test("a comment Claude left says so in the notes panel; the translator's does not", async ({ page }) => {
+  const { id } = await openChapter(page)
+  const db = new DatabaseSync(E2E_DB)
+  const insert = db.prepare("INSERT INTO comment(segment_id, side, body, author) VALUES (?, 'source', ?, ?)")
+  const mine = Number(insert.run(id, "번역자의 메모", "translator").lastInsertRowid)
+  const claudes = Number(insert.run(id, "Claude가 남긴 메모", "agent").lastInsertRowid)
+  try {
+    await page.reload()
+    await page.getByRole("button", { name: /18: / }).click()
+    await page.getByRole("tab", { name: "Translate" }).click()
+    await page.locator(`[data-pair="${id}"]`).click()
+    await page.getByRole("tab", { name: /Notes/ }).click()
+    const claude = page.locator(`[data-panel-comment="${claudes}"]`)
+    await expect(claude).toContainText("Claude가 남긴 메모")
+    await expect(claude.locator("[data-author=agent]")).toHaveText("Claude")
+    const translator = page.locator(`[data-panel-comment="${mine}"]`)
+    await expect(translator).toContainText("번역자의 메모")
+    await expect(translator.locator("[data-author]")).toHaveCount(0)
+  } finally {
+    db.prepare("DELETE FROM comment WHERE id IN (?, ?)").run(mine, claudes)
+    db.close()
+  }
 })
