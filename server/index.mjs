@@ -7,7 +7,7 @@ import { resolve, basename } from "node:path"
 import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
-import { attachAgentSocket } from "./agent/socket.mjs"
+import { attachLive } from "./live.mjs"
 import { serveChanges } from "./events.mjs"
 import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
@@ -118,13 +118,14 @@ const server = createServer(async (req, res) => {
   }
 })
 
-// the translation agent (docs/agent.md): one socket, the server owns every Claude Code process
+// the translation agent (docs/agent.md): the server owns every Claude Code process; the page's live connection
+// carries its conversations and the book's changes
 const agent = createAgentHost({ db })
-attachAgentSocket(server, agent)
+attachLive(server, { db, host: agent })
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { agent.close(); process.exit(0) })
 
 server.listen(PORT, () => {
   console.log(`api  http://localhost:${PORT}/api/*   db=${DB}`)
   // an API key in the environment is used without asking, over the Claude login
-  console.log(`agent ws://localhost:${PORT}/agent   ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY from the environment" : "the Claude login on this Mac"}`)
+  console.log(`live  ws://localhost:${PORT}/live    agent on ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY from the environment" : "the Claude login on this Mac"}`)
 })

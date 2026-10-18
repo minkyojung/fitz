@@ -1,4 +1,4 @@
-// Talk to the translation agent from a terminal, through the same /agent socket and the same fold the page uses.
+// Talk to the translation agent from a terminal, through the same /live socket and the same fold the page uses.
 // usage: node server/agent/chat.mjs [--port 4800] [--model claude-opus-5-5] [--effort medium]
 // Start the server first (node server/index.mjs). Type a message and Enter. When Claude wants to write, the change
 // is shown and the next line answers it: y (allow), a (allow this kind of write for the rest of the conversation),
@@ -21,7 +21,7 @@ const bold = (s) => `\x1b[1m${s}\x1b[0m`
 const out = (s) => process.stdout.write(s)
 
 const convId = randomUUID()
-const ws = new WebSocket(`ws://localhost:${arg("port", 4800)}/agent`)
+const ws = new WebSocket(`ws://localhost:${arg("port", 4800)}/live`)
 let rl = null       // reading input starts once the socket is open
 let state = emptyConversation()
 let shown = 0       // characters of the block being written that are already on screen
@@ -89,6 +89,7 @@ ws.on("message", (raw) => {
     else rl?.setPrompt("\n› ")
     return
   }
+  if (event.type !== "snapshot" && event.type !== "message") return  // the book's changes and anything newer are not the conversation
   if (event.type === "snapshot") { asks = event.asks ?? []; if (asks.length) showAsk(asks[0]) }
   const prev = state
   state = event.type === "snapshot" ? event.state : applyMessage(state, event.message)

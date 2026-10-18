@@ -1,4 +1,4 @@
-// What the page and the server say to each other over the /agent socket (docs/agent.md §7). A closed set:
+// What the page and the server say to each other over the /live socket (docs/agent.md §7, §15). A closed set:
 // a message of any other shape is refused. Everything from the page is checked here — it came over a socket.
 //
 // page → server
@@ -12,6 +12,7 @@
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
 //   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)
+//   changed  { opId, name, segmentIds, kind, actor }  the book changed (any writer; kind: do | undo | redo)
 //   error    { convId?, message }
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"]
