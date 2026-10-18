@@ -149,11 +149,11 @@ export interface OpRecord extends OpSummary {
 /** Note scheme for export: A = author's notes as endnotes, translator's notes as * footnotes;
  *  B = one numbered series of footnotes; C = one series of endnotes (B and C tag translator's notes "—옮긴이"). */
 export type ExportScheme = "A" | "B" | "C"
-export interface ExportWarning { kind: "untranslated" | "unplaced" | "lostAnchor"; chapterId: number; segmentId: number; idx: number; noteId?: number }
+export interface ExportWarning { kind: "untranslated" | "unplaced" | "untranslatedNote" | "lostAnchor"; chapterId: number; segmentId: number; idx: number; noteId?: number }
 export interface ExportSummary {
   chapters: { id: number; idx: number; title: string; segments: number; untranslated: number; unplaced: number; chars: number }[]
   warnings: ExportWarning[]
-  stats: { chapters: number; segments: number; untranslated: number; authorNotes: number; translatorNotes: number; unplaced: number; chars: number }
+  stats: { chapters: number; segments: number; untranslated: number; authorNotes: number; translatorNotes: number; unplaced: number; untranslatedNotes: number; chars: number }
   filename: string
 }
 

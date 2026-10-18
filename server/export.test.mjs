@@ -74,7 +74,8 @@ test("an untranslated paragraph carries the source text with its author's note w
 test("an opening heading is the chapter title (it is the translated one); stats and chapter selection", () => {
   const all = buildManuscript(fixture())
   assert.deepEqual(all.chapters.map((c) => [c.title, c.titleFromHeading]), [["Selma", true], ["Ripes", false]])
-  assert.deepEqual(all.stats, { chapters: 2, segments: 4, untranslated: 1, authorNotes: 3, translatorNotes: 1, unplaced: 1, chars: 2 + 35 + 7 })
+  assert.deepEqual(all.stats, { chapters: 2, segments: 4, untranslated: 1, authorNotes: 3, translatorNotes: 1, unplaced: 1, untranslatedNotes: 2, chars: 2 + 35 + 7 })
+  assert.deepEqual(all.warnings.filter((w) => w.kind === "untranslatedNote").map((w) => w.noteId), [1, 4]) // note 2 has a Korean body
   const one = buildManuscript(fixture(), { chapterIds: [2] })
   assert.equal(one.chapters.length, 1); assert.equal(one.chapters[0].id, 2); assert.equal(one.warnings.length, 0)
   assert.equal(exportFilename(all, new Date("2026-10-17T03:00:00Z")), "The_Fish_1-2_2026-10-17.docx")

@@ -20,6 +20,7 @@ export const SCHEMES: { value: ExportScheme; label: string; blurb: string }[] = 
 const WARNING_LABEL: Record<ExportWarning["kind"], string> = {
   untranslated: "Untranslated paragraphs (the English is exported, highlighted)",
   unplaced: "Author's notes not placed (the number sits at the end of the paragraph)",
+  untranslatedNote: "Author's notes not translated (exported in English)",
   lostAnchor: "Notes whose anchor no longer matches (placed at the end of the paragraph)",
 }
 
@@ -59,7 +60,7 @@ export function ExportView({ chapters }: Props) {
     }
   }
   const byChapter = new Map(summary?.chapters.map((c) => [c.id, c]) ?? [])
-  const grouped = (["untranslated", "unplaced", "lostAnchor"] as const).map((kind) => ({ kind, items: summary?.warnings.filter((w) => w.kind === kind) ?? [] })).filter((g) => g.items.length)
+  const grouped = (["untranslated", "unplaced", "untranslatedNote", "lostAnchor"] as const).map((kind) => ({ kind, items: summary?.warnings.filter((w) => w.kind === kind) ?? [] })).filter((g) => g.items.length)
   const titleOf = (id: number) => chapters.find((c) => c.id === id)?.title ?? ""
 
   return (
@@ -100,7 +101,7 @@ export function ExportView({ chapters }: Props) {
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 tabular-nums">
               <dt className="text-muted-foreground">Chapters</dt><dd>{summary.stats.chapters}</dd>
               <dt className="text-muted-foreground">Paragraphs</dt><dd>{summary.stats.segments} <span className="text-muted-foreground">({summary.stats.untranslated} untranslated)</span></dd>
-              <dt className="text-muted-foreground">Notes</dt><dd>{summary.stats.authorNotes} author's, {summary.stats.translatorNotes} translator's <span className="text-muted-foreground">({summary.stats.unplaced} not placed)</span></dd>
+              <dt className="text-muted-foreground">Notes</dt><dd>{summary.stats.authorNotes} author's, {summary.stats.translatorNotes} translator's <span className="text-muted-foreground">({summary.stats.unplaced} not placed, {summary.stats.untranslatedNotes} untranslated)</span></dd>
               <dt className="text-muted-foreground">Length</dt><dd>{formatSheets(Math.round((summary.stats.chars / SHEET_CHARS) * 10) / 10)} <span className="text-muted-foreground">({summary.stats.chars.toLocaleString("en-US")} characters, translated text only)</span></dd>
               <dt className="text-muted-foreground">File</dt><dd className="font-mono">{summary.filename}</dd>
             </dl>

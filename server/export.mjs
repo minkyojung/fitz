@@ -69,7 +69,7 @@ export function buildManuscript(db, { chapterIds, scheme = "A" } = {}) {
   const segStmt = db.prepare("SELECT * FROM segment WHERE chapter_id = ? ORDER BY idx")
   const noteStmt = db.prepare("SELECT * FROM note WHERE segment_id = ? ORDER BY id")
   const warnings = []
-  const stats = { chapters: chapterRows.length, segments: 0, untranslated: 0, authorNotes: 0, translatorNotes: 0, unplaced: 0, chars: 0 }
+  const stats = { chapters: chapterRows.length, segments: 0, untranslated: 0, authorNotes: 0, translatorNotes: 0, unplaced: 0, untranslatedNotes: 0, chars: 0 }
   const tag = (kind) => (scheme !== "A" && kind === "translator" ? TRANSLATOR_TAG : "")
 
   const chapters = chapterRows.map((c) => {
@@ -85,6 +85,7 @@ export function buildManuscript(db, { chapterIds, scheme = "A" } = {}) {
       const placed = new Map() // block → notes
       for (const n of noteStmt.all(s.id)) {
         if (n.kind === "author") stats.authorNotes++; else stats.translatorNotes++
+        if (n.kind === "author" && !(n.body_target ?? "").trim()) { warnings.push({ kind: "untranslatedNote", chapterId: c.id, segmentId: s.id, idx: s.idx, noteId: n.id }); stats.untranslatedNotes++ }
         const body = (n.kind === "author" ? n.body_target || n.body_source : n.body_target) ?? ""
         const note = { id: n.id, kind: n.kind, body: body + tag(n.kind), lang: n.kind === "author" && !n.body_target ? "en" : "ko" }
         // where the reference goes: the translator's placement; in an untranslated paragraph the book's own

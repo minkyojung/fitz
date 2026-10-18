@@ -33,12 +33,14 @@ export function NotesTab({ segment: panelSegment, segments, markers, unlinked, o
   const roots = comments.filter((c) => c.parentId === null)
   const notes = segment ? ann.annotations.notes.filter((n) => n.segmentId === segment.id) : []
   const open = ann.annotations.comments.filter((c) => c.parentId === null && !c.resolved).length
+  const untranslated = ann.annotations.notes.filter((n) => n.kind === "author" && !n.bodyTarget.trim()).length
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3 text-xs">
         <span className="font-medium">Notes</span>
         <Badge variant={open ? "secondary" : "outline"} data-open-comments>{open} open</Badge>
+        {untranslated > 0 && <Badge variant="secondary" className="ml-auto" data-untranslated-notes title="Author's notes in this chapter without a translation">{untranslated} note{untranslated > 1 ? "s" : ""} untranslated</Badge>}
       </div>
       <ScrollArea className="min-h-0 flex-1">
         {!segment ? (
@@ -120,14 +122,17 @@ function NoteItem({ note, label }: { note: Note; label?: string }) {
           </Button>
         )}
       </div>
-      {translator ? (
-        <Textarea value={body} lang="ko" aria-label="Note body" rows={2} className="min-h-8 text-xs"
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => setBody(e.target.value)}
-          onBlur={() => { if (body.trim() && body !== note.bodyTarget) void ann.actions.setNote(note.id, { body: body.trim() }) }} />
-      ) : (
-        <p className="reading text-[13px] text-muted-foreground" lang="en">{note.bodySource}</p>
-      )}
+      {!translator && <p className="reading text-[13px] leading-normal text-muted-foreground" lang="en">{note.bodySource}</p>}
+      <Textarea value={body} lang="ko" aria-label={translator ? "Note body" : "Note translation"} rows={2} className="min-h-8 text-xs"
+        placeholder={translator ? "Translator's note…" : "Translation of the note… (exported in English until you do)"}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setBody(e.target.value)}
+        onBlur={() => {
+          const next = body.trim()
+          if (next === note.bodyTarget) return
+          if (translator && !next) return // a translator's note cannot be emptied; delete it instead
+          void ann.actions.setNote(note.id, { body: next })
+        }} />
     </li>
   )
 }
