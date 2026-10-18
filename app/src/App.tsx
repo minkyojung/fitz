@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { IconArrowBackUp, IconArrowForwardUp } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { formatSheets, sheets } from "@/lib/manuscript"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useClaude } from "@/data/useClaude"
+import type { Pointed } from "@/lib/conversation"
 import { useKeymap } from "@/lib/useKeymap"
 import { chapterForPage } from "@/lib/pages"
 import { KEYMAP, chordLabel } from "@/lib/keymap"
@@ -60,7 +61,10 @@ export function App() {
   const [focusMode, setFocusMode] = useState(false)
   const [annSelected, setAnnSelected] = useState<Selected>(null)
   const [textSelection, setTextSelection] = useState<TextSelection | null>(null)
-  const selectionState = useMemo(() => ({ selection: textSelection, publish: setTextSelection }), [textSelection])
+  // the selection as of the last event, for a key pressed before the screen has caught up with it (⌘L)
+  const latestSelection = useRef<TextSelection | null>(null)
+  const publishSelection = useCallback((sel: TextSelection | null) => { latestSelection.current = sel; setTextSelection(sel) }, [])
+  const selectionState = useMemo(() => ({ selection: textSelection, publish: publishSelection }), [textSelection, publishSelection])
   const blockText = useCallback(
     (segmentId: number, side: "source" | "target") => { const sg = book.segments.find((x) => x.id === segmentId); return side === "source" ? sg?.sourceText ?? "" : sg?.targetText ?? "" },
     [book.segments],
@@ -85,6 +89,13 @@ export function App() {
   const [suggestionSelected, setSuggestionSelected] = useState<number | null>(null)
   const selectSuggestion = useCallback((id: number | null) => { setSuggestionSelected(id); if (id !== null) setPanelTab("claude") }, [])
   const claude = useClaude()
+  const [claudeFocusToken, setClaudeFocusToken] = useState(0)
+  /** Ask Claude (the toolbar, ⌘L): the selected words wait in Claude's box, which takes the cursor. */
+  const askClaude = useCallback((pointed: Pointed | null) => {
+    if (pointed) claude.point(pointed)
+    setPanelTab("claude")
+    setClaudeFocusToken((n) => n + 1)
+  }, [claude])
   const suggestionState = useMemo(
     () => ({ suggestions: book.suggestions.filter((s) => s.task === task), selected: suggestionSelected, select: selectSuggestion }),
     [book.suggestions, task, suggestionSelected, selectSuggestion],
@@ -96,7 +107,14 @@ export function App() {
     [speller, userWords, book.segments],
   )
   const openFind = () => { setPanelTab("find"); setFindFocusToken((n) => n + 1) }
-  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleScan }), [commands, book.undo, book.redo])) // eslint-disable-line react-hooks/exhaustive-deps
+  // ⌘L: the words selected (in the text or the open editor) go to Claude; with none, Claude's box takes the cursor
+  const askAboutSelection = () => {
+    const sel = latestSelection.current
+    askClaude(sel ? { segmentId: sel.segmentId, side: sel.side, quote: sel.text } : null)
+    if (sel?.origin === "dom") window.getSelection()?.removeAllRanges()
+    publishSelection(null)
+  }
+  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleScan, askClaude: askAboutSelection }), [commands, book.undo, book.redo, askClaude])) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
 
@@ -106,7 +124,7 @@ export function App() {
     <AnnotationsContext value={annotationState}>
     <SuggestionsContext value={suggestionState}>
     <SelectionContext value={selectionState}>
-    <FloatingToolbar blockText={blockText} />
+    <FloatingToolbar blockText={blockText} onAsk={askClaude} />
     <AppShell
       mode={mode}
       onModeChange={setMode}
@@ -125,7 +143,7 @@ export function App() {
             onRun: () => { if (book.chapterId !== null) book.suggest.run(task, book.chapterId) },
             onDecide: book.suggest.decide,
           }}
-          claude={claude} claudeFocusToken={0}
+          claude={claude} claudeFocusToken={claudeFocusToken}
         />
       }
       status={

@@ -16,6 +16,7 @@ export const KEYMAP: Record<string, Chord[]> = {
   toggleScan: [{ key: "i", meta: true }],
   undo: [{ key: "z", meta: true }],
   redo: [{ key: "z", meta: true, shift: true }],
+  askClaude: [{ key: "l", meta: true }],
 }
 
 export interface KeyLike {

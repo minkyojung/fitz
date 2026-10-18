@@ -134,3 +134,81 @@ test("past conversations are listed (not the review's), and one opens as it was,
   await expect(thread(page)).toContainText("Ask about this chapter")
   await expect(page.getByRole("button", { name: /Opus 5.5 · medium/ })).toBeVisible()
 })
+
+/** Select words inside a block, as a person dragging over them would. */
+async function selectWords(block: import("@playwright/test").Locator, words: string) {
+  await block.evaluate((el, w: string) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.textContent!.indexOf(w)
+      if (i === -1) continue
+      const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length)
+      const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r); return
+    }
+    throw new Error("not found: " + w)
+  }, words)
+}
+
+test("Ask Claude on selected words: they wait in Claude's box, and go before the question with their paragraph", async ({ page }) => {
+  const fake = await fakeServer(page)
+  await page.goto("/")
+  await page.getByRole("button", { name: /18: / }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  const pair = page.locator("[data-pair]").nth(2)
+  const id = Number(await pair.getAttribute("data-pair"))
+  await selectWords(pair.locator("p[lang=en]"), "The isthmus had changed")
+  await page.locator("[data-floating-toolbar]").getByRole("button", { name: /Ask Claude/ }).click()
+
+  await expect(page.getByRole("tab", { name: /Claude/ })).toHaveAttribute("aria-selected", "true")
+  const box = page.getByRole("textbox", { name: "Message to Claude" })
+  await expect(box).toBeFocused()
+  await expect(page.locator("form [data-pointed]")).toContainText(`¶${id}`)
+  await expect(page.locator("form [data-pointed]")).toContainText("“The isthmus had changed”")
+  await box.fill("여기 changed greatly의 뉘앙스는?")
+  await box.press("Enter")
+  expect((await fake.last("send")).text).toBe(`¶${id} (English): “The isthmus had changed”\n\n여기 changed greatly의 뉘앙스는?`)
+  await expect(page.locator("form [data-pointed]")).toHaveCount(0)
+  await expect(thread(page).locator("[data-pointed]")).toContainText("“The isthmus had changed”")  // the sent message shows it too
+})
+
+test("⌘L does the same, from the text and from inside the open editor", async ({ page, request }) => {
+  await fakeServer(page)
+  await page.goto("/")
+  await page.getByRole("button", { name: /18: / }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  const pair = page.locator("[data-pair]").nth(2)
+  await selectWords(pair.locator("p[lang=en]"), "physical changes")
+  await expect(page.locator("[data-floating-toolbar]")).toBeVisible()
+  await page.keyboard.press("Meta+l")
+  await expect(page.locator("form [data-pointed]")).toContainText("“physical changes”")
+  await expect(page.getByRole("textbox", { name: "Message to Claude" })).toBeFocused()
+
+  // what this part writes is taken back even if it fails halfway, so the next test finds the book as it was
+  let saved = false
+  try {
+    await pair.locator("[data-target]").click()
+    const editor = pair.getByRole("textbox", { name: "Edit translation" })
+    await editor.pressSequentially("지협은 크게 변해 있었다")
+    // Select as a person does, by keyboard, once the editor has taken the typing in: just after it gains focus,
+    // ProseMirror puts back its own selection (20 ms later), so a selection made sooner than any hand could is lost.
+    await expect(editor).toHaveText("지협은 크게 변해 있었다")
+    // and wait for the app to have the whole selection, as a person's next key would
+    await expect(async () => {
+      await page.keyboard.press("End")
+      for (let i = 0; i < " 있었다".length; i++) await page.keyboard.press("ArrowLeft")
+      for (let i = 0; i < "크게 변해".length; i++) await page.keyboard.press("Shift+ArrowLeft")
+      await expect(page.locator('[data-floating-toolbar][data-quote="크게 변해"]')).toBeVisible({ timeout: 1000 })
+    }).toPass()
+    await page.keyboard.press("Meta+l")
+    await expect(page.locator("form [data-pointed]")).toContainText("“크게 변해”")
+    // the cursor went to Claude's box, so the editor closed and kept what was written, as any click elsewhere does
+    await expect(pair.locator("[data-target]")).toHaveText("지협은 크게 변해 있었다")
+    saved = true
+  } finally {
+    const target = pair.locator("[data-target]")
+    if (saved || ((await target.count()) && (await target.innerText()).includes("지협은"))) {
+      expect((await request.post("http://localhost:4801/api/undo")).ok()).toBe(true)
+      await expect(target).not.toContainText("지협은")
+    }
+  }
+})

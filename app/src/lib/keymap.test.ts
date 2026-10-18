@@ -43,3 +43,9 @@ test("labels", () => {
   assert.equal(chordLabel({ key: " " }), "Space")
   assert.equal(chordLabel({ key: "ArrowDown" }), "↓")
 })
+
+test("⌘L asks Claude, Ctrl+L too; plain L is a letter", () => {
+  assert.equal(commandFor({ key: "l", metaKey: true, ctrlKey: false, shiftKey: false }), "askClaude")
+  assert.equal(commandFor({ key: "l", metaKey: false, ctrlKey: true, shiftKey: false }), "askClaude")
+  assert.equal(commandFor({ key: "l", metaKey: false, ctrlKey: false, shiftKey: false }), null)
+})

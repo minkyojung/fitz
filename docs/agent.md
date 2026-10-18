@@ -392,5 +392,5 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 | 1 ✓ | 화면이 서버와 같은 fold를 쓴다 | `server/agent/fold.d.mts`, `app/vite.config.ts`, `app/tsconfig*.json`, `app/src/lib/fold.test.ts` | 녹화 넷을 화면 쪽에서 접어 서버와 같은지 |
 | 2 ✓ | 대화 데이터: `/live`로 start·open·send·stop·answer·list, 스냅숏 + 메시지 fold + 허락 대기, 다시 붙으면 다시 따라감 | `api.ts`, `http.ts`, `lib/conversation.ts`(+test), `data/useConversation.ts` | 단위 |
 | 3 ✓ | Claude 탭 화면(Suggestions를 머리로), Streamdown(+ CJK 플러그인: `**"인용"**과`처럼 한국어에 붙은 강조가 그대로 `**`로 남지 않게) | `features/agent/*`, `ReviewPanel.tsx`, `App.tsx` | e2e: 녹화 프레임을 `/live`로 흘려 대화·허락·Stop |
-| 4 | Ask Claude: 선택 툴바 + ⌘L, 구절이 입력에 붙고 보낼 때 단락 id와 함께 | `FloatingToolbar.tsx`, `lib/keymap.ts`, `features/agent/*` | e2e |
+| 4 ✓ | Ask Claude: 선택 툴바 + ⌘L, 구절이 입력에 붙고 보낼 때 단락 id와 함께 | `FloatingToolbar.tsx`, `lib/keymap.ts`, `features/agent/*` | e2e |
 | 5 | 진짜로 한 번(에디터에서), README·이 문서 | | 실측 |

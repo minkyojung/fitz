@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
-import { IconBook2, IconMessage, IconNote, IconPinned } from "@tabler/icons-react"
+import { IconBook2, IconMessage, IconNote, IconPinned, IconSparkles } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
+import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
 import { locateAnchor, makeAnchor } from "@/lib/anchor"
+import type { Pointed } from "@/lib/conversation"
 import { useSpell } from "@/features/review/SpellContext"
 import { useAnnotations } from "@/features/notes/AnnotationsContext"
 import { useSelectionState } from "./SelectionContext"
@@ -12,7 +14,11 @@ import { useDomSelection } from "./useDomSelection"
 
 /** One toolbar for every selection, wherever it was made (read-only block or the open editor).
  *  A shadcn Popover anchored to the selection rectangle; the popover handles placement and collisions. */
-export function FloatingToolbar({ blockText }: { blockText: (segmentId: number, side: "source" | "target") => string }) {
+export function FloatingToolbar({ blockText, onAsk }: {
+  blockText: (segmentId: number, side: "source" | "target") => string
+  /** Ask Claude about the selected words (docs/agent.md §17). */
+  onAsk: (pointed: Pointed) => void
+}) {
   const state = useSelectionState()
   const spell = useSpell()
   const ann = useAnnotations()
@@ -55,6 +61,7 @@ export function FloatingToolbar({ blockText }: { blockText: (segmentId: number, 
         align="center"
         sideOffset={6}
         data-floating-toolbar
+        data-quote={sel.text}
         initialFocus={false}
         finalFocus={false}
         className={compose ? "w-72 gap-1.5 p-2" : "w-auto gap-0 p-0.5"}
@@ -87,6 +94,9 @@ export function FloatingToolbar({ blockText }: { blockText: (segmentId: number, 
                 <IconNote data-icon="inline-start" /> Translator's note
               </Button>
             )}
+            <Button size="xs" variant="ghost" onClick={() => { onAsk({ segmentId: sel.segmentId, side: sel.side, quote: sel.text }); close() }}>
+              <IconSparkles data-icon="inline-start" /> Ask Claude <Kbd className="ml-0.5">⌘L</Kbd>
+            </Button>
             {unplaced.map((n) => (
               <Button key={n.id} size="xs" variant="ghost" title={n.bodySource ?? undefined}
                 onClick={() => { void ann.actions.setNote(n.id, { targetAnchor: anchorOf() }); close() }}>
