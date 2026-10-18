@@ -490,7 +490,7 @@ export const COMMANDS = {
   },
 }
 
-const inTransaction = (db, fn) => {
+export const inTransaction = (db, fn) => {
   db.exec("BEGIN")
   try {
     const out = fn()

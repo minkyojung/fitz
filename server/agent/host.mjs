@@ -12,6 +12,7 @@ import { sessionKeeper } from "./keep.mjs"
 import { addConversation, getConversation, listConversations, recordTurn, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
 import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
+import { saveSuggestions } from "./suggestions.mjs"
 import { TASKS, TASK_NAMES } from "./tasks.mjs"
 import { describeWrite } from "./tools.mjs"
 
@@ -106,6 +107,17 @@ export function createAgentHost({
     }
   }
 
+  /** A task's answer, kept as suggestions for the translator. One that cannot be kept is told, never fatal. */
+  function keepAnswer(convId, conv, message) {
+    if (!conv.task || message.type !== "result" || message.structured_output === undefined) return
+    try {
+      const { skipped } = saveSuggestions(db, { conversationId: convId, task: conv.task, answer: message.structured_output })
+      for (const { suggestion, why } of skipped) console.error(`agent: a ${conv.task} suggestion on ¶${suggestion.segmentId} was not kept: ${why}`)
+    } catch (e) {
+      tell(conv, { type: "error", convId, message: `Claude's suggestions could not be kept: ${e.message}` })
+    }
+  }
+
   /** The session file back in its place if Claude Code swept it, before it is read or resumed. */
   function restore(sessionId) {
     try { if (keep.restore(sessionId)) console.error("agent: restored the kept copy of session", sessionId) }
@@ -128,6 +140,7 @@ export function createAgentHost({
         for await (const message of session.messages) {
           conv.state = applyMessage(conv.state, message)
           keepRecords(convId, conv, message)
+          keepAnswer(convId, conv, message)                // before the result is told: whoever hears it can read them
           tell(conv, { type: "message", convId, message })
         }
       } catch (e) {

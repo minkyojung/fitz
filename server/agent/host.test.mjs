@@ -348,3 +348,34 @@ test("after a restart a task conversation goes on as the same task", async () =>
   const { task, model, resume } = stubs.opened[0].options
   assert.deepEqual({ task, model, resume }, { task: "typos", model: TASKS.typos.model, resume: nuance.find((m) => m.subtype === "init").session_id })
 })
+
+test("a task's answer is kept as suggestions before its result is told; one of another shape is told as an error", async () => {
+  const { host, opened, db, events, follow } = setup()
+  const quote = "쉽게 상처받던"
+  const answer = { suggestions: [{ segmentId: 2, quote, replacement: "여리던", why: "-", level: "low" }] }
+  const answered = (structured_output) => nuance.map((m) => (m.type === "result" ? { ...m, structured_output } : m))
+  const kept = () => db.prepare("SELECT quote FROM agent_suggestion").all().map((r) => r.quote)
+  host.start(ID, { task: "review", chapterId: 1 })
+  let atResult
+  host.open(ID, (e) => { if (e.type === "message" && e.message.type === "result") atResult = kept() })
+  opened[0].feed(...answered(answer))
+  await settle()
+  assert.deepEqual(atResult, [quote])
+
+  host.start(ID2, { task: "review", chapterId: 1 })
+  follow(ID2)
+  opened[1].feed(...answered({ findings: [] }))
+  await settle()
+  assert.match(events.find((e) => e.type === "error").message, /could not be kept: the review answer does not have the agreed shape/)
+  assert.deepEqual(kept(), [quote])
+  assert.equal(events.at(-1).message.type, "result", "the conversation goes on")
+})
+
+test("a free conversation's result keeps no suggestions", async () => {
+  const { host, opened, db } = setup()
+  host.start(ID)
+  host.send(ID, "q")
+  opened[0].feed(...nuance.map((m) => (m.type === "result" ? { ...m, structured_output: { suggestions: [{ segmentId: 2, quote: "쉽게 상처받던", replacement: "x", why: "-", level: "low" }] } } : m)))
+  await settle()
+  assert.equal(db.prepare("SELECT count(*) n FROM agent_suggestion").get().n, 0)
+})
