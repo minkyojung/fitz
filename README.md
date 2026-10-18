@@ -151,6 +151,7 @@ uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
 
 ## 데이터 안전
 - 에디터가 한 번이라도 쓰면 `meta.last_edit_at`이 기록되고, 이후 `pipeline.build`는 그 DB를 덮어쓰지 않는다 (다른 `--out`으로 빌드).
+- 단락마다 `version`이 있어, 저장할 때 내가 본 뒤 다른 쪽(예: 번역 에이전트)이 바꿨으면 덮지 않고 거절한다. 버전 칸이 없는 옛 DB는 서버가 열지 않으니 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 
 ## 번역 에이전트 (개발 중, 터미널에서)

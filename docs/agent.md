@@ -74,20 +74,20 @@ app/src/
 | 도구 | 하는 일 | 인자 | 돌려주는 것 | 기존 코드 |
 |---|---|---|---|---|
 | `book` | 책과 차례 | — | `{ id, title, author, chapters: [{ id, idx, title, startPage, segmentCount, confirmedCount }] }` | `getBook`, `listChapters` |
-| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다 | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, updatedAt, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
+| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다 | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, version, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
 | `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
 | `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로) | `query` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
 
 - `read`가 주석·용어를 동봉하므로 단락 하나를 번역하는 데 읽기 호출은 1번이다.
 - `read`는 한 번에 글 2만 자(`READ_BUDGET`, 원문+번역+주석+댓글)까지 돌려주고, 남으면 `next`(다음 호출의 인자 그대로)를 준다. 단락 하나는 예산을 넘어도 돌려준다. 이유는 §8의 출력 한도.
 - 평문만 준다. `source_doc`/`target_doc`(JSON), `ocr_text`, `boxes`(좌표), `image_path`, `source_pdf`는 어떤 도구 결과에도 없다.
-- `updatedAt`은 쓰기 도구의 `expectUpdatedAt`으로 되돌려 받는다.
+- `version`은 쓰기 도구의 `expectVersion`으로 되돌려 받는다(§12).
 
 쓰기 — `canUseTool`로 묻는다. 전부 `execute()`:
 
 | 도구 | → 명령 | 메모 |
 |---|---|---|
-| `set_translation(segmentId, text, expectUpdatedAt)` | `updateSegment { targetDoc: pmDoc(text) }` | 상태는 서버 규칙대로 `draft`. `updated_at`이 다르면 `isError`(사람이 그사이 고침) |
+| `set_translation(segmentId, text, expectVersion)` | `updateSegment { targetDoc, status: "draft", expectVersion }` | 그사이 단락이 바뀌었으면(번역자가 편집 중일 수 있다) 409로 거절되고 다시 읽는다. 에디터의 저장과 같은 검사(§12) |
 | `set_glossary_term(term, translation, aliases?, kind?)` | `setGlossaryTerm` | |
 | `add_comment(segmentId, side, body, quote?)` | `addComment` | `quote`가 있으면 `makeAnchor`로 앵커 |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
@@ -95,7 +95,7 @@ app/src/
 - `set_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.
 - Claude가 남긴 댓글은 본문 앞에 `Claude: `(`CLAUDE_PREFIX`)를 붙인다. `comment` 테이블에 작성자가 없어서, 붙이지 않으면 번역자의 메모와 구별되지 않는다. 역주는 출판될 글이므로 붙이지 않는다. 작성자 칸을 둘지는 9단계(화면)에서 정한다.
 - `quote`는 그 쪽 글에서 한 번만 나와야 한다. 없거나 두 번 이상이면 거절("더 길게 인용하라").
-- 미리보기(`describeWrite`): `{ summary, segmentId, before, after }`. 번역자는 무엇이 어떻게 바뀌는지 보고 답한다. 미리보기를 만들 수 없는 쓰기(없는 단락 등)는 묻지 않고 바로 거절한다.
+- 미리보기(`describeWrite`): `{ summary, segmentId, before, after }`. 번역자는 무엇이 어떻게 바뀌는지 보고 답한다. 쓰기가 할 검사(버전, 인용구, 빈 글)를 먼저 하므로, 실패할 쓰기는 묻지 않고 바로 거절한다 — 번역자가 허락한 뒤에 실패하는 일이 없다.
 - 쓰기 넷을 하나로 합치지 않는다. 본문을 바꾸는 것, 책 전체 표기를 바꾸는 것, 출판되지 않는 메모, 출판되는 역주는 승인 카드에서 무게가 다르다.
 - 결과는 `structuredContent`(객체)로 돌려준다. 모델은 그 JSON을 받는다.
 - 오류는 던지지 않고 `isError: true`로 모델이 읽을 문장을 준다.
@@ -206,6 +206,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `agent/fixtures/` | 2026-10-18. 서버 테스트 72. Gatsby ¶4 질문(Opus 5.5/medium): `read(ids:[4], around:3)` 1회 → 생각 → 답, 21초, $0.039, 요청 2,265·3,312토큰. 실제 책 ¶36: `read` + `glossary`, 34초, $0.080(격리 전 52초, $0.327). Claude가 앞뒤 단락·사람의 댓글·이미 번역된 단락의 문체를 근거로 답함 |
 | 4 | WS 라우트 + `protocol.mjs` + 서버의 대화 관리(start·send·stop·open) + 터미널 대화 스크립트 `agent/chat.mjs` | 터미널에서 질문하고 답이 흐름 | 스텁 세션으로 프로토콜 테스트, 실제 1회 | 2026-10-18. 서버 테스트 84. 스텁 세션(녹화 메시지를 흘려 넣음)으로: 중간에 붙은 두 번째 페이지도 서버와 같은 상태, 다른 사이트 Origin은 401, 프로세스가 죽으면 다음 메시지에서 같은 세션 id로 resume. 실제: 서버(책 사본)에 `chat.mjs`로 ¶36 질문(Haiku) → `read(ids:[36], around:2)` → 답, 4.2초, $0.001. 6초에 멈춤 → `aborted_streaming`, 같은 대화의 다음 질문에 정상 답. 확인이 만든 세션 2개는 `deleteSession`으로 지움 |
 | 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | 2026-10-18. 서버 테스트 102. 실제 책 사본(Haiku): "¶36을 번역해 넣어줘" → `read`·`glossary` → `set_translation` 미리보기 → 허락 → ¶36 draft, ops에 `updateSegment` 1행, `/api/undo`로 untranslated로 복귀. "Zemurray를 제머리로 등록" → 거절 → 등록 없음, Claude는 다른 길을 찾지 않고 현재 표기(샘 저머레이)와의 차이를 알림. 실제 책 쪽 두 턴: 9.7초 $0.002, 2.7초 $0.0004. Gatsby 녹화 `translate.jsonl`(Opus 5.5, 허락): `read` → `book` → `set_translation`, 13.7초, $0.062 |
+| 5.5 | 쓰는 쪽이 둘인 책(§12): 버전 + 확인 / 변경 알림(SSE) / 에디터가 듣고 충돌에서 글을 지킴 | Claude가 쓰면 에디터에 바로 보이고, 겹치면 덮지 않고 알림 | 서버 테스트 + e2e | |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | |
 | 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | |
@@ -223,3 +224,18 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 3. 실제 화면 — Playwright, `/agent`를 가짜 프레임으로.
 
 실제 모델은 3단계의 녹화 1회와 수동 확인에만 쓴다. 테스트는 `CLAUDE_CONFIG_DIR`를 임시 폴더로 주어 사람의 `~/.claude`와 실제 세션을 건드리지 않는다.
+
+## 12. 쓰는 쪽이 둘인 책 (5.5단계)
+
+5단계로 책에 쓰는 쪽이 둘(번역자의 에디터, 에이전트)이 됐다. 막아야 할 것: 한쪽이 쓴 것을 다른 쪽이 모른 채 덮는 것. 편집 칸(ProseMirror)이 아니라 저장 쪽의 문제이므로, 저장 쪽의 표준으로 푼다.
+
+| 조각 | 무엇 | 왜 이렇게 |
+|---|---|---|
+| 버전 | `segment.version`. 내용 칸(원문·번역·상태·종류·확인)이 바뀔 때마다 DB 트리거가 **책 전체에서 가장 큰 번호 + 1**을 준다 | 낙관적 동시성(HTTP ETag/If-Match, ProseMirror collab의 버전과 같은 원리). 트리거라서 어느 쓰기 경로도(⌘Z 포함, 앞으로 생길 것도) 빠지지 않는다. 책 전체 번호라 지웠다 되살린 단락도 예전 번호로 돌아가지 않는다(ABA 없음). `updated_at`(초 단위)은 같은 초의 두 쓰기를 못 가른다. 재번호(idx)는 내용 변경이 아니므로 올리지 않는다 |
+| 확인 | `updateSegment { expectVersion }`: 다르면 409, 아무것도 쓰지 않는다. 같은 트랜잭션 안에서 비교 | 검사가 한 곳. 에디터의 저장과 에이전트의 `set_translation`이 같은 검사를 지난다. `expectVersion`은 기록되는 명령에 들지 않는다(redo가 그 번호에 묶이지 않게) |
+| 알림 | 다음 커밋: 쓰기마다 서버가 "바뀐 단락"을 SSE로 보낸다 | 에디터가 남의 쓰기를 보게 |
+| 충돌 | 다음 커밋: 에디터는 409면 저장하지 않고, 쓰던 글을 임시본으로 남겨 복원/버리기를 고르게 한다 | 지금은 "바탕 글이 바뀐 임시본"을 조용히 지운다(`PairRow`) — 충돌에서 번역자의 글이 사라지는 길 |
+
+ProseMirror의 공동 편집(`prosemirror-collab`)은 같은 버전 원리에 "남의 변경 위에 내 수정을 다시 얹기"를 더한다. 그것은 여러 사람이 한 문서의 다른 곳을 조금씩 고칠 때의 것이고, 에이전트는 단락 번역을 통째로 새로 쓰므로 합치지 않고 번역자가 고른다. Yjs(Tiptap Collaboration)는 실시간 동시 타이핑용이며 저장 구조(SQLite·ops·⌘Z)를 바꿔야 해서 쓰지 않는다.
+
+기존 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다. 버전 칸이 없는 DB는 서버가 열지 않는다(조용히 덮어쓰게 두지 않는다). 2026-10-18 작업 DB를 올림: 백업 `out/book.db.bak-2026-10-18-before-versions`, 825단락, 무결성 정상.

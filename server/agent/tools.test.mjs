@@ -47,8 +47,8 @@ test("read: a paragraph carries its notes, comments and the terms it mentions", 
   const { segments, next } = read(fixture(), { ids: [2] })
   assert.equal(next, undefined)
   const s = plain(segments[0])
-  assert.equal(typeof s.updatedAt, "string")
-  delete s.updatedAt
+  assert.equal(typeof s.version, "number")
+  delete s.version
   assert.deepEqual(s, {
     id: 2, chapterId: 1, idx: 1, kind: "paragraph", pageStart: 3, pageEnd: 4, status: "untranslated",
     sourceText: "Zemurray's boat", targetText: "",
@@ -168,30 +168,34 @@ test("MCP: the server is in-process, named fitz, and keeps its tools loaded", ()
 
 // --- writes: every one goes through execute(), so ⌘Z takes it back
 
-const seg = (db, id) => db.prepare("SELECT target_text, target_doc, status, updated_at FROM segment WHERE id = ?").get(id)
-const readAt = (db, id) => read(db, { ids: [id] }).segments[0].updatedAt
+const seg = (db, id) => db.prepare("SELECT target_text, target_doc, status, version FROM segment WHERE id = ?").get(id)
+const versionOf = (db, id) => read(db, { ids: [id] }).segments[0].version
 
 test("set_translation writes the paragraph as draft, one block per line, and ⌘Z takes it back", () => {
   const db = fixture()
-  const out = setTranslation(db, { segmentId: 2, text: "제무레이의 배.\n\n  두 번째 블록  ", expectUpdatedAt: readAt(db, 2) })
-  assert.deepEqual({ ...out, updatedAt: typeof out.updatedAt }, { segmentId: 2, status: "draft", updatedAt: "string", targetText: "제무레이의 배.\n두 번째 블록" })
+  const before = versionOf(db, 2)
+  const out = setTranslation(db, { segmentId: 2, text: "제무레이의 배.\n\n  두 번째 블록  ", expectVersion: before })
+  assert.deepEqual(out, { segmentId: 2, status: "draft", version: seg(db, 2).version, targetText: "제무레이의 배.\n두 번째 블록" })
+  assert.ok(out.version > before)
   assert.equal(JSON.parse(seg(db, 2).target_doc).content.length, 2)
   assert.deepEqual(plain(undo(db)), { id: 1, name: "updateSegment", segmentIds: [2] })
-  assert.deepEqual({ ...seg(db, 2), updated_at: null }, { target_text: null, target_doc: null, status: "untranslated", updated_at: null })
+  assert.deepEqual({ ...seg(db, 2), version: null }, { target_text: null, target_doc: null, status: "untranslated", version: null })
 })
 
 test("set_translation over a reviewed paragraph makes it draft again: confirming is the translator's", () => {
   const db = fixture()
-  setTranslation(db, { segmentId: 1, text: "제1장", expectUpdatedAt: readAt(db, 1) })
+  setTranslation(db, { segmentId: 1, text: "제1장", expectVersion: versionOf(db, 1) })
   assert.equal(seg(db, 1).status, "draft")
 })
 
 test("set_translation is refused when the paragraph changed since it was read, or when there is nothing to write", () => {
   const db = fixture()
-  assert.throws(() => setTranslation(db, { segmentId: 2, text: "x", expectUpdatedAt: "2000-01-01 00:00:00" }), { status: 409, message: /changed since you read it/ })
-  assert.throws(() => setTranslation(db, { segmentId: 2, text: " \n ", expectUpdatedAt: readAt(db, 2) }), { status: 400, message: /empty/ })
-  assert.throws(() => setTranslation(db, { segmentId: 99, text: "x", expectUpdatedAt: "" }), { status: 404 })
-  assert.equal(seg(db, 2).target_text, null)
+  const read2 = versionOf(db, 2)
+  db.prepare("UPDATE segment SET target_text = '번역자가 고침' WHERE id = 2").run()  // the translator saved meanwhile
+  assert.throws(() => setTranslation(db, { segmentId: 2, text: "x", expectVersion: read2 }), { status: 409, message: /¶2 changed since you read it/ })
+  assert.equal(seg(db, 2).target_text, "번역자가 고침")
+  assert.throws(() => setTranslation(db, { segmentId: 2, text: " \n ", expectVersion: versionOf(db, 2) }), { status: 400, message: /empty/ })
+  assert.throws(() => setTranslation(db, { segmentId: 99, text: "x", expectVersion: 0 }), { status: 404 })
 })
 
 test("set_glossary_term adds a term, changes one keeping what was not given, and ⌘Z takes it back", () => {
@@ -226,13 +230,21 @@ test("add_translator_note is pinned in the translation, and needs one to be ther
 
 test("each write is described for the translator before it happens", () => {
   const db = fixture()
-  assert.deepEqual(describeWrite(db, "set_translation", { segmentId: 1, text: "제1장" }),
+  assert.deepEqual(describeWrite(db, "set_translation", { segmentId: 1, text: "제1장", expectVersion: versionOf(db, 1) }),
     { summary: "Write the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
   assert.deepEqual(describeWrite(db, "set_glossary_term", { term: "Zemurray", translation: "제머리" }),
     { summary: "Glossary: Zemurray → 제머리", segmentId: null, before: "Zemurray → 제무레이", after: "Zemurray → 제머리" })
   assert.equal(describeWrite(db, "add_comment", { segmentId: 2, body: "b" }).after, `${CLAUDE_PREFIX}b`)
   assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 99, text: "x" }), { status: 404 })
+})
+
+test("a write that would fail is caught before the translator is asked", () => {
+  const db = fixture()
+  assert.throws(() => describeWrite(db, "set_translation", { segmentId: 2, text: "x", expectVersion: versionOf(db, 2) - 1 }), { status: 409 })
+  assert.throws(() => describeWrite(db, "set_translation", { segmentId: 2, text: " ", expectVersion: versionOf(db, 2) }), { status: 400 })
+  assert.throws(() => describeWrite(db, "add_comment", { segmentId: 2, side: "source", body: "b", quote: "ship" }), { status: 400 })
+  assert.throws(() => describeWrite(db, "add_translator_note", { segmentId: 2, body: "b", quote: "boat" }), { message: /no translation yet/ })
 })
 
 test("MCP: four write tools beside the four read tools, none of them marked read-only", () => {

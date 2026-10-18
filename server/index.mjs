@@ -57,10 +57,10 @@ const routes = {
   },
 
   // writes: every one is a logged command
-  updateSegment: ({ id, patch }) =>
+  updateSegment: ({ id, patch, expectVersion }) =>
     execute(db, "updateSegment", {
       id, text: patch.sourceText, doc: patch.sourceDoc, kind: patch.kind, verified: patch.verified,
-      targetDoc: patch.targetDoc, status: patch.status,
+      targetDoc: patch.targetDoc, status: patch.status, expectVersion,
     }),
   splitSegment: ({ id, offset }) => execute(db, "splitSegment", { id, offset }),
   mergeWithNext: ({ id }) => execute(db, "mergeWithNext", { id }),

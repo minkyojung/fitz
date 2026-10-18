@@ -11,6 +11,9 @@ export const httpError = (status, message) => Object.assign(new Error(message), 
 export const openDb = (path) => {
   const db = new DatabaseSync(path)
   db.exec("PRAGMA foreign_keys = ON")
+  // a database built before segment versions would let one writer silently overwrite another: refuse it
+  if (!db.prepare("PRAGMA table_info(segment)").all().some((c) => c.name === "version"))
+    throw new Error(`${path} has no segment versions yet; run: uv run python -m pipeline.migrate ${path}`)
   return db
 }
 
@@ -78,7 +81,7 @@ export const segRow = (r) => ({
   id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
   sourceText: r.source_text, sourceDoc: JSON.parse(r.source_doc), ocrText: r.ocr_text ?? null,
   targetDoc: r.target_doc ? JSON.parse(r.target_doc) : null, targetText: r.target_text ?? "",
-  verified: r.verified === 1, status: r.status,
+  verified: r.verified === 1, status: r.status, version: r.version,
 })
 export const anchorOf = (r, p) =>
   r[`${p}_exact`] == null ? null : { exact: r[`${p}_exact`], prefix: r[`${p}_prefix`] ?? "", suffix: r[`${p}_suffix`] ?? "", start: r[`${p}_start`], end: r[`${p}_end`] }
@@ -149,8 +152,11 @@ export const COMMANDS = {
   // Source: `doc` (ProseMirror JSON) wins over `text`; text is derived from it so marks survive.
   // Target: `targetDoc` (null clears the translation); `status` moves the workflow state.
   // A target change also snapshots the previous translation into segment_version.
-  updateSegment(db, { id, text, doc, kind, verified, targetDoc, status }) {
+  // expectVersion: the version the writer last saw. If the segment changed since, nothing is written (409), so one
+  // writer never overwrites what another wrote unseen. Not part of the logged command: redo must not depend on it.
+  updateSegment(db, { id, text, doc, kind, verified, targetDoc, status, expectVersion }) {
     const cur = getSegment(db, id)
+    if (expectVersion !== undefined && expectVersion !== cur.version) throw httpError(409, `segment ${id} changed since it was read`)
     if (doc !== undefined) checkDoc(doc)
     if (targetDoc != null) checkDoc(targetDoc, { multi: true })
     const nextDoc = doc !== undefined ? JSON.stringify(doc) : text !== undefined ? pmDoc(text) : cur.source_doc

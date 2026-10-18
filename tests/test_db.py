@@ -35,7 +35,7 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 5
+    assert len(steps) == 7
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
@@ -111,5 +111,30 @@ def test_migration_adds_annotation_columns(tmp_path: Path):
     conn = sqlite3.connect(p)
     assert "tgt_start" in {r[1] for r in conn.execute("PRAGMA table_info(note)")}
     assert "parent_id" in {r[1] for r in conn.execute("PRAGMA table_info(comment)")}
+    conn.close()
+    assert migrate(p) == []
+
+
+def test_migration_adds_segment_versions_that_only_go_up(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("""
+      CREATE TABLE segment (id INTEGER PRIMARY KEY, idx INTEGER, source_text TEXT, target_text TEXT, updated_at TEXT);
+      INSERT INTO segment VALUES (1, 0, 'a', NULL, '2026-01-01'), (2, 1, 'b', NULL, '2026-01-01');
+    """)
+    conn.commit(); conn.close()
+    steps = migrate(p)
+    assert "segment.version column" in steps and "segment version triggers" in steps
+    conn = sqlite3.connect(p)
+    v = lambda i: conn.execute("SELECT version FROM segment WHERE id=?", (i,)).fetchone()[0]
+    assert (v(1), v(2)) == (0, 0)
+    conn.execute("UPDATE segment SET target_text = '가' WHERE id = 1")
+    conn.execute("UPDATE segment SET target_text = '나' WHERE id = 2")
+    assert (v(1), v(2)) == (1, 2)
+    conn.execute("UPDATE segment SET idx = 5 WHERE id = 1")  # renumbering is not a change of content
+    assert v(1) == 1
+    conn.execute("DELETE FROM segment WHERE id = 1")
+    conn.execute("INSERT INTO segment(id, idx, source_text) VALUES (1, 0, 'a')")  # restored: a new number, never an old one
+    assert v(1) == 3
     conn.close()
     assert migrate(p) == []

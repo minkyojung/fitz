@@ -53,6 +53,7 @@ CREATE TABLE segment (
                 CHECK (status IN ('untranslated','draft','reviewed','final')),
   verified      INTEGER NOT NULL DEFAULT 0,  -- 검수 모드에서 원본 대조 확인됨
   updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  version       INTEGER NOT NULL DEFAULT 0,  -- 내용이 바뀔 때마다 아래 트리거가 올린다. 저장 시 "내가 본 버전"과 비교
   UNIQUE (chapter_id, idx)
 );
 
@@ -143,3 +144,15 @@ CREATE INDEX idx_segment_page    ON segment(page_start);
 CREATE INDEX idx_note_segment    ON note(segment_id);
 CREATE INDEX idx_comment_segment ON comment(segment_id);
 CREATE INDEX idx_version_segment ON segment_version(segment_id, saved_at);
+
+-- 단락 버전: 쓰는 쪽이 둘(번역자와 에이전트)이라, 저장할 때 "내가 본 버전"이 지금 버전과 다르면 덮지 않는다(낙관적 동시성).
+-- 책 전체에서 올라가기만 하는 번호를 준다: 지웠다 되살린 단락도 예전 번호로 돌아가지 않는다. DB가 매기므로 어느 쓰기 경로도 빠지지 않는다.
+-- 순서(idx)만 바뀌는 재번호는 내용 변경이 아니므로 올리지 않는다.
+CREATE TRIGGER segment_version_on_update AFTER UPDATE OF source_doc, source_text, target_doc, target_text, status, kind, verified ON segment
+BEGIN
+  UPDATE segment SET version = (SELECT max(version) FROM segment) + 1 WHERE id = NEW.id;
+END;
+CREATE TRIGGER segment_version_on_insert AFTER INSERT ON segment
+BEGIN
+  UPDATE segment SET version = (SELECT max(version) FROM segment) + 1 WHERE id = NEW.id;
+END;

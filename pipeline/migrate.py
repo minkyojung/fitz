@@ -62,6 +62,19 @@ def migrate(path: Path) -> list[str]:
             PRIMARY KEY (segment_id, page_no));
         """)
         done.append("segment_box table")
+    if "version" not in {r[1] for r in conn.execute("PRAGMA table_info(segment)")}:
+        conn.execute("ALTER TABLE segment ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+        done.append("segment.version column")
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    if "segment_version_on_update" not in triggers:
+        # the same triggers as db/schema.sql
+        conn.executescript("""
+          CREATE TRIGGER segment_version_on_update AFTER UPDATE OF source_doc, source_text, target_doc, target_text, status, kind, verified ON segment
+          BEGIN UPDATE segment SET version = (SELECT max(version) FROM segment) + 1 WHERE id = NEW.id; END;
+          CREATE TRIGGER segment_version_on_insert AFTER INSERT ON segment
+          BEGIN UPDATE segment SET version = (SELECT max(version) FROM segment) + 1 WHERE id = NEW.id; END;
+        """)
+        done.append("segment version triggers")
     conn.commit()
     conn.close()
     return done

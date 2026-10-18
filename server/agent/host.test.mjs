@@ -116,7 +116,7 @@ function asking() {
   host.start(ID)
   host.open(ID, (e) => events.push(e))
   host.send(ID, "¶3을 번역해 넣어줘")
-  const write = { segmentId: 3, text: "“누군가를 비판하고 싶어질 때면 말이다.”", expectUpdatedAt: "x" }
+  const write = { segmentId: 3, text: "“누군가를 비판하고 싶어질 때면 말이다.”", expectVersion: 3 }  // gatsby.sql's inserts numbered ¶1–5 as 1–5
   const claudeAsks = (input = write, signal) => stubs.opened[0].options.ask("mcp__fitz__set_translation", input, { signal })
   return { host, events, claudeAsks, write, ...stubs }
 }
@@ -179,7 +179,8 @@ test("a stopped turn cancels the write that waited, and so does a process that e
 test("a write that cannot be described is refused at once, without asking", async () => {
   const { events, claudeAsks } = asking()
   const before = events.length
-  assert.deepEqual(await claudeAsks({ segmentId: 99, text: "x", expectUpdatedAt: "x" }), { behavior: "deny", message: "segment 99 not found" })
+  assert.deepEqual(await claudeAsks({ segmentId: 99, text: "x", expectVersion: 1 }), { behavior: "deny", message: "segment 99 not found" })
+  assert.deepEqual(await claudeAsks({ segmentId: 3, text: "x", expectVersion: 2 }), { behavior: "deny", message: "¶3 changed since you read it; read it again before writing" })
   assert.equal(events.length, before)
 })
 

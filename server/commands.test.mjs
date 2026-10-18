@@ -342,3 +342,41 @@ test("every command has a registered inverse", () => {
   const { inverse } = COMMANDS.updateSegment(db, { id: 2, verified: false })
   assert.ok(COMMANDS[inverse.name])
 })
+
+// --- segment versions: two writers (the translator, the agent) never overwrite each other unseen
+
+const versionOf = (db, id) => db.prepare("SELECT version FROM segment WHERE id = ?").get(id).version
+
+test("every change of a segment's content gives it a new, higher version; renumbering does not", () => {
+  const db = fixture()
+  const start = versionOf(db, 3)
+  execute(db, "updateSegment", { id: 3, targetDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "엡실론" }] }] } })
+  const afterEdit = versionOf(db, 3)
+  assert.ok(afterEdit > start)
+  const v4 = versionOf(db, 4)
+  execute(db, "insertSegment", { chapterId: 1, afterIdx: 0, kind: "caption", text: "cap", pageNo: 3 })  // shifts idx of 2, 3, 4
+  assert.equal(versionOf(db, 4), v4)
+  undo(db)
+  undo(db)
+  assert.ok(versionOf(db, 3) > afterEdit, "undo is a change too: a new number, not the old one back")
+})
+
+test("a write that expects an older version is refused and writes nothing; one that expects the current goes through", () => {
+  const db = fixture()
+  const seen = versionOf(db, 3)
+  execute(db, "updateSegment", { id: 3, status: "draft" })  // someone else, meanwhile
+  const before = snapshot(db)
+  assert.throws(() => execute(db, "updateSegment", { id: 3, text: "overwritten", expectVersion: seen }), { status: 409, message: "segment 3 changed since it was read" })
+  assert.deepEqual(snapshot(db), before)
+  assert.equal(listOps(db, {}).length, 1)
+  execute(db, "updateSegment", { id: 3, text: "epsilon zeta!", expectVersion: versionOf(db, 3) })
+  assert.equal(db.prepare("SELECT source_text FROM segment WHERE id = 3").get().source_text, "epsilon zeta!")
+})
+
+test("redo of a write made with expectVersion does not depend on that version", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 3, text: "first", expectVersion: versionOf(db, 3) })
+  undo(db)
+  assert.ok(redo(db))
+  assert.equal(db.prepare("SELECT source_text FROM segment WHERE id = 3").get().source_text, "first")
+})

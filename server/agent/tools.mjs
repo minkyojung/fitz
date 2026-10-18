@@ -57,7 +57,7 @@ export function read(db, { ids, chapterId, around, from } = {}) {
     const comments = commentsOf.all(r.id).map((c) => ({ id: c.id, parentId: c.parent_id ?? null, side: c.side, body: c.body, resolved: c.resolved === 1, quote: anchorOf(c, "src")?.exact ?? null }))
     const seg = {
       id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
-      status: r.status, updatedAt: r.updated_at, sourceText: r.source_text, targetText: r.target_text ?? "",
+      status: r.status, version: r.version, sourceText: r.source_text, targetText: r.target_text ?? "",
       notes, comments, terms: termsIn(r.source_text, terms),
     }
     const size = seg.sourceText.length + seg.targetText.length
@@ -99,16 +99,20 @@ function quoteAnchor(text, quote, where) {
   return makeAnchor(text, at, at + quote.length)
 }
 
-/** Write a paragraph's translation, always as draft: confirming is the translator's. Refused when the paragraph
- *  changed since the agent read it (expectUpdatedAt is the updatedAt read gave). */
-export function setTranslation(db, { segmentId, text, expectUpdatedAt }) {
-  const cur = segmentAt(db, segmentId)
-  if (cur.updated_at !== expectUpdatedAt) throw httpError(409, `¶${segmentId} changed since you read it; read it again before writing`)
+const CHANGED = (id) => `¶${id} changed since you read it; read it again before writing`
+
+/** Write a paragraph's translation, always as draft: confirming is the translator's. expectVersion is the version
+ *  read gave; updateSegment refuses the write if the paragraph changed since — the same check the editor's saves get. */
+export function setTranslation(db, { segmentId, text, expectVersion }) {
   const blocks = blocksOf(text)
   if (!blocks.length) throw httpError(400, "the translation is empty")
   const targetDoc = { type: "doc", content: blocks.map((b) => ({ type: "paragraph", content: [{ type: "text", text: b }] })) }
-  const seg = execute(db, "updateSegment", { id: segmentId, targetDoc, status: "draft" })
-  return { segmentId, status: seg.status, updatedAt: segmentAt(db, segmentId).updated_at, targetText: seg.targetText }
+  try {
+    const seg = execute(db, "updateSegment", { id: segmentId, targetDoc, status: "draft", expectVersion })
+    return { segmentId, status: seg.status, version: seg.version, targetText: seg.targetText }
+  } catch (e) {
+    throw e.status === 409 ? httpError(409, CHANGED(segmentId)) : e
+  }
 }
 
 /** Agree a term's Korean form. Aliases and kind not given keep what the entry had. */
@@ -133,11 +137,14 @@ export function addTranslatorNote(db, { segmentId, body, quote }) {
   return { id: n.id, segmentId, quote: quote ?? null }
 }
 
-/** What a write would do, for the translator to approve: a line saying what, and the text before and after. */
+/** What a write would do, for the translator to approve: a line saying what, and the text before and after.
+ *  It checks what the write will check, so the translator is never asked about a write that would then fail. */
 export function describeWrite(db, tool, input) {
   switch (tool) {
     case "set_translation": {
       const cur = segmentAt(db, input.segmentId)
+      if (cur.version !== input.expectVersion) throw httpError(409, CHANGED(cur.id))
+      if (!blocksOf(input.text).length) throw httpError(400, "the translation is empty")
       const demoted = cur.status === "reviewed" || cur.status === "final"
       return { summary: `Write the translation of ¶${cur.id}${demoted ? ` (it is ${cur.status}; it becomes draft)` : ""}`, segmentId: cur.id, before: cur.target_text || null, after: blocksOf(input.text).join("\n") }
     }
@@ -145,10 +152,17 @@ export function describeWrite(db, tool, input) {
       const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(getBook(db).id, input.term)
       return { summary: `Glossary: ${input.term} → ${input.translation}`, segmentId: null, before: cur ? `${cur.term} → ${cur.translation}` : null, after: `${input.term} → ${input.translation}${input.aliases ? ` (also ${input.aliases})` : ""}` }
     }
-    case "add_comment":
-      return { summary: `Comment on ¶${segmentAt(db, input.segmentId).id}${input.quote ? ` at "${input.quote}"` : ""}`, segmentId: input.segmentId, before: null, after: CLAUDE_PREFIX + input.body }
-    case "add_translator_note":
-      return { summary: `Translator's note on ¶${segmentAt(db, input.segmentId).id}${input.quote ? ` after "${input.quote}"` : ""} — it will be printed`, segmentId: input.segmentId, before: null, after: input.body }
+    case "add_comment": {
+      const cur = segmentAt(db, input.segmentId)
+      quoteAnchor(input.side === "source" ? cur.source_text : cur.target_text ?? "", input.quote, input.side === "source" ? "source" : "translation")
+      return { summary: `Comment on ¶${cur.id}${input.quote ? ` at "${input.quote}"` : ""}`, segmentId: input.segmentId, before: null, after: CLAUDE_PREFIX + input.body }
+    }
+    case "add_translator_note": {
+      const cur = segmentAt(db, input.segmentId)
+      if (input.quote !== undefined && !cur.target_text) throw httpError(400, `¶${cur.id} has no translation yet to place the note in`)
+      quoteAnchor(cur.target_text ?? "", input.quote, "translation")
+      return { summary: `Translator's note on ¶${cur.id}${input.quote ? ` after "${input.quote}"` : ""} — it will be printed`, segmentId: input.segmentId, before: null, after: input.body }
+    }
     default:
       throw httpError(400, `${tool} is not a write tool`)
   }
@@ -185,12 +199,12 @@ export const readTools = (db) => [
 export const writeTools = (db) => [
   tool("set_translation",
     "Write the Korean translation of one paragraph, replacing what is there. It is saved as a draft for the translator to confirm. " +
-    "Pass the paragraph's `updatedAt` from your last read as `expectUpdatedAt`; if the paragraph changed since, the write is refused and you should read it again. " +
+    "Pass the paragraph's `version` from your last read as `expectVersion`; if the paragraph changed since (the translator may be editing too), the write is refused and you should read it again. " +
     "Separate blocks with a newline. The translator is asked before it is written.",
     {
       segmentId: z.number().int(),
       text: z.string().min(1).describe("The whole translation of the paragraph"),
-      expectUpdatedAt: z.string().describe("updatedAt of the paragraph as read returned it"),
+      expectVersion: z.number().int().describe("version of the paragraph as read returned it"),
     },
     async (args) => result(setTranslation(db, args))),
   tool("set_glossary_term",
