@@ -4,7 +4,7 @@ import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo, watchChanges } from "../commands.mjs"
-import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, fitzTools, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -157,6 +157,12 @@ test("MCP: four read-only tools whose results are the functions' results as JSON
   assert.deepEqual(plain(r.structuredContent), plain(read(db, { ids: [3], around: 1 })))
   assert.deepEqual(JSON.parse(r.content[0].text), plain(r.structuredContent))
   await assert.rejects(tools[1].handler({ ids: [99] }, {}), /segment 99 not found/)
+})
+
+test("a task's server offers the read tools only; a free conversation's, the writes too", () => {
+  const db = fixture()
+  assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search"])
+  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "set_glossary_term", "add_comment", "add_translator_note"])
 })
 
 test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {

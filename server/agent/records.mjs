@@ -3,11 +3,12 @@
 // Not book edits: these never go through execute(), are not undone and are not announced as changes to the book.
 
 export const conversationRow = (r) => ({
-  id: r.id, sessionId: r.session_id ?? null, title: r.title ?? null, model: r.model, effort: r.effort, createdAt: r.created_at, usedAt: r.used_at,
+  id: r.id, sessionId: r.session_id ?? null, title: r.title ?? null, model: r.model, effort: r.effort,
+  task: r.task ?? null, chapterId: r.chapter_id ?? null, createdAt: r.created_at, usedAt: r.used_at,
 })
 
-export const addConversation = (db, { id, model, effort }) =>
-  db.prepare("INSERT INTO agent_conversation(id, model, effort) VALUES (?, ?, ?)").run(id, model, effort)
+export const addConversation = (db, { id, model, effort, task = null, chapterId = null }) =>
+  db.prepare("INSERT INTO agent_conversation(id, model, effort, task, chapter_id) VALUES (?, ?, ?, ?, ?)").run(id, model, effort, task, chapterId)
 
 export function getConversation(db, id) {
   const r = db.prepare("SELECT * FROM agent_conversation WHERE id = ?").get(id)

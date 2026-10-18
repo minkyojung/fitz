@@ -8,6 +8,7 @@ import { foldMessages } from "./fold.mjs"
 import { DEFAULTS, createAgentHost } from "./host.mjs"
 import { getConversation, listConversations, turnsOf } from "./records.mjs"
 import { settle, stubSessions } from "./fixtures/stubSession.mjs"
+import { TASKS } from "./tasks.mjs"
 
 const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
 const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
@@ -32,7 +33,7 @@ test("Claude Code starts with the first message, once, with the conversation's m
   host.send(ID, "그럼 ¶5는?")
   assert.equal(opened.length, 1)
   const { ask, ...options } = opened[0].options
-  assert.deepEqual(options, { db, resume: undefined, model: DEFAULTS.model, effort: DEFAULTS.effort })
+  assert.deepEqual(options, { db, resume: undefined, model: DEFAULTS.model, effort: DEFAULTS.effort, task: null })
   assert.equal(typeof ask, "function")
   assert.deepEqual(opened[0].sent, ["¶4는?", "그럼 ¶5는?"])
   host.start("1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11", { model: "claude-sonnet-5-5", effort: "low" })
@@ -298,4 +299,52 @@ test("each finished turn copies its session file; a reopened or resumed session 
   await settle()
   await host.send(ID, "그럼 ¶5는?")
   assert.deepEqual(keep.calls, [["restore", sessionId], ["restore", sessionId]])
+})
+
+// --- tasks: the app starts them on a chapter; Claude reads it and answers in the task's shape
+
+const ID2 = "1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
+const CHAPTER = { id: 1, idx: 0, title: "Chapter I" }  // gatsby.sql's one chapter
+
+test("a task conversation sets to work at once on its chapter, as that task, with the task's model", () => {
+  const { host, opened, db } = setup()
+  host.start(ID, { task: "review", chapterId: 1 })
+  assert.equal(opened.length, 1)
+  assert.deepEqual([opened[0].options.task, opened[0].options.model, opened[0].options.effort], ["review", TASKS.review.model, TASKS.review.effort])
+  assert.deepEqual(opened[0].sent, [TASKS.review.prompt(CHAPTER)])
+  const { task, chapterId, model } = getConversation(db, ID)
+  assert.deepEqual({ task, chapterId, model }, { task: "review", chapterId: 1, model: TASKS.review.model })
+  host.start(ID2, { task: "typos", chapterId: 1, model: "claude-opus-5-5" })
+  assert.deepEqual([opened[1].options.task, opened[1].options.model], ["typos", "claude-opus-5-5"])
+  assert.deepEqual(opened[1].sent, [TASKS.typos.prompt(CHAPTER)])
+})
+
+test("a free conversation has no task and no chapter", () => {
+  const { host, db } = setup()
+  host.start(ID, { chapterId: 1 })
+  const { task, chapterId } = getConversation(db, ID)
+  assert.deepEqual({ task, chapterId }, { task: null, chapterId: null })
+})
+
+test("a task needs a chapter that exists, and only the known tasks run; a refused start keeps nothing", () => {
+  const { host, opened, db } = setup()
+  assert.throws(() => host.start(ID, { task: "review", chapterId: 99 }), { status: 404, message: /no chapter 99/ })
+  assert.throws(() => host.start(ID, { task: "review" }), { status: 404 })
+  assert.throws(() => host.start(ID, { task: "translate", chapterId: 1 }), { status: 400 })
+  assert.throws(() => host.start(ID, { task: "toString", chapterId: 1 }), { status: 400 })
+  assert.equal(opened.length, 0)
+  assert.equal(getConversation(db, ID), null)
+  host.start(ID, { task: "review", chapterId: 1 })
+})
+
+test("after a restart a task conversation goes on as the same task", async () => {
+  const before = setup()
+  before.host.start(ID, { task: "typos", chapterId: 1 })
+  before.opened[0].feed(...nuance)
+  await settle()
+  const stubs = stubSessions()
+  const host = createAgentHost({ db: before.db, openSession: stubs.openSession, sessionInfo: async () => null, keep: keeper(), sessionMessages: async () => storedNuance })
+  await host.send(ID, "¶3도 다시 봐줘")
+  const { task, model, resume } = stubs.opened[0].options
+  assert.deepEqual({ task, model, resume }, { task: "typos", model: TASKS.typos.model, resume: nuance.find((m) => m.subtype === "init").session_id })
 })

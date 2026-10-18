@@ -17,6 +17,8 @@ const QUOTES = "Each quote must be copied exactly, character for character, and 
 export const TASKS = {
   review: {
     side: "target",
+    model: "claude-sonnet-5-5",
+    effort: "low",
     schema: z.object({
       suggestions: z.array(z.object({ ...suggestion, level: z.enum(["high", "medium", "low"]).describe("high: the meaning is wrong; medium: unnatural or inconsistent; low: a better choice") })),
     }),
@@ -30,6 +32,8 @@ export const TASKS = {
   },
   typos: {
     side: "source",
+    model: "claude-sonnet-5-5",
+    effort: "low",
     schema: z.object({ suggestions: z.array(z.object(suggestion)) }),
     prompt: (c) => [
       `Find words in this chapter's English source that the OCR of the scanned book most likely misread.`,
@@ -42,6 +46,8 @@ export const TASKS = {
 }
 
 export const TASK_NAMES = Object.keys(TASKS)
+/** A task reads a chapter and answers once; these stop one that runs away (docs/agent.md §4). */
+export const TASK_LIMITS = { maxTurns: 60, maxBudgetUsd: 5 }
 
 /** What query() takes as outputFormat for a task: its schema as JSON Schema draft-07, the version the SDK validates. */
 export const outputFormatOf = (task) => ({ type: "json_schema", schema: z.toJSONSchema(TASKS[task].schema, { target: "draft-7" }) })

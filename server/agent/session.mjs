@@ -8,6 +8,7 @@ import { join } from "node:path"
 
 import { query } from "@anthropic-ai/claude-agent-sdk"
 
+import { TASK_LIMITS, outputFormatOf } from "./tasks.mjs"
 import { READ_TOOL_NAMES, WRITE_TOOL_NAMES, fitzServer } from "./tools.mjs"
 
 /** The session's working folder: empty, the app's own, away from the repository and the PDF. Claude Code keys
@@ -56,8 +57,9 @@ function inbox() {
 
 /** One conversation = one query(). `messages` is the SDK's stream; `send` returns the uuid the echo will carry.
  *  `ask(toolName, input, { signal })` is the host's: it puts a write to the translator and resolves with Claude Code's
- *  PermissionResult. */
-export function openSession({ db, resume, model, effort, ask, cwd = AGENT_CWD }) {
+ *  PermissionResult. `task` (tasks.mjs) makes it a task conversation: read tools only, an answer of the task's shape,
+ *  and limits. */
+export function openSession({ db, resume, model, effort, ask, task, cwd = AGENT_CWD }) {
   mkdirSync(cwd, { recursive: true })
   const input = inbox()
   const q = query({
@@ -76,11 +78,13 @@ export function openSession({ db, resume, model, effort, ask, cwd = AGENT_CWD })
       skills: [],
       settings: { disableClaudeAiConnectors: true, autoMemoryEnabled: false, disableBundledSkills: true },
       tools: [],                                                 // no Read/Edit/Bash/Web: the PDF and page images cannot be opened
-      mcpServers: { fitz: fitzServer(db) },
+      mcpServers: { fitz: fitzServer(db, { write: !task }) },     // a task only finds: no write tools at all
       allowedTools: READ_TOOLS,                                  // reading never asks
       permissionMode: "default",                                 // not bypass: every write is asked about
       canUseTool: async (toolName, input, options) =>            // writes go to the translator; nothing else is offered
-        WRITE_TOOLS.includes(toolName) ? ask(toolName, input, options) : { behavior: "deny", message: `${toolName} is not available in this conversation.` },
+        !task && WRITE_TOOLS.includes(toolName) ? ask(toolName, input, options) : { behavior: "deny", message: `${toolName} is not available in this conversation.` },
+      // a task answers in its shape (Claude Code adds a StructuredOutput tool for it, measured) and is bounded
+      ...(task && { outputFormat: outputFormatOf(task), ...TASK_LIMITS }),
       includePartialMessages: true,                              // text as it is written
       extraArgs: { "replay-user-messages": null },               // the echo of what was sent, with its uuid (measured: off by default)
       env: { ...ownEnv(process.env), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },  // env replaces the whole environment; idle/running state

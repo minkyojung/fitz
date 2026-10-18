@@ -111,6 +111,8 @@ app/src/
 
 자유 질문("이 단락 뉘앙스는?")은 어느 스레드에서나 가능하다. 도구는 읽기만.
 
+리뷰·오탈자 대화(`tasks.mjs`): 앱이 장 하나로 시작하면 서버가 첫 메시지를 바로 보낸다. 기본 모델 Sonnet 5.5 / low, 상한 60턴·$5(실측 전의 값, 5행에서 고친다). 다시 열어도 같은 작업으로 이어진다.
+
 ### 4.1 리뷰·오탈자의 화면 — 익숙한 제품을 따른다 (7단계 설계, 2026-10-18)
 
 갤러리: `?gallery&suggestions`(`app/src/gallery/SuggestionsGallery.tsx`, 예문은 『위대한 개츠비』).
@@ -129,8 +131,8 @@ app/src/
 | # | 무엇 | 파일 | 확인 |
 |---|---|---|---|
 | 0 ✓ | **먼저 잰다**: `outputFormat`이 `tools: []`·streaming input과 함께 도는가(구조화 출력이 지운 내장 도구에 기대지 않는가), `structured_output`이 어디에 오고 세션 파일에 남는가 | 임시 스크립트(Haiku) | 결과를 §8에 기록, 아래 3의 저장 방식을 정한다 |
-| 1 | 작업 정의: 두 작업의 지시문, 범위(장)로 만든 첫 메시지, 결과의 JSON 스키마(zod → draft-07) | `server/agent/tasks.mjs` 새로 | 순수 테스트 |
-| 2 | 작업별 세션: 작업 대화는 읽기 도구만 + `outputFormat` + 상한(`maxTurns`, `maxBudgetUsd`). `start { convId, task, chapterId }` | `session.mjs`, `tools.mjs`(쓰기 도구를 뺀 서버), `host.mjs`, `protocol.mjs` | 스텁 세션 테스트 |
+| 1 ✓ | 작업 정의: 두 작업의 지시문, 범위(장)로 만든 첫 메시지, 결과의 JSON 스키마(zod → draft-07) | `server/agent/tasks.mjs` 새로 | 순수 테스트 |
+| 2 ✓ | 작업별 세션: 작업 대화는 읽기 도구만 + `outputFormat` + 상한(`maxTurns`, `maxBudgetUsd`). `start { convId, task, chapterId }` | `session.mjs`, `tools.mjs`(쓰기 도구를 뺀 서버), `host.mjs`, `protocol.mjs` | 스텁 세션 테스트 |
 | 3 | 제안 저장: `agent_suggestion`(대화, 종류, 단락, 쪽(원문/번역), 구절, 제안, 이유, 중요도, 그때의 단락 버전, 상태 open·accepted·dismissed·commented). 결과가 오면 구절이 그 글에 정확히 한 번 있는 것만 저장 | `db/schema.sql`, `pipeline/migrate.py`, `server/agent/suggestions.mjs` 새로 | 순수 테스트, 작업 DB 백업 후 마이그레이션 |
 | 4 | 제안 다루기: Accept = 지금 글에서 구절을 다시 찾아(없으면 "글이 바뀌어 적용할 수 없음") `updateSegment`로 바꾼다(번역자의 쓰기, ⌘Z) / Dismiss / Keep as comment = `addComment(author: agent)`. 제안이 바뀌면 `/live`로 알린다 | `suggestions.mjs`, `index.mjs`(경로 셋 + 목록), `live.mjs` | 서버 테스트 |
 | 5 | 진짜로 한 번: 두 작업을 Gatsby로 녹화(`record.mjs --task`), `pnpm test:real`에 "스키마에 맞고 구절이 글에 있는 제안이 온다" | `record.mjs`, `real.test.mjs`, `fixtures/` | 실측 기록 |

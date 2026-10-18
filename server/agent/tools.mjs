@@ -240,4 +240,6 @@ export const writeTools = (db) => [
 export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
 export const WRITE_TOOL_NAMES = ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"]
 
-export const fitzServer = (db) => createSdkMcpServer({ name: "fitz", version: "0.1.0", alwaysLoad: true, tools: [...readTools(db), ...writeTools(db)] })
+/** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */
+export const fitzTools = (db, { write = true } = {}) => (write ? [...readTools(db), ...writeTools(db)] : readTools(db))
+export const fitzServer = (db, options) => createSdkMcpServer({ name: "fitz", version: "0.1.0", alwaysLoad: true, tools: fitzTools(db, options) })

@@ -6,11 +6,13 @@ import { randomUUID } from "node:crypto"
 
 import { getSessionInfo, getSessionMessages } from "@anthropic-ai/claude-agent-sdk"
 
+import { listChapters } from "../commands.mjs"
 import { applyMessage, emptyConversation, foldStored } from "./fold.mjs"
 import { sessionKeeper } from "./keep.mjs"
 import { addConversation, getConversation, listConversations, recordTurn, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
 import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
+import { TASKS, TASK_NAMES } from "./tasks.mjs"
 import { describeWrite } from "./tools.mjs"
 
 export const DEFAULTS = { model: "claude-opus-5-5", effort: "medium" }
@@ -37,9 +39,9 @@ export function createAgentHost({
   sessionMessages = (id) => getSessionMessages(id, { dir: AGENT_CWD }),
   keep = sessionKeeper({ cwd: AGENT_CWD }),
 }) {
-  const conversations = new Map()  // convId → { model, effort, session, keptSession, state, followers, asks, loaded, ready }
+  const conversations = new Map()  // convId → { model, effort, task, session, keptSession, state, followers, asks, loaded, ready }
   const conversation = (record) => ({
-    model: record.model, effort: record.effort, session: null, keptSession: record.sessionId,
+    model: record.model, effort: record.effort, task: record.task, session: null, keptSession: record.sessionId,
     state: { ...emptyConversation(), sessionId: record.sessionId }, followers: new Set(), asks: new Map(),
     loaded: true, ready: Promise.resolve(),
   })
@@ -117,7 +119,7 @@ export function createAgentHost({
     if (conv.session) return conv.session
     if (conv.state.sessionId) restore(conv.state.sessionId)
     const session = openSession({
-      db, resume: conv.state.sessionId ?? undefined, model: conv.model, effort: conv.effort,
+      db, resume: conv.state.sessionId ?? undefined, model: conv.model, effort: conv.effort, task: conv.task,
       ask: (toolName, input, options) => ask(convId, conv, toolName, input, options),
     })
     conv.session = session
@@ -145,11 +147,24 @@ export function createAgentHost({
     return session
   }
 
+  /** The uuid the message's echo will carry. A conversation still being read back takes the message once it is
+   *  (a promise then), and is resumed. */
+  function send(convId, text) {
+    const conv = get(convId)
+    const go = () => { touchConversation(db, convId); return ensureSession(convId, conv).send(text) }
+    return conv.loaded ? go() : conv.ready.then(go)
+  }
+
   return {
-    start(convId, { model = DEFAULTS.model, effort = DEFAULTS.effort } = {}) {
+    /** A task conversation (tasks.mjs) is given its chapter and sets to work at once, with the task's model unless
+     *  another is asked for; a free one waits for the translator's first message. */
+    start(convId, { task = null, chapterId = null, model = TASKS[task]?.model ?? DEFAULTS.model, effort = TASKS[task]?.effort ?? DEFAULTS.effort } = {}) {
+      if (task !== null && !TASK_NAMES.includes(task)) fail(400, `no task ${task}`)
       if (conversations.has(convId) || getConversation(db, convId)) fail(409, `conversation ${convId} exists`)
-      addConversation(db, { id: convId, model, effort })
-      conversations.set(convId, conversation({ model, effort, sessionId: null }))
+      const chapter = task && (listChapters(db).find((c) => c.id === chapterId) ?? fail(404, `no chapter ${chapterId}`))
+      addConversation(db, { id: convId, model, effort, task, chapterId: task && chapterId })
+      conversations.set(convId, conversation({ model, effort, task, sessionId: null }))
+      if (task) send(convId, TASKS[task].prompt(chapter))
     },
     list: () => listConversations(db),
     /** A snapshot (with the writes waiting for an answer) — now, or once a reopened conversation is read back — then
@@ -160,13 +175,7 @@ export function createAgentHost({
       conv.followers.add(follower)
       return () => conv.followers.delete(follower)
     },
-    /** The uuid the message's echo will carry. A conversation still being read back takes the message once it is
-     *  (a promise then), and is resumed. */
-    send(convId, text) {
-      const conv = get(convId)
-      const go = () => { touchConversation(db, convId); return ensureSession(convId, conv).send(text) }
-      return conv.loaded ? go() : conv.ready.then(go)
-    },
+    send,
     answer(convId, requestId, decision) {
       if (!DECISIONS.includes(decision)) fail(400, `decision must be one of ${DECISIONS.join(", ")}`)
       const waiting = get(convId).asks.get(requestId) ?? fail(404, `nothing is waiting for answer ${requestId}`)

@@ -2,7 +2,8 @@
 // a message of any other shape is refused. Everything from the page is checked here — it came over a socket.
 //
 // page → server
-//   start { convId, model?, effort? }   begin a conversation (convId: a uuid the page makes)
+//   start { convId, model?, effort?, task?, chapterId? }  begin a conversation (convId: a uuid the page makes); with
+//                                       a task (review | typos) and its chapter, a task conversation the app starts itself
 //   open  { convId }                    follow a conversation: a snapshot now, its messages from then on
 //   send  { convId, text }              the translator's message
 //   stop  { convId }                    stop the turn that is going
@@ -13,9 +14,11 @@
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
 //   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)
-//   conversations { items }            [{ id, sessionId, title, model, effort, createdAt, usedAt }]
+//   conversations { items }            [{ id, sessionId, title, model, effort, task, chapterId, createdAt, usedAt }]
 //   changed  { opId, name, segmentIds, kind, actor }  the book changed (any writer; kind: do | undo | redo)
 //   error    { convId?, message }
+
+import { TASK_NAMES } from "./tasks.mjs"
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 export const DECISIONS = ["allow", "always", "deny"]
@@ -37,6 +40,10 @@ export function parseClientMessage(raw) {
       const out = { type: "start", convId: convId(m.convId) }
       if (m.model !== undefined) out.model = typeof m.model === "string" && MODEL.test(m.model) ? m.model : fail("model is not a model name")
       if (m.effort !== undefined) out.effort = EFFORTS.includes(m.effort) ? m.effort : fail(`effort must be one of ${EFFORTS.join(", ")}`)
+      if (m.task !== undefined) {
+        out.task = TASK_NAMES.includes(m.task) ? m.task : fail(`task must be one of ${TASK_NAMES.join(", ")}`)
+        out.chapterId = Number.isInteger(m.chapterId) ? m.chapterId : fail("a task needs the chapterId it works on")
+      }
       return out
     }
     case "answer": {
