@@ -254,8 +254,8 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 5.5 | 쓰는 쪽이 둘인 책(§12): 버전 + 확인 / 변경 알림(처음엔 SSE, §15에서 `/live`로) / 에디터가 듣고 충돌에서 글을 지킴 | Claude가 쓰면 에디터에 바로 보이고, 겹치면 덮지 않고 알림 | 서버 테스트 + e2e | 2026-10-18. 커밋 셋. 서버 테스트 114, pytest 31, 화면 단위 34, e2e 30(새 3: 다른 쪽의 쓰기가 새로고침 없이 보임 / ⌘Enter 충돌 → 덮지 않음, "changed since" 임시본, Recover 후 저장 / Tab 충돌도 같음) |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | 2026-10-18 완료(§4.2, 커밋 일곱). 서버 테스트 178(+실제 2), 화면 단위 47, e2e 37. 실측: 오탈자 6.0초 $0.022 심은 오류 넷 다, 리뷰 7.3초 $0.025 뜻이 뒤집힌 번역 high |
-| 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | |
-| 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), 에이전트가 쓴 것을 에디터가 다시 읽기, README | 에디터 안에서 전부 | e2e(녹화 프레임) | |
+| 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | 2026-10-18 완료(§13: 대화 목록·턴 기록은 book.db, 세션 파일 사본은 `~/.fitz/sessions`) |
+| 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), 에이전트가 쓴 것을 에디터가 다시 읽기, README | 에디터 안에서 전부 | e2e(녹화 프레임) | 2026-10-18 완료(§17, 패널의 **Claude** 탭). 화면 단위 62, e2e 44. 실제 1회(아래 §17.1 5행) |
 
 9단계에서 꼭 할 것: 지금 에디터 화면은 에이전트가 DB에 쓴 것을 모른다. 열어 둔 채 Claude가 쓰면 화면은 옛 글을 보이고, 그 단락을 편집해 저장하면 Claude가 쓴 것을 덮는다(에이전트 쪽은 `expectUpdatedAt`으로 막지만 화면 쪽은 막는 것이 없다). 서버가 쓰기마다 "바뀐 단락"을 소켓으로 알리고 화면이 그 단락을 다시 읽는다.
 
@@ -393,4 +393,8 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 | 2 ✓ | 대화 데이터: `/live`로 start·open·send·stop·answer·list, 스냅숏 + 메시지 fold + 허락 대기, 다시 붙으면 다시 따라감 | `api.ts`, `http.ts`, `lib/conversation.ts`(+test), `data/useConversation.ts` | 단위 |
 | 3 ✓ | Claude 탭 화면(Suggestions를 머리로), Streamdown(+ CJK 플러그인: `**"인용"**과`처럼 한국어에 붙은 강조가 그대로 `**`로 남지 않게) | `features/agent/*`, `ReviewPanel.tsx`, `App.tsx` | e2e: 녹화 프레임을 `/live`로 흘려 대화·허락·Stop |
 | 4 ✓ | Ask Claude: 선택 툴바 + ⌘L, 구절이 입력에 붙고 보낼 때 단락 id와 함께 | `FloatingToolbar.tsx`, `lib/keymap.ts`, `features/agent/*` | e2e |
-| 5 | 진짜로 한 번(에디터에서), README·이 문서 | | 실측 |
+| 5 ✓ | 진짜로 한 번(에디터에서), README·이 문서 | | 실측 |
+
+**5행 실측**(2026-10-18, 에디터 화면 → 서버(포트 4802, Gatsby 사본) → 진짜 Claude Code, Haiku 5.5 / low; 스크립트는 `.context/real/`, 커밋하지 않음): ¶4의 "reserve all judgments"를 골라 Ask Claude → "앞 문장의 reserved와 말장난인지" → `read(¶4, 2 around)` → 생각 → 답, 8.4초 $0.0015. 이어서 "¶3을 번역해 넣어줘" → 허락 카드(전/후) → Allow → ¶3 번역이 에디터에 바로, 5.1초 $0.0006. 제목은 Claude Code가 붙임('Reserve all judgments'와 'reserved' 말장난). 실행이 만든 세션 하나는 `deleteSession`으로 지우고 사본도 지움(번역자의 세션 둘은 그대로).
+
+이 실행에서 찾아 고친 것: 턴 끝 줄("5s · $0.001")이 답 옆에 끼어 있었다 — `Message`는 자식을 가로로 놓으므로 `MessageFooter`는 `MessageContent` 안에 둔다(e2e가 위치를 확인).

@@ -61,6 +61,11 @@ test("a question begins a conversation; what Claude read, thought and answered c
   await expect(thread(page).getByRole("button", { name: "Thought" })).toBeVisible()
   await expect(thread(page).getByRole("heading", { name: "뜻과 뉘앙스" })).toBeVisible()  // Claude's markdown, rendered
   await expect(thread(page)).toContainText("21s · $0.039")
+  // the turn's end sits under the answer, at its left edge, not squeezed beside it
+  const end = (await thread(page).locator("[data-turn-end]").boundingBox())!
+  const answer = (await thread(page).getByRole("heading", { name: "뜻과 뉘앙스" }).boundingBox())!
+  expect(end.y).toBeGreaterThan(answer.y + answer.height)
+  expect(Math.abs(end.x - answer.x)).toBeLessThan(4)
   await expect(thread(page)).not.toContainText("Starting")
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
   await expect(page.locator("[data-conversation-title]")).toContainText("¶4의 'unusually communicative")

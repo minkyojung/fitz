@@ -140,8 +140,9 @@ function ClaudeMessage({ parts, turn, live, working, waiting }: {
             )}
           </Trace>
         )}
+        {/* inside the content: Message lays its children in a row, and the turn's end goes under the answer */}
+        {end && <MessageFooter data-turn-end className={end.stopped ? "px-0 text-destructive" : "px-0"}>{end.text}</MessageFooter>}
       </MessageContent>
-      {end && <MessageFooter className={end.stopped ? "px-0 text-destructive" : "px-0"}>{end.text}</MessageFooter>}
     </Message>
   )
 }

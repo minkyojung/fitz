@@ -155,9 +155,24 @@ uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
 - 단락마다 `version`이 있어, 저장할 때 편집을 시작한 뒤 다른 쪽(번역 에이전트, 다른 창)이 바꿨으면 덮지 않고 거절한다. 쓰던 글은 "Unsaved — the paragraph changed since"로 남아 Recover(내 글로 다시 저장)나 Discard를 고른다. 저장이 성공하기 전에는 쓰던 글을 지우지 않는다. 버전 칸이 없는 옛 DB는 서버가 열지 않으니 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 - `segment.ocr_text`는 파이프라인이 뽑은 원문이며 이후 불변. 스키마 변경 전 DB는 `uv run python -m pipeline.migrate out/book.db`로 올린다.
 
-## 번역 에이전트 (개발 중, 터미널에서)
+## 번역 에이전트 (Claude)
 
-Claude Code를 에디터 서버 안에서 돌려, 책을 직접 읽고 답하게 한다. 설계와 진행은 `docs/agent.md`. 화면(Agent 탭)은 아직 없고 터미널에서 쓴다.
+Claude Code를 에디터 서버 안에서 돌려, 책을 직접 읽고 답하게 한다. 설계와 진행은 `docs/agent.md`.
+
+### 에디터 안의 Claude 탭
+
+오른쪽 패널의 **Claude** 탭(설계 §17).
+
+- **묻기**: 본문에서 구절을 골라 툴바의 **Ask Claude**(또는 ⌘L, 편집 중에도 된다). 그 구절과 단락이 입력칸에 붙고, 보내면 "¶604 (English): “…”"로 질문 앞에 들어간다. 그냥 입력칸에 써도 된다. Enter 보내기, Shift+Enter 줄바꿈.
+- **보이는 것**: Claude가 읽은 것("Read ¶4 and 3 around")과 생각("Thought", 누르면 펼침)이 답 위에 한 줄씩, 답은 마크다운으로, 턴 끝에 걸린 시간과 비용.
+- **쓰기 허락**: Claude가 번역·용어집·댓글·역주를 쓰려 하면 대화 안에 카드(바뀌는 것 전/후)가 뜬다. **Allow**(이번만), **Always**(이 대화 동안 그 종류는), **Deny**. 허락한 변경은 본문에 바로 보이고 ⌘Z로 되돌아간다. Claude가 답을 기다리는 동안 탭에 숫자가 뜬다.
+- **멈추기**: 답하는 동안 보내기 버튼이 정지 버튼이 된다.
+- **대화**: 머리 줄의 제목을 누르면 지난 대화 목록과 New conversation. 새 대화는 첫 메시지 전에 모델과 생각 강도를 고른다(기본 Opus 5.5 · medium). 머리 줄 오른쪽 **Suggestions**를 누르면 이 장의 리뷰·OCR 제안이 펼쳐진다.
+- 패널 폭은 끌어서 바꾸고, 다시 열어도 기억된다(스캔이 보일 때와 아닐 때 따로).
+
+### 터미널에서
+
+같은 대화를 터미널에서도 쓸 수 있다.
 
 ```sh
 node server/index.mjs                          # 서버가 화면과의 실시간 연결도 연다 (ws://localhost:4800/live)
@@ -177,7 +192,7 @@ node server/agent/chat.mjs --open <대화 id>      # 지난 대화를 이어서:
 
 ### Claude의 리뷰와 OCR 오류 찾기 (에디터 안에서)
 
-오른쪽 패널의 **Suggestions** 탭. Translate 보기에서는 "Review this chapter with Claude"(번역문 리뷰), Review 보기에서는 "Find OCR errors with Claude"(원문의 OCR 오류).
+**Claude** 탭 머리 줄의 **Suggestions**(누르면 펼쳐진다). Translate 보기에서는 "Review this chapter with Claude"(번역문 리뷰), Review 보기에서는 "Find OCR errors with Claude"(원문의 OCR 오류).
 
 - 누르면 Claude가 그 장을 읽고(읽기 도구만, 쓰기 도구는 아예 없다) 제안 목록을 낸다. 기본 Sonnet 5.5, 5단락에 7초·$0.03 정도.
 - 제안은 본문에 맞춤법 표시와 같은 모양(지울 말에 취소선, 넣을 말은 초록)으로 보인다. 본문의 표시를 누르면 패널의 카드가 골라질 뿐이고, 바꾸는 것은 카드의 **Accept**뿐이다. **Dismiss**는 버리기, **Keep as comment**(리뷰만)는 Claude의 댓글로 남기기. 셋 다 ⌘Z로 되돌아간다.
