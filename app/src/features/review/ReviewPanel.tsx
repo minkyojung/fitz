@@ -1,3 +1,5 @@
+import { IconSparkles } from "@tabler/icons-react"
+
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Note, Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
@@ -5,7 +7,8 @@ import { FindPanel } from "./FindPanel"
 import { GlossaryPanel } from "./GlossaryPanel"
 import { HistoryPanel } from "./HistoryPanel"
 import { NotesTab } from "@/features/notes/NotesTab"
-import { SuggestionsTab } from "@/features/suggestions/SuggestionsTab"
+import { ClaudeTab } from "@/features/agent/ClaudeTab"
+import type { Claude } from "@/data/useClaude"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 
 interface Props {
@@ -22,9 +25,12 @@ interface Props {
   markers: Map<number, string>
   /** Claude's task for this view (the review while translating, the OCR hunt while reviewing the source). */
   suggest: { task: TaskName; run: TaskRun | undefined; onRun: () => void; onDecide: (s: Suggestion, decision: SuggestionDecision) => Promise<unknown> }
+  claude: Claude
+  /** Brings the cursor to Claude's box (Ask Claude). */
+  claudeFocusToken: number
 }
 
-export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onReplaceAll, tab, onTabChange, findFocusToken, markers, suggest }: Props) {
+export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onReplaceAll, tab, onTabChange, findFocusToken, markers, suggest, claude, claudeFocusToken }: Props) {
   const suggestions = useSuggestions()?.suggestions ?? []
   return (
     <Tabs value={tab} onValueChange={(v) => onTabChange(v as string)} className="flex h-full flex-col gap-0">
@@ -37,9 +43,11 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
           Notes
           {notes.length > 0 && <Badge variant="destructive" className="ml-1" title="Unlinked author notes">{notes.length}</Badge>}
         </TabsTrigger>
-        <TabsTrigger value="suggestions">
-          Suggestions
-          {suggestions.length > 0 && <Badge variant="secondary" className="ml-1" title="Claude's open suggestions">{suggestions.length}</Badge>}
+        <TabsTrigger value="claude">
+          <IconSparkles />Claude
+          {claude.view.asks.length > 0 ? (
+            <Badge className="ml-1" title="Claude is waiting for your answer">{claude.view.asks.length}</Badge>
+          ) : suggestions.length > 0 && <Badge variant="secondary" className="ml-1" title="Claude's open suggestions">{suggestions.length}</Badge>}
         </TabsTrigger>
       </TabsList>
       <TabsContent value="history" className="min-h-0 flex-1">
@@ -54,8 +62,9 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
       <TabsContent value="notes" className="min-h-0 flex-1">
         <NotesTab segment={selected} segments={segments} markers={markers} unlinked={notes} onAnchorUnlinked={onAnchor} />
       </TabsContent>
-      <TabsContent value="suggestions" className="min-h-0 flex-1">
-        <SuggestionsTab task={suggest.task} segments={segments} run={suggest.run} onRun={suggest.onRun} onDecide={suggest.onDecide} />
+      {/* kept mounted: a conversation goes on while another tab is open */}
+      <TabsContent value="claude" keepMounted className="min-h-0 flex-1">
+        <ClaudeTab claude={claude} focusToken={claudeFocusToken} segments={segments} suggest={suggest} />
       </TabsContent>
     </Tabs>
   )

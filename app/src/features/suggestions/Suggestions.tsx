@@ -3,7 +3,6 @@ import { IconCheck, IconMessage, IconSparkles, IconX } from "@tabler/icons-react
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import type { Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
 import { findOnce } from "@/lib/suggestions"
 import { cn } from "cn"
@@ -22,19 +21,15 @@ interface Props {
   onDecide: (s: Suggestion, decision: SuggestionDecision) => Promise<unknown>
 }
 
-/** Claude's suggestions on the chapter (docs/agent.md §4.1): one line to start the task and see it go, then a card
- *  for each. The text only points at them; each is decided with its card's buttons. */
-export function SuggestionsTab({ task, segments, run, onRun, onDecide }: Props) {
+/** Claude's suggestions on the chapter (docs/agent.md §4.1), under the Claude tab's head: one line to start the task
+ *  and see it go, then a card for each. The text only points at them; each is decided with its card's buttons. */
+export function Suggestions({ task, segments, run, onRun, onDecide }: Props) {
   const ctx = useSuggestions()
   if (!ctx) return null
   const t = TASK[task]
   const open = ctx.suggestions
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3 text-xs">
-        <span className="font-medium">Suggestions</span>
-        <Badge variant={open.length ? "secondary" : "outline"} data-open-suggestions>{open.length} open</Badge>
-      </div>
+    <div>
       <div data-run={run?.state ?? "idle"} className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
         {run?.state === "running" ? (
           <span className="text-muted-foreground"><IconSparkles className="mr-1 inline size-3.5 animate-pulse" />Claude is reading the chapter…</span>
@@ -46,19 +41,17 @@ export function SuggestionsTab({ task, segments, run, onRun, onDecide }: Props) 
           </>
         )}
       </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <ul aria-label="Claude's suggestions">
-          {open.map((s) => {
-            const at = segments.findIndex((x) => x.id === s.segmentId)
-            const seg = segments[at]
-            const text = seg ? (s.side === "source" ? seg.sourceText : seg.targetText) : ""
-            return (
-              <Card key={s.id} s={s} label={t.label} number={at + 1} stale={findOnce(text, s.quote) === -1} comment={t.comment}
-                selected={ctx.selected === s.id} onPick={() => ctx.select(s.id)} onDecide={(d) => onDecide(s, d)} />
-            )
-          })}
-        </ul>
-      </ScrollArea>
+      <ul aria-label="Claude's suggestions">
+        {open.map((s) => {
+          const at = segments.findIndex((x) => x.id === s.segmentId)
+          const seg = segments[at]
+          const text = seg ? (s.side === "source" ? seg.sourceText : seg.targetText) : ""
+          return (
+            <Card key={s.id} s={s} label={t.label} number={at + 1} stale={findOnce(text, s.quote) === -1} comment={t.comment}
+              selected={ctx.selected === s.id} onPick={() => ctx.select(s.id)} onDecide={(d) => onDecide(s, d)} />
+          )
+        })}
+      </ul>
     </div>
   )
 }

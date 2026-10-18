@@ -23,6 +23,7 @@ import { useTranslate } from "@/features/translate/TranslateView"
 import { Toggle } from "@/components/ui/toggle"
 import { formatSheets, sheets } from "@/lib/manuscript"
 import { useBook, type SaveState } from "@/data/useBook"
+import { useClaude } from "@/data/useClaude"
 import { useKeymap } from "@/lib/useKeymap"
 import { chapterForPage } from "@/lib/pages"
 import { KEYMAP, chordLabel } from "@/lib/keymap"
@@ -82,7 +83,8 @@ export function App() {
   // text opens its card, as selecting a comment opens Notes.
   const task: TaskName = translating ? "review" : "typos"
   const [suggestionSelected, setSuggestionSelected] = useState<number | null>(null)
-  const selectSuggestion = useCallback((id: number | null) => { setSuggestionSelected(id); if (id !== null) setPanelTab("suggestions") }, [])
+  const selectSuggestion = useCallback((id: number | null) => { setSuggestionSelected(id); if (id !== null) setPanelTab("claude") }, [])
+  const claude = useClaude()
   const suggestionState = useMemo(
     () => ({ suggestions: book.suggestions.filter((s) => s.task === task), selected: suggestionSelected, select: selectSuggestion }),
     [book.suggestions, task, suggestionSelected, selectSuggestion],
@@ -123,6 +125,7 @@ export function App() {
             onRun: () => { if (book.chapterId !== null) book.suggest.run(task, book.chapterId) },
             onDecide: book.suggest.decide,
           }}
+          claude={claude} claudeFocusToken={0}
         />
       }
       status={

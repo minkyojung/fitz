@@ -42,6 +42,12 @@ async function open(page: Page, view: "Translate" | "Review") {
   return { row, id: Number(await row.getAttribute(view === "Translate" ? "data-pair" : "data-segment")) }
 }
 const card = (page: Page, id: number) => page.locator(`[data-panel-suggestion="${id}"]`)
+/** The suggestions live under the Claude tab's head, folded until opened. */
+async function showSuggestions(page: Page) {
+  await page.getByRole("tab", { name: /Claude/ }).click()
+  const toggle = page.getByRole("button", { name: /^Suggestions/ })
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
+}
 
 test("a review suggestion only points; its card's Accept replaces the words, and ⌘Z brings back both", async ({ page, request }) => {
   const { id } = await open(page, "Translate")
@@ -58,7 +64,8 @@ test("a review suggestion only points; its card's Accept replaces the words, and
   await expect(card(page, sid)).toHaveAttribute("data-selected", "true")
   await expect(mark).toHaveAttribute("data-selected", "true")
   await expect(row.getByRole("textbox", { name: "Edit translation" })).toHaveCount(0)
-  await expect(page.getByRole("tab", { name: /Suggestions/ })).toHaveAttribute("aria-selected", "true")
+  await expect(page.getByRole("tab", { name: /Claude/ })).toHaveAttribute("aria-selected", "true")
+  await expect(page.getByRole("button", { name: /^Suggestions/ })).toHaveAttribute("aria-expanded", "true")
 
   await card(page, sid).getByRole("button", { name: "Accept" }).click()
   await expect(target).toHaveText("제안을 검사하는 번역 문장입니다.")
@@ -78,8 +85,8 @@ test("Dismiss lets a suggestion go; Keep as comment leaves it as Claude's commen
     { segmentId: id, side: "target", quote: "둘째 구절", replacement: "다음 구절", why: "더 자연스럽습니다" },
   )
   const { row } = await open(page, "Translate")
-  await page.getByRole("tab", { name: /Suggestions/ }).click()
-  await expect(page.locator("[data-open-suggestions]")).toHaveText("2 open")
+  await showSuggestions(page)
+  await expect(page.locator("[data-open-suggestions]")).toHaveText("2")
 
   await card(page, dismissed).getByRole("button", { name: "Dismiss" }).click()
   await expect(card(page, dismissed)).toHaveCount(0)
@@ -88,7 +95,7 @@ test("Dismiss lets a suggestion go; Keep as comment leaves it as Claude's commen
 
   await card(page, kept).getByRole("button", { name: "Keep as comment" }).click()
   await expect(card(page, kept)).toHaveCount(0)
-  await expect(page.locator("[data-open-suggestions]")).toHaveText("0 open")
+  await expect(page.locator("[data-open-suggestions]")).toHaveText("0")
   await row.locator("[data-target] mark[data-comment]").click()
   const comment = page.locator("[data-panel-comment]").filter({ hasText: "더 자연스럽습니다" })
   await expect(comment.locator("[data-author=agent]")).toHaveText("Claude")
@@ -103,7 +110,7 @@ test("a suggestion whose words changed since is not shown in the text and cannot
   const [sid] = seed({ segmentId: id, side: "target", quote: "바뀌기 전의", replacement: "예전" })
   await translate(request, id, "이미 다시 쓴 번역입니다.")
   const { row } = await open(page, "Translate")
-  await page.getByRole("tab", { name: /Suggestions/ }).click()
+  await showSuggestions(page)
   await expect(card(page, sid).locator("[data-stale]")).toBeVisible()
   await expect(card(page, sid).getByRole("button", { name: "Accept" })).toBeDisabled()
   await expect(row.locator("[data-suggestion]")).toHaveCount(0)
@@ -145,7 +152,7 @@ test("starting a review shows Claude at work, then what it found", async ({ page
   const { id } = await open(page, "Translate")
   await translate(request, id, "Claude가 읽을 번역입니다.")
   const { row } = await open(page, "Translate")
-  await page.getByRole("tab", { name: /Suggestions/ }).click()
+  await showSuggestions(page)
   await page.getByRole("button", { name: "Review this chapter with Claude" }).click()
   await expect(page.locator("[data-run]")).toContainText("Claude is reading the chapter…")
   await expect.poll(() => started.length).toBe(1)

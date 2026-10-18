@@ -6,6 +6,8 @@
 @import "@fontsource-variable/literata/opsz-italic.css";
 @import "@fontsource/noto-serif-kr/400.css";
 @import "@fontsource/noto-serif-kr/700.css";
+/* Streamdown (Claude's answers, docs/agent.md §17) styles with utility classes from its own files */
+@source "../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 
