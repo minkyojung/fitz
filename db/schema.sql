@@ -156,6 +156,8 @@ CREATE TABLE agent_conversation (
   title       TEXT,                       -- Claude Code가 첫 메시지로 지은 제목, 또는 번역자가 바꾼 것
   model       TEXT NOT NULL,
   effort      TEXT NOT NULL,
+  task        TEXT CHECK (task IN ('review','typos')),  -- NULL = 자유 대화. 작업 대화는 다시 열 때도 같은 설정(읽기만, 정해진 결과 모양)으로
+  chapter_id  INTEGER,                    -- 작업의 범위
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   used_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -168,6 +170,23 @@ CREATE TABLE agent_turn (
   cost        REAL,                       -- 그 턴이 더한 비용(추정, 달러)
   PRIMARY KEY (session_id, user_uuid)
 );
+
+-- Claude의 제안 (리뷰·오탈자, docs/agent.md §4.1). Claude는 찾기만 하고, 반영·무시는 번역자가 한다(되돌릴 수 있는 명령으로).
+CREATE TABLE agent_suggestion (
+  id              INTEGER PRIMARY KEY,
+  conversation_id TEXT NOT NULL,          -- 그 제안을 낸 작업 대화
+  task            TEXT NOT NULL CHECK (task IN ('review','typos')),
+  segment_id      INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  side            TEXT NOT NULL CHECK (side IN ('source','target')),  -- 리뷰는 번역문, 오탈자는 원문
+  quote           TEXT NOT NULL,          -- 바꿀 구절. 그 글에 정확히 한 번 있었던 것만 들어온다
+  replacement     TEXT NOT NULL,
+  why             TEXT NOT NULL,
+  level           TEXT CHECK (level IN ('high','medium','low')),  -- 리뷰만
+  base_version    INTEGER NOT NULL,       -- 제안할 때의 단락 버전
+  status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','dismissed','commented')),
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_suggestion_segment ON agent_suggestion(segment_id, status);
 
 -- 단락 버전: 쓰는 쪽이 둘(번역자와 에이전트)이라, 저장할 때 "내가 본 버전"이 지금 버전과 다르면 덮지 않는다(낙관적 동시성).
 -- 책 전체에서 올라가기만 하는 번호를 준다: 지웠다 되살린 단락도 예전 번호로 돌아가지 않는다. DB가 매기므로 어느 쓰기 경로도 빠지지 않는다.

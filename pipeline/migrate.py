@@ -84,6 +84,8 @@ def migrate(path: Path) -> list[str]:
             title       TEXT,                       -- Claude Code가 첫 메시지로 지은 제목, 또는 번역자가 바꾼 것
             model       TEXT NOT NULL,
             effort      TEXT NOT NULL,
+            task        TEXT CHECK (task IN ('review','typos')),
+            chapter_id  INTEGER,
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
             used_at     TEXT NOT NULL DEFAULT (datetime('now'))
           );
@@ -98,6 +100,31 @@ def migrate(path: Path) -> list[str]:
           );
         """)
         done.append("agent_conversation and agent_turn tables")
+    acols = {r[1] for r in conn.execute("PRAGMA table_info(agent_conversation)")}
+    if acols and "task" not in acols:
+        conn.execute("ALTER TABLE agent_conversation ADD COLUMN task TEXT CHECK (task IN ('review','typos'))")
+        conn.execute("ALTER TABLE agent_conversation ADD COLUMN chapter_id INTEGER")
+        done.append("agent_conversation.task and chapter_id columns")
+    if "agent_suggestion" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+        # the same table as db/schema.sql
+        conn.executescript("""
+          CREATE TABLE agent_suggestion (
+            id              INTEGER PRIMARY KEY,
+            conversation_id TEXT NOT NULL,          -- 그 제안을 낸 작업 대화
+            task            TEXT NOT NULL CHECK (task IN ('review','typos')),
+            segment_id      INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+            side            TEXT NOT NULL CHECK (side IN ('source','target')),  -- 리뷰는 번역문, 오탈자는 원문
+            quote           TEXT NOT NULL,          -- 바꿀 구절. 그 글에 정확히 한 번 있었던 것만 들어온다
+            replacement     TEXT NOT NULL,
+            why             TEXT NOT NULL,
+            level           TEXT CHECK (level IN ('high','medium','low')),  -- 리뷰만
+            base_version    INTEGER NOT NULL,       -- 제안할 때의 단락 버전
+            status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','dismissed','commented')),
+            created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE INDEX idx_suggestion_segment ON agent_suggestion(segment_id, status);
+        """)
+        done.append("agent_suggestion table")
     triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     if "segment_version_on_update" not in triggers:
         # the same triggers as db/schema.sql
