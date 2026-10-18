@@ -35,7 +35,7 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 8
+    assert len(steps) == 9
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
@@ -159,5 +159,18 @@ def test_migration_records_who_made_each_change(tmp_path: Path):
     assert conn.execute("SELECT author FROM comment").fetchone() == ("translator",)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE ops SET actor = 'someone'")
+    conn.close()
+    assert migrate(p) == []
+
+
+def test_migration_adds_the_agent_conversation_tables(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);")
+    conn.commit(); conn.close()
+    assert "agent_conversation and agent_turn tables" in migrate(p)
+    conn = sqlite3.connect(p)
+    assert {r[1] for r in conn.execute("PRAGMA table_info(agent_conversation)")} == {"id", "session_id", "title", "model", "effort", "created_at", "used_at"}
+    assert {r[1] for r in conn.execute("PRAGMA table_info(agent_turn)")} == {"session_id", "user_uuid", "reason", "is_error", "ms", "cost"}
     conn.close()
     assert migrate(p) == []

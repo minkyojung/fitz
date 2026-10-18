@@ -75,6 +75,29 @@ def migrate(path: Path) -> list[str]:
     if ccols and "author" not in ccols:
         conn.execute("ALTER TABLE comment ADD COLUMN author TEXT NOT NULL DEFAULT 'translator' CHECK (author IN ('translator','agent'))")
         done.append("comment.author column")
+    if "agent_conversation" not in tables:
+        # the same tables as db/schema.sql
+        conn.executescript("""
+          CREATE TABLE agent_conversation (
+            id          TEXT PRIMARY KEY,           -- 화면이 만든 uuid. 되감기·가르기로 세션이 바뀌어도 대화는 그대로
+            session_id  TEXT,                       -- Claude Code의 세션 id. 첫 메시지 전에는 NULL
+            title       TEXT,                       -- Claude Code가 첫 메시지로 지은 제목, 또는 번역자가 바꾼 것
+            model       TEXT NOT NULL,
+            effort      TEXT NOT NULL,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            used_at     TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE TABLE agent_turn (
+            session_id  TEXT NOT NULL,
+            user_uuid   TEXT NOT NULL,              -- 그 턴을 시작한 번역자의 메시지. 세션 파일의 그 메시지 uuid와 같다
+            reason      TEXT NOT NULL,              -- completed, aborted_streaming(멈춤), …
+            is_error    INTEGER NOT NULL DEFAULT 0,
+            ms          INTEGER,
+            cost        REAL,                       -- 그 턴이 더한 비용(추정, 달러)
+            PRIMARY KEY (session_id, user_uuid)
+          );
+        """)
+        done.append("agent_conversation and agent_turn tables")
     triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     if "segment_version_on_update" not in triggers:
         # the same triggers as db/schema.sql

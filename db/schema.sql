@@ -148,6 +148,27 @@ CREATE INDEX idx_note_segment    ON note(segment_id);
 CREATE INDEX idx_comment_segment ON comment(segment_id);
 CREATE INDEX idx_version_segment ON segment_version(segment_id, saved_at);
 
+-- 번역 에이전트와의 대화 (docs/agent.md §13). 내용은 Claude Code가 자기 세션 파일에 쓴다. 여기는 Octave처럼 목록과,
+-- 세션 파일에 없는 것(턴의 시간·비용·끝난 이유, 대화의 모델)만 둔다.
+CREATE TABLE agent_conversation (
+  id          TEXT PRIMARY KEY,           -- 화면이 만든 uuid. 되감기·가르기로 세션이 바뀌어도 대화는 그대로
+  session_id  TEXT,                       -- Claude Code의 세션 id. 첫 메시지 전에는 NULL
+  title       TEXT,                       -- Claude Code가 첫 메시지로 지은 제목, 또는 번역자가 바꾼 것
+  model       TEXT NOT NULL,
+  effort      TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  used_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE agent_turn (
+  session_id  TEXT NOT NULL,
+  user_uuid   TEXT NOT NULL,              -- 그 턴을 시작한 번역자의 메시지. 세션 파일의 그 메시지 uuid와 같다
+  reason      TEXT NOT NULL,              -- completed, aborted_streaming(멈춤), …
+  is_error    INTEGER NOT NULL DEFAULT 0,
+  ms          INTEGER,
+  cost        REAL,                       -- 그 턴이 더한 비용(추정, 달러)
+  PRIMARY KEY (session_id, user_uuid)
+);
+
 -- 단락 버전: 쓰는 쪽이 둘(번역자와 에이전트)이라, 저장할 때 "내가 본 버전"이 지금 버전과 다르면 덮지 않는다(낙관적 동시성).
 -- 책 전체에서 올라가기만 하는 번호를 준다: 지웠다 되살린 단락도 예전 번호로 돌아가지 않는다. DB가 매기므로 어느 쓰기 경로도 빠지지 않는다.
 -- 순서(idx)만 바뀌는 재번호는 내용 변경이 아니므로 올리지 않는다.
