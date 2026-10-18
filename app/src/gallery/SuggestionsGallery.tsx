@@ -54,10 +54,11 @@ function Marked({ text, marks, selected, onPick }: { text: string; marks: { quot
     if (at === -1) continue
     parts.push(rest.slice(0, at))
     parts.push(
+      // selected as comment marks are: the same tint, stronger (no outline)
       <span key={key++} title={m.why} role="button" tabIndex={0} onClick={() => onPick(m.id)} onKeyDown={(e) => e.key === "Enter" && onPick(m.id)}
-        className={cn("cursor-pointer rounded-sm", selected === m.id && "outline-2 outline-offset-2 outline-ring")}>
-        <mark className="border-b-2 border-mark-warning bg-mark-warning/40 text-inherit line-through decoration-mark-warning-ink">{m.quote}</mark>{" "}
-        <ins className="border-b-2 border-mark-term bg-mark-term/40 px-0.5 no-underline">{m.replacement}</ins>
+        className="group cursor-pointer">
+        <mark className={cn("border-b-2 border-mark-warning text-inherit line-through decoration-mark-warning-ink transition-colors group-hover:bg-mark-warning/70", selected === m.id ? "bg-mark-warning/70" : "bg-mark-warning/40")}>{m.quote}</mark>{" "}
+        <ins className={cn("border-b-2 border-mark-term px-0.5 no-underline transition-colors group-hover:bg-mark-term/70", selected === m.id ? "bg-mark-term/70" : "bg-mark-term/40")}>{m.replacement}</ins>
       </span>,
     )
     rest = rest.slice(at + m.quote.length)
