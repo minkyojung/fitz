@@ -2,24 +2,26 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
+import { DatabaseSync } from "node:sqlite"
+
 import { foldMessages } from "./fold.mjs"
 import { DEFAULTS, createAgentHost } from "./host.mjs"
+import { getConversation, listConversations, turnsOf } from "./records.mjs"
 import { settle, stubSessions } from "./fixtures/stubSession.mjs"
-import { DatabaseSync } from "node:sqlite"
 
 const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
 const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
-const db = { fake: "db" }
 
-function setup() {
+function setup({ sessionInfo = async () => null } = {}) {
   const stubs = stubSessions()
-  const host = createAgentHost({ db, openSession: stubs.openSession })
+  const db = gatsby()
+  const host = createAgentHost({ db, openSession: stubs.openSession, sessionInfo })
   const events = []
-  return { ...stubs, host, events, follow: (id = ID) => host.open(id, (e) => events.push(e)) }
+  return { ...stubs, db, host, events, follow: (id = ID) => host.open(id, (e) => events.push(e)) }
 }
 
 test("Claude Code starts with the first message, once, with the conversation's model and the book", () => {
-  const { host, opened } = setup()
+  const { host, opened, db } = setup()
   host.start(ID)
   assert.equal(opened.length, 0)
   host.send(ID, "¶4는?")
@@ -111,7 +113,7 @@ function gatsby() {
 }
 function asking() {
   const stubs = stubSessions()
-  const host = createAgentHost({ db: gatsby(), openSession: stubs.openSession })
+  const host = createAgentHost({ db: gatsby(), openSession: stubs.openSession, sessionInfo: async () => null })
   const events = []
   host.start(ID)
   host.open(ID, (e) => events.push(e))
@@ -189,4 +191,50 @@ test("an answer must be one of the decisions, for a write that waits", () => {
   void claudeAsks()
   assert.throws(() => host.answer(ID, events.at(-1).ask.requestId, "maybe"), { status: 400 })
   assert.throws(() => host.answer(ID, "2b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11", "allow"), { status: 404 })
+})
+
+// --- kept in book.db, as Octave keeps its conversations
+
+test("a conversation is listed from the moment it starts, with its model, before it has a session", () => {
+  const { host, db } = setup()
+  host.start(ID, { model: "claude-sonnet-5-5", effort: "low" })
+  assert.deepEqual(listConversations(db).map(({ id, sessionId, title, model, effort }) => ({ id, sessionId, title, model, effort })),
+    [{ id: ID, sessionId: null, title: null, model: "claude-sonnet-5-5", effort: "low" }])
+})
+
+test("its session, each turn's time, cost and end, and the title Claude Code gave it are kept", async () => {
+  const { host, db, opened } = setup({ sessionInfo: async (id) => ({ sessionId: id, summary: "Reserved 뉘앙스" }) })
+  host.start(ID)
+  host.send(ID, "q")
+  opened[0].feed(...nuance)
+  await settle()
+  await settle()
+  const sessionId = nuance.find((m) => m.subtype === "init").session_id
+  const result = nuance.find((m) => m.type === "result")
+  const echo = nuance.find((m) => m.type === "user" && m.isReplay)
+  const conv = getConversation(db, ID)
+  assert.deepEqual([conv.sessionId, conv.title], [sessionId, "Reserved 뉘앙스"])
+  assert.deepEqual([...turnsOf(db, sessionId)], [[echo.uuid, { reason: "completed", isError: false, ms: result.duration_ms, cost: result.total_cost_usd }]])
+})
+
+test("a conversation that exists in book.db cannot be started again", () => {
+  const first = setup()
+  first.host.start(ID)
+  const again = createAgentHost({ db: first.db, openSession: first.openSession, sessionInfo: async () => null })
+  assert.throws(() => again.start(ID), { status: 409 })
+})
+
+test("a record that cannot be written does not stop the conversation", async () => {
+  const { host, db, opened, events, follow } = setup()
+  host.start(ID)
+  follow()
+  host.send(ID, "q")
+  db.exec("DROP TABLE agent_turn")
+  const quiet = console.error
+  console.error = () => {}
+  try {
+    opened[0].feed(...nuance)
+    await settle()
+  } finally { console.error = quiet }
+  assert.equal(events.filter((e) => e.type === "message").length, nuance.length)
 })
