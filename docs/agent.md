@@ -149,7 +149,7 @@ app/src/
 | 7 ✓ | 화면: 패널 **Suggestions** 탭(시작 줄, 카드), 번역문·원문의 제안 표시(맞춤법 표시 코드를 함께 쓴다) | `features/suggestions/` 새로, `ReviewPanel.tsx`, `PairRow.tsx`, `SegmentRow.tsx`, `SourceText.tsx`, `App.tsx`, `lib/suggestions.ts` | e2e: 제안을 e2e DB에 넣고 Accept·Dismiss·Keep·⌘Z·"글이 바뀐 제안" |
 
 **7행 결과**(2026-10-18): 보기가 작업을 정한다 — Translate에서는 리뷰(번역문), Review에서는 오탈자(원문). 본문의 표시는 고르기만 하고(댓글처럼 `SuggestionsContext`, 고르면 Suggestions 탭이 열림), 결정은 카드의 버튼으로만. 고른 것은 같은 색이 진해질 뿐 테두리가 없다. 같은 낱말에 사전 표시와 Claude의 제안이 겹치면 Claude의 것을 보인다. 글이 바뀌어 구절이 정확히 한 번 있지 않은 제안은 본문에 그리지 않고, 카드에 "the paragraph changed since"와 함께 Accept를 끈다(Dismiss·Keep은 된다). 패널이 좁으면(기본 20%) 탭 다섯이 한 줄에 들어가지 않아 두 줄로 접힌다. 시작 줄의 실행은 `/live`를 가로채 흉내 낸다(Claude 없이). e2e 37(새 5), 두 번 연속 통과. `StructuredOutput` 줄 숨기기는 대화 화면(9단계)에서 — 지금은 대화를 보이는 화면이 없다.
-| 8 | README, 이 문서에 결과 | | |
+| 8 ✓ | README, 이 문서에 결과 | | |
 
 ## 5. 검증 (`checks.mjs`)
 
@@ -253,7 +253,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | 2026-10-18. 서버 테스트 102. 실제 책 사본(Haiku): "¶36을 번역해 넣어줘" → `read`·`glossary` → `set_translation` 미리보기 → 허락 → ¶36 draft, ops에 `updateSegment` 1행, `/api/undo`로 untranslated로 복귀. "Zemurray를 제머리로 등록" → 거절 → 등록 없음, Claude는 다른 길을 찾지 않고 현재 표기(샘 저머레이)와의 차이를 알림. 실제 책 쪽 두 턴: 9.7초 $0.002, 2.7초 $0.0004. Gatsby 녹화 `translate.jsonl`(Opus 5.5, 허락): `read` → `book` → `set_translation`, 13.7초, $0.062 |
 | 5.5 | 쓰는 쪽이 둘인 책(§12): 버전 + 확인 / 변경 알림(처음엔 SSE, §15에서 `/live`로) / 에디터가 듣고 충돌에서 글을 지킴 | Claude가 쓰면 에디터에 바로 보이고, 겹치면 덮지 않고 알림 | 서버 테스트 + e2e | 2026-10-18. 커밋 셋. 서버 테스트 114, pytest 31, 화면 단위 34, e2e 30(새 3: 다른 쪽의 쓰기가 새로고침 없이 보임 / ⌘Enter 충돌 → 덮지 않음, "changed since" 임시본, Recover 후 저장 / Tab 충돌도 같음) |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
-| 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | |
+| 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | 2026-10-18 완료(§4.2, 커밋 일곱). 서버 테스트 178(+실제 2), 화면 단위 47, e2e 37. 실측: 오탈자 6.0초 $0.022 심은 오류 넷 다, 리뷰 7.3초 $0.025 뜻이 뒤집힌 번역 high |
 | 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | |
 | 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), 에이전트가 쓴 것을 에디터가 다시 읽기, README | 에디터 안에서 전부 | e2e(녹화 프레임) | |
 

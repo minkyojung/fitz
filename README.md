@@ -174,3 +174,12 @@ node server/agent/chat.mjs --open <대화 id>      # 지난 대화를 이어서:
 - 대화는 책 DB에 목록으로 남고(내용은 Claude Code의 세션 파일), 서버를 다시 켜도 `--open`으로 이어 간다. Claude Code는 30일 지난 대화 파일을 지우므로 턴이 끝날 때마다 `~/.fitz/sessions/`에 사본을 두고, 원본이 없으면 되돌려 놓는다.
 - 테스트: `cd server && pnpm test`(가짜 세션, 비용 없음), `pnpm test:real`(진짜 Claude Haiku로 한 번, 사용량을 조금 쓴다), `cd app && pnpm e2e`(헤드리스 브라우저).
 - 자격: 환경에 `ANTHROPIC_API_KEY`가 있으면 그 키를, 없으면 이 Mac의 Claude 로그인을 쓴다. 서버가 시작할 때 어느 쪽인지 찍는다.
+
+### Claude의 리뷰와 OCR 오류 찾기 (에디터 안에서)
+
+오른쪽 패널의 **Suggestions** 탭. Translate 보기에서는 "Review this chapter with Claude"(번역문 리뷰), Review 보기에서는 "Find OCR errors with Claude"(원문의 OCR 오류).
+
+- 누르면 Claude가 그 장을 읽고(읽기 도구만, 쓰기 도구는 아예 없다) 제안 목록을 낸다. 기본 Sonnet 5.5, 5단락에 7초·$0.03 정도.
+- 제안은 본문에 맞춤법 표시와 같은 모양(지울 말에 취소선, 넣을 말은 초록)으로 보인다. 본문의 표시를 누르면 패널의 카드가 골라질 뿐이고, 바꾸는 것은 카드의 **Accept**뿐이다. **Dismiss**는 버리기, **Keep as comment**(리뷰만)는 Claude의 댓글로 남기기. 셋 다 ⌘Z로 되돌아간다.
+- 그사이 글이 바뀌어 그 구절이 없으면 본문에 그리지 않고 카드의 Accept가 꺼진다. 같은 장을 다시 돌려도 이미 열린 제안과 겹치는 것은 다시 나오지 않는다.
+- OCR 제안은 스캔과 대조해 확인한다(Claude는 스캔을 보지 않는다, 글만 받는다).
