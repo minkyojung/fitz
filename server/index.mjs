@@ -8,7 +8,6 @@ import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachLive } from "./live.mjs"
-import { serveChanges } from "./events.mjs"
 import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
@@ -92,7 +91,6 @@ const json = (res, status, body) => {
 const server = createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") return json(res, 204, null)
-    if (req.method === "GET" && req.url === "/api/events") return serveChanges(db, req, res)
     if (req.method === "GET" && req.url.startsWith("/pages/")) {
       const file = basename(req.url)  // basename defeats path traversal
       const png = await readFile(resolve(PAGES, file))

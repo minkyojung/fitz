@@ -47,21 +47,21 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 
 ```
 server/
-  index.mjs             기존 JSON 라우트 그대로 + WebSocket /agent 하나
+  index.mjs             기존 JSON 라우트 그대로 + 화면과의 실시간 연결(live.mjs)
+  live.mjs              WebSocket /live: 대화와 책 변경 알림. agent/protocol.mjs로 검사하고 host에 넘긴다(§15)
   commands.mjs          COMMANDS · execute · undo · redo  — 그대로. 에이전트의 모든 쓰기가 지난다
   agent/
     tools.mjs           MCP 도구 8개(읽기 4, 쓰기 4) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
     host.mjs            서버의 대화들: 대화마다 세션 하나, 접은 상태, 따라가는 쪽. 소켓을 모른다
-    socket.mjs          WebSocket /agent. protocol.mjs로 검사하고 host에 넘긴다
     chat.mjs            터미널에서 에이전트와 대화(페이지와 같은 소켓, 같은 fold)
     record.mjs          실제 한 턴을 녹화(JSONL)하는 개발용 스크립트. 세션은 임시 폴더에서 돌고 지워진다
     fixtures/           gatsby.sql(퍼블릭 도메인 책) + 녹화. 커밋하는 녹화에 번역 중인 책은 들어가지 않는다
     checks.mjs          앱이 돌리는 번역 검증. 순수 함수
     protocol.mjs        ClientMsg / ServerMsg 닫힌 union. 수신 시 모든 필드 검증
 app/src/
-  data/agent.ts         WebSocket 클라이언트 + fold
+  lib/live.ts           페이지의 실시간 연결 하나(다시 붙기, resync). 9단계의 대화 화면도 이 위에
   features/agent/       패널 "Agent" 탭: 스레드, 라이브 라인, 승인 카드, 결과 카드, 비용
 ```
 
@@ -126,7 +126,7 @@ Stop hook은 fail-open이다(던지거나 시간이 지나면 `{}`로 취급되�
 - 세션은 30일 뒤 Claude Code가 지운다. 번역 스레드의 보존 가치가 드러나면 사본을 둔다(2단계).
 - 사람이 에디터로 같은 세그먼트를 고치는 동안 에이전트가 쓰려 하면 `expectUpdatedAt` 불일치로 거절 → 모델이 다시 읽는다.
 
-## 7. 프로토콜 (WebSocket `/agent`)
+## 7. 프로토콜 (WebSocket `/live`)
 
 `agent/protocol.mjs`가 정본이다. 지금(4단계) 있는 것:
 
@@ -206,7 +206,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `agent/fixtures/` | 2026-10-18. 서버 테스트 72. Gatsby ¶4 질문(Opus 5.5/medium): `read(ids:[4], around:3)` 1회 → 생각 → 답, 21초, $0.039, 요청 2,265·3,312토큰. 실제 책 ¶36: `read` + `glossary`, 34초, $0.080(격리 전 52초, $0.327). Claude가 앞뒤 단락·사람의 댓글·이미 번역된 단락의 문체를 근거로 답함 |
 | 4 | WS 라우트 + `protocol.mjs` + 서버의 대화 관리(start·send·stop·open) + 터미널 대화 스크립트 `agent/chat.mjs` | 터미널에서 질문하고 답이 흐름 | 스텁 세션으로 프로토콜 테스트, 실제 1회 | 2026-10-18. 서버 테스트 84. 스텁 세션(녹화 메시지를 흘려 넣음)으로: 중간에 붙은 두 번째 페이지도 서버와 같은 상태, 다른 사이트 Origin은 401, 프로세스가 죽으면 다음 메시지에서 같은 세션 id로 resume. 실제: 서버(책 사본)에 `chat.mjs`로 ¶36 질문(Haiku) → `read(ids:[36], around:2)` → 답, 4.2초, $0.001. 6초에 멈춤 → `aborted_streaming`, 같은 대화의 다음 질문에 정상 답. 확인이 만든 세션 2개는 `deleteSession`으로 지움 |
 | 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | 2026-10-18. 서버 테스트 102. 실제 책 사본(Haiku): "¶36을 번역해 넣어줘" → `read`·`glossary` → `set_translation` 미리보기 → 허락 → ¶36 draft, ops에 `updateSegment` 1행, `/api/undo`로 untranslated로 복귀. "Zemurray를 제머리로 등록" → 거절 → 등록 없음, Claude는 다른 길을 찾지 않고 현재 표기(샘 저머레이)와의 차이를 알림. 실제 책 쪽 두 턴: 9.7초 $0.002, 2.7초 $0.0004. Gatsby 녹화 `translate.jsonl`(Opus 5.5, 허락): `read` → `book` → `set_translation`, 13.7초, $0.062 |
-| 5.5 | 쓰는 쪽이 둘인 책(§12): 버전 + 확인 / 변경 알림(SSE) / 에디터가 듣고 충돌에서 글을 지킴 | Claude가 쓰면 에디터에 바로 보이고, 겹치면 덮지 않고 알림 | 서버 테스트 + e2e | 2026-10-18. 커밋 셋. 서버 테스트 114, pytest 31, 화면 단위 34, e2e 30(새 3: 다른 쪽의 쓰기가 새로고침 없이 보임 / ⌘Enter 충돌 → 덮지 않음, "changed since" 임시본, Recover 후 저장 / Tab 충돌도 같음) |
+| 5.5 | 쓰는 쪽이 둘인 책(§12): 버전 + 확인 / 변경 알림(처음엔 SSE, §15에서 `/live`로) / 에디터가 듣고 충돌에서 글을 지킴 | Claude가 쓰면 에디터에 바로 보이고, 겹치면 덮지 않고 알림 | 서버 테스트 + e2e | 2026-10-18. 커밋 셋. 서버 테스트 114, pytest 31, 화면 단위 34, e2e 30(새 3: 다른 쪽의 쓰기가 새로고침 없이 보임 / ⌘Enter 충돌 → 덮지 않음, "changed since" 임시본, Recover 후 저장 / Tab 충돌도 같음) |
 | 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | |
 | 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | |
@@ -221,7 +221,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 세 층, 전부 유지:
 1. 순수 함수 — `tools`·`fold`·`checks`를 스크래치 DB와 **녹화된** 실제 세션 fixture로. 손으로 쓴 프레임만으로 테스트하지 않는다.
 2. WS 라우트 — 세션을 스텁으로 주입.
-3. 실제 화면 — Playwright, `/agent`를 가짜 프레임으로.
+3. 실제 화면 — Playwright, `/live`를 가짜 프레임으로.
 
 실제 모델은 3단계의 녹화 1회와 수동 확인에만 쓴다. 테스트는 `CLAUDE_CONFIG_DIR`를 임시 폴더로 주어 사람의 `~/.claude`와 실제 세션을 건드리지 않는다.
 
@@ -233,7 +233,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 |---|---|---|
 | 버전 | `segment.version`. 내용 칸(원문·번역·상태·종류·확인)이 바뀔 때마다 DB 트리거가 **책 전체에서 가장 큰 번호 + 1**을 준다 | 낙관적 동시성(HTTP ETag/If-Match, ProseMirror collab의 버전과 같은 원리). 트리거라서 어느 쓰기 경로도(⌘Z 포함, 앞으로 생길 것도) 빠지지 않는다. 책 전체 번호라 지웠다 되살린 단락도 예전 번호로 돌아가지 않는다(ABA 없음). `updated_at`(초 단위)은 같은 초의 두 쓰기를 못 가른다. 재번호(idx)는 내용 변경이 아니므로 올리지 않는다 |
 | 확인 | `updateSegment { expectVersion }`: 다르면 409, 아무것도 쓰지 않는다. 같은 트랜잭션 안에서 비교 | 검사가 한 곳. 에디터의 저장과 에이전트의 `set_translation`이 같은 검사를 지난다. `expectVersion`은 기록되는 명령에 들지 않는다(redo가 그 번호에 묶이지 않게) |
-| 알림 | `GET /api/events`(SSE). `execute`/`undo`/`redo`가 커밋한 뒤 `{ opId, name, segmentIds, kind: do·undo·redo }`를 알린다(`watchChanges`). 이 컴퓨터의 페이지만, 30초마다 살아 있음 신호 | 모든 쓰기가 그 셋을 지나므로 알림도 한 곳에서. 한 방향이고 브라우저가 다시 붙어 주는 표준이 SSE다. 에이전트 통로(WebSocket)와 나눈다: 에디터는 에이전트를 쓰지 않을 때도 책의 변화를 알아야 한다. SSE id는 쓰지 않는다(다시 붙으면 다시 읽으므로 되풀이할 것이 없고, undo는 원래 op와 같은 id다). 알림 받는 쪽의 오류는 쓰기를 되돌리지 않는다 |
+| 알림 | (처음엔 SSE `GET /api/events`, 지금은 실시간 연결 `/live`의 `changed` — §15.) `execute`/`undo`/`redo`가 커밋한 뒤 `{ opId, name, segmentIds, kind: do·undo·redo }`를 알린다(`watchChanges`). 이 컴퓨터의 페이지만, 30초마다 살아 있음 신호 | 모든 쓰기가 그 셋을 지나므로 알림도 한 곳에서. 한 방향이고 브라우저가 다시 붙어 주는 표준이 SSE다. 에이전트 통로(WebSocket)와 나눈다: 에디터는 에이전트를 쓰지 않을 때도 책의 변화를 알아야 한다. SSE id는 쓰지 않는다(다시 붙으면 다시 읽으므로 되풀이할 것이 없고, undo는 원래 op와 같은 id다). 알림 받는 쪽의 오류는 쓰기를 되돌리지 않는다 |
 | 에디터 | `api.watchChanges`(EventSource) → 150ms 모아서 화면의 것(장·단락·주석·용어집)을 다시 읽는다. 다시 붙으면 `resync`. 편집 칸은 **편집을 시작할 때의** 버전·글을 기억해 저장에 그 버전을 보내고, "안 바뀜"도 그 글과 비교한다. 칸 밖의 글 변경(맞춤법 수락 등)은 화면의 버전, 표시 토글(확인·종류)은 보내지 않는다 | 화면이 새로 읽으면 화면의 버전도 새것이 되므로, 그것을 보내면 편집 칸의 옛 글이 남의 새 글을 덮는다. 표시 토글은 서버가 다른 칸을 저장된 값으로 합치므로 글을 덮을 수 없고, 빠른 토글의 가짜 충돌을 피한다. 맞춤법 코퍼스는 다시 읽지 않는다(원문은 에이전트가 쓰지 않고, 이 페이지의 원문 편집은 스스로 갱신) |
 | 충돌 | 409면 저장하지 않고 "그사이 바뀜"을 알린 뒤 그 단락을 다시 읽는다. **저장이 성공하기 전에는 쓰던 글을 지우지 않는다**: 실패하면 그 자리에서 임시본으로 남기고(⌘Enter·Tab·blur·분할 전 저장 모두), 바탕 글이 바뀐 임시본은 지우지 않고 "the paragraph changed since"와 함께 Recover/Discard를 보인다. Recover해 저장하면 그때의 버전으로 — 번역자가 고른 덮어쓰기다. 분할 전 저장이 거절되면 분할하지 않는다 | 전에는 바탕 글이 바뀐 임시본을 조용히 지웠고(`PairRow`·`SegmentRow`), ⌘Enter는 저장 전에 임시본을 지웠고, 임시본은 타이핑이 멈출 때만 적혔다 — 충돌에서 번역자의 글이 사라지는 길 셋 |
 
@@ -302,6 +302,8 @@ agent_turn(session_id TEXT, user_uuid TEXT, reason TEXT, origin TEXT, ms INTEGER
 | 1 | 소켓을 페이지의 실시간 연결로: 경로 `/live`, 연결마다 `watchChanges(db)`를 걸어 `changed { opId, name, segmentIds, kind }`를 보내고 닫히면 뗀다. 30초 ping으로 죽은 연결을 끊는다. 프로토콜에 `changed` | `server/live.mjs`(지금의 `agent/socket.mjs`를 옮김), `agent/protocol.mjs` |
 | 2 | 페이지의 연결 하나: 열고, 끊기면 0.5→5초로 다시 붙고, 다시 붙으면 `resync`(화면 다시 읽기) + 따라가던 대화를 다시 `open`, 열리기 전에 보낸 것은 줄 세웠다 보냄. `api.watchChanges`가 이 위에 선다(9단계의 대화 화면도 같은 연결) | `app/src/data/live.ts`, `http.ts` |
 | 3 | SSE를 걷는다: `/api/events` 경로와 `events.mjs`. `watchChanges`는 `commands.mjs`에 그대로 | `server/index.mjs`, `events.mjs` 삭제 |
+
+**2026-10-18 완료**(커밋 셋: 서버 `/live` + `changed` + 30초 생존 확인 / 화면의 `lib/live.ts`(다시 붙기 0.5·1·2·5초, 다시 붙으면 `resync`) / SSE 삭제). 보내기와 대기열은 대화 화면(9단계)에서 더한다. 서버 테스트 118, 화면 단위 38, e2e 30(두 번 연속). e2e의 Recover 뒤 ⌘Enter는 편집 칸이 포커스를 받은 뒤 누르도록 고쳤다(알림이 빨라져 드러난 테스트의 경쟁).
 | 4 | 터미널 대화를 `/live`로 | `agent/chat.mjs` |
 | 5 | 테스트: 서버 — 두 페이지 모두 `changed`를 받음, 다른 사이트 거절, 닫힌 연결은 듣기를 멈춤(지금의 events 테스트를 옮김). 페이지 — 연결의 다시 붙기·줄 세우기(단위 테스트, Node의 WebSocket). e2e — `writers.spec` 셋이 그대로 통과 | `server/live.test.mjs`, `app/src/data/live.test.ts` |
 

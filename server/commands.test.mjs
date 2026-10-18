@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo } from "./commands.mjs"
+import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, search, splitDoc, undo, watchChanges } from "./commands.mjs"
 
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
@@ -408,4 +408,50 @@ test("a comment keeps its author when deleted and brought back", () => {
   undo(db)
   assert.equal(listAnnotations(db, { chapterId: 1 }).comments.find((x) => x.id === c.id).author, "agent")
   assert.equal(listAnnotations(db, { chapterId: 1 }).comments.find((x) => x.id === 1).author, "translator")
+})
+
+// --- the book announces each committed write (the live connection passes it to every page)
+
+const translateOne = (db, text) => execute(db, "updateSegment", { id: 1, targetDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] } })
+test("a committed write is announced once, after it is in the database", () => {
+  const db = fixture()
+  const heard = []
+  watchChanges(db, (c) => heard.push({ ...c, seen: db.prepare("SELECT target_text FROM segment WHERE id = 1").get().target_text }))
+  translateOne(db, "알파")
+  assert.deepEqual(heard, [{ opId: 1, name: "updateSegment", segmentIds: [1], kind: "do", actor: "translator", seen: "알파" }])
+})
+
+test("a refused write announces nothing", () => {
+  const db = fixture()
+  const heard = []
+  watchChanges(db, (c) => heard.push(c))
+  assert.throws(() => execute(db, "updateSegment", { id: 1, text: "x", expectVersion: -1 }), { status: 409 })
+  assert.throws(() => execute(db, "updateSegment", { id: 99, text: "x" }), { status: 404 })
+  assert.deepEqual(heard, [])
+})
+
+test("undo and redo are announced as what they are", () => {
+  const db = fixture()
+  const heard = []
+  translateOne(db, "알파")
+  watchChanges(db, (c) => heard.push(c))
+  undo(db)
+  redo(db)
+  assert.deepEqual(heard.map((c) => [c.kind, c.opId, c.name, c.actor]), [["undo", 1, "updateSegment", "translator"], ["redo", 1, "updateSegment", "translator"]])
+})
+
+test("a watcher that fails does not undo or fail the write; one that stops watching hears nothing more", () => {
+  const db = fixture()
+  const heard = []
+  const quiet = console.error
+  console.error = () => {}
+  try {
+    watchChanges(db, () => { throw new Error("broken watcher") })
+    const stop = watchChanges(db, (c) => heard.push(c.opId))
+    translateOne(db, "하나")
+    stop()
+    translateOne(db, "둘")
+  } finally { console.error = quiet }
+  assert.equal(db.prepare("SELECT target_text FROM segment WHERE id = 1").get().target_text, "둘")
+  assert.deepEqual(heard, [1])
 })

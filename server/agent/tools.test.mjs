@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { pmDoc, undo } from "../commands.mjs"
+import { pmDoc, undo, watchChanges } from "../commands.mjs"
 import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
@@ -261,4 +261,12 @@ test("a write that came through a fitz tool is the agent's, with the id of the t
   await call("add_comment", { segmentId: 2, side: "source", body: "확인" }, "toolu_B")
   assert.deepEqual(db.prepare("SELECT name, actor, tool_use_id FROM ops ORDER BY id").all().map((r) => [r.name, r.actor, r.tool_use_id]),
     [["updateSegment", "agent", "toolu_A"], ["addComment", "agent", "toolu_B"]])
+})
+
+test("the agent's writes are announced like the translator's, as the agent's", () => {
+  const db = fixture()
+  const heard = []
+  watchChanges(db, (c) => heard.push(c))
+  setTranslation(db, { segmentId: 2, text: "배", expectVersion: versionOf(db, 2) })
+  assert.deepEqual(heard, [{ opId: 1, name: "updateSegment", segmentIds: [2], kind: "do", actor: "agent" }])
 })

@@ -159,7 +159,7 @@ uv run python -m pipeline.boxes --pdf "<book>.pdf" --db out/book.db
 Claude Code를 에디터 서버 안에서 돌려, 책을 직접 읽고 답하게 한다. 설계와 진행은 `docs/agent.md`. 화면(Agent 탭)은 아직 없고 터미널에서 쓴다.
 
 ```sh
-node server/index.mjs                          # 서버가 에이전트 소켓도 연다 (ws://localhost:4800/agent)
+node server/index.mjs                          # 서버가 화면과의 실시간 연결도 연다 (ws://localhost:4800/live)
 node server/agent/chat.mjs                     # 다른 터미널에서. 예: ¶36의 뉘앙스는?
 node server/agent/chat.mjs --model claude-sonnet-5-5 --effort low
 ```
@@ -167,5 +167,5 @@ node server/agent/chat.mjs --model claude-sonnet-5-5 --effort low
 - Enter로 보내고, 답이 도는 중 Ctrl-C는 멈추기, 쉬는 중 Ctrl-C는 종료. 턴마다 걸린 시간과 비용(추정)이 찍힌다.
 - 에이전트가 가진 것은 책을 읽는 도구 넷(`book`, `read`, `glossary`, `search`)과 쓰는 도구 넷(`set_translation`, `set_glossary_term`, `add_comment`, `add_translator_note`)뿐이다. 파일·셸·웹 도구가 없으므로 PDF와 쪽 이미지는 열 수 없다.
 - 쓰기 전에는 반드시 묻는다. 바뀔 내용(전/후)이 보이고 `y` 허락, `a` 이 대화 동안 그 종류는 항상 허락, `n` 거절. 번역문은 늘 draft로 들어가고(확정은 사람), 모든 쓰기는 명령으로 기록되어 ⌘Z로 되돌아간다. Claude가 남긴 댓글에는 "Claude" 표시가 붙고, 모든 변경 기록에 누가 했는지(번역자/Claude)가 남는다.
-- 에이전트가 쓴 것(그리고 다른 창의 저장, ⌘Z)은 에디터에 바로 나타난다(서버의 `GET /api/events`).
+- 에이전트가 쓴 것(그리고 다른 창의 저장, ⌘Z)은 에디터에 바로 나타난다(서버와 화면 사이의 실시간 연결 `/live` 하나로).
 - 자격: 환경에 `ANTHROPIC_API_KEY`가 있으면 그 키를, 없으면 이 Mac의 Claude 로그인을 쓴다. 서버가 시작할 때 어느 쪽인지 찍는다.
