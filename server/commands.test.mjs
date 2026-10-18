@@ -399,3 +399,13 @@ test("undo and redo keep who made the change, and say so", () => {
   assert.equal(redo(db).actor, "agent")
   assert.deepEqual(db.prepare("SELECT actor, tool_use_id FROM ops").all().map((r) => [r.actor, r.tool_use_id]), [["agent", "toolu_X"]])
 })
+
+test("a comment keeps its author when deleted and brought back", () => {
+  const db = fixture()
+  const c = execute(db, "addComment", { segmentId: 2, side: "source", anchor: null, body: "Claude의 메모", author: "agent" }, { actor: "agent", toolUseId: "toolu_C" })
+  assert.equal(c.author, "agent")
+  execute(db, "deleteComment", { id: c.id })
+  undo(db)
+  assert.equal(listAnnotations(db, { chapterId: 1 }).comments.find((x) => x.id === c.id).author, "agent")
+  assert.equal(listAnnotations(db, { chapterId: 1 }).comments.find((x) => x.id === 1).author, "translator")
+})

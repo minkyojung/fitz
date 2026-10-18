@@ -75,6 +75,7 @@ function Thread({ root, replies }: { root: Comment; replies: Comment[] }) {
       <div className="flex items-center gap-2">
         <IconMessage className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate text-muted-foreground" lang={root.side === "source" ? "en" : "ko"}>“{root.anchor?.exact ?? "paragraph"}”</span>
+        {root.author === "agent" && <Badge variant="secondary" data-author="agent">Claude</Badge>}
         <span className="ml-auto flex shrink-0">
           <Button size="icon-xs" variant="ghost" aria-label={root.resolved ? "Reopen" : "Resolve"}
             onClick={(e) => { e.stopPropagation(); void ann.actions.setComment(root.id, { resolved: !root.resolved }) }}>
@@ -86,7 +87,12 @@ function Thread({ root, replies }: { root: Comment; replies: Comment[] }) {
         </span>
       </div>
       <p className={cn(root.resolved && "line-through")}>{root.body}</p>
-      {replies.map((r) => <p key={r.id} className="border-l-2 pl-2 text-muted-foreground">{r.body}</p>)}
+      {replies.map((r) => (
+        <p key={r.id} className="border-l-2 pl-2 text-muted-foreground">
+          {r.author === "agent" && <Badge variant="secondary" data-author="agent" className="mr-1">Claude</Badge>}
+          {r.body}
+        </p>
+      ))}
       {selected && !root.resolved && (
         <Textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply…" aria-label="Reply" rows={1} className="min-h-8 text-xs"
           onClick={(e) => e.stopPropagation()}

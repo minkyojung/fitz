@@ -94,6 +94,8 @@ export interface Comment {
   body: string
   resolved: boolean
   anchor: TextAnchor | null
+  /** The translator, or the translation agent (Claude). */
+  author: "translator" | "agent"
   createdAt: string
 }
 

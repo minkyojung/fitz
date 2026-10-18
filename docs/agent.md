@@ -93,7 +93,7 @@ app/src/
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
 
 - `set_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.
-- Claude가 남긴 댓글은 본문 앞에 `Claude: `(`CLAUDE_PREFIX`)를 붙인다. `comment` 테이블에 작성자가 없어서, 붙이지 않으면 번역자의 메모와 구별되지 않는다. 역주는 출판될 글이므로 붙이지 않는다. 작성자 칸을 둘지는 9단계(화면)에서 정한다.
+- 쓴 쪽은 들어온 문으로 정해진다(§16): fitz 도구의 쓰기는 `ops.actor = agent`와 그 도구 호출 id로 기록되고, Claude의 댓글은 `comment.author = agent`(화면에 "Claude" 표시). 역주는 출판될 글이라 표시하지 않지만 출처는 `ops`에 남는다.
 - `quote`는 그 쪽 글에서 한 번만 나와야 한다. 없거나 두 번 이상이면 거절("더 길게 인용하라").
 - 미리보기(`describeWrite`): `{ summary, segmentId, before, after }`. 번역자는 무엇이 어떻게 바뀌는지 보고 답한다. 쓰기가 할 검사(버전, 인용구, 빈 글)를 먼저 하므로, 실패할 쓰기는 묻지 않고 바로 거절한다 — 번역자가 허락한 뒤에 실패하는 일이 없다.
 - 쓰기 넷을 하나로 합치지 않는다. 본문을 바꾸는 것, 책 전체 표기를 바꾸는 것, 출판되지 않는 메모, 출판되는 역주는 승인 카드에서 무게가 다르다.
@@ -314,5 +314,6 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 - `ops`에 `actor`(`translator` | `agent`)와 `tool_use_id`(Claude의 쓰기일 때). `execute(db, name, params, by)` — HTTP 경로는 `{ actor: "translator" }`, 도구 함수는 `{ actor: "agent", toolUseId }`.
 - `toolUseId`는 SDK가 준다(측정, Claude Code 2.1.302): 도구 함수의 두 번째 인자 `extra._meta["claudecode/toolUseId"]` = 흐름의 `tool_use.id` = `canUseTool`의 `toolUseID`. 그래서 DB의 변경 하나가 대화의 그 줄과 이어진다(어느 대화인지는 그 id가 든 세션). 앱이 따로 번호를 만들 필요가 없다.
 - 지금까지의 행은 `translator`(에이전트는 막 생겼고, 그 쓰기는 확인용 사본 DB에만 있었다).
-- 댓글: `comment.author`(`translator` | `agent`)를 두고 본문의 `Claude: ` 머리말을 없앤다. 화면이 작성자를 보이고, 사람이 "Claude:"라고 써도 헷갈리지 않는다. 역주도 같은 칸을 둘지(출판될 글이라 표시는 하지 않되 출처는 남김)는 같은 마이그레이션에서.
-- 테스트: 경로의 쓰기는 translator, 도구의 쓰기는 agent + 그 tool_use_id, undo/redo는 원래 op의 actor를 유지.
+- 댓글: `comment.author`(`translator` | `agent`). 본문의 `Claude: ` 머리말은 없앴고, 화면의 댓글 목록이 Claude의 것에 "Claude"를 붙인다. 역주에는 따로 칸을 두지 않는다(출판될 글이고, 출처는 `ops`로 안다).
+- 테스트: 경로의 쓰기는 translator, 도구의 쓰기는 agent + 그 tool_use_id, undo/redo는 원래 op의 actor를 유지, 지웠다 되살린 댓글도 작성자 유지.
+- **2026-10-18 완료**(커밋 셋: 스키마 / 모든 변경에 actor / 댓글 author). 작업 DB 백업 `out/book.db.bak-2026-10-18-before-actor` 후 마이그레이션, 기존 22개 op·댓글은 translator. 서버 테스트 118, e2e notes 5.

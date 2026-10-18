@@ -93,7 +93,7 @@ export const noteRow = (r) => ({
 })
 export const commentRow = (r) => ({
   id: r.id, segmentId: r.segment_id, side: r.side, parentId: r.parent_id ?? null, body: r.body,
-  resolved: r.resolved === 1, anchor: anchorOf(r, "src"), createdAt: r.created_at,
+  resolved: r.resolved === 1, anchor: anchorOf(r, "src"), author: r.author, createdAt: r.created_at,
 })
 const getComment = (db, id) => {
   const r = db.prepare("SELECT * FROM comment WHERE id = ?").get(id)
@@ -385,17 +385,18 @@ export const COMMANDS = {
   },
 
   // ---- comments (work notes, never exported). Replies carry parentId.
-  addComment(db, { id, segmentId, side, anchor, body, parentId = null, resolved = false, createdAt }) {
+  // author: "translator" (the editor's route) or "agent" (the fitz tool); a comment keeps it through undo and redo
+  addComment(db, { id, segmentId, side, anchor, body, parentId = null, resolved = false, author = "translator", createdAt }) {
     if (!["source", "target"].includes(side)) throw httpError(400, "bad side")
     if (!body?.trim()) throw httpError(400, "body is required")
     getSegment(db, segmentId)
     const newId = db.prepare(
-      `INSERT INTO comment(id, segment_id, side, parent_id, src_exact, src_prefix, src_suffix, src_start, src_end, body, resolved, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?, coalesce(?, datetime('now')))`,
-    ).run(id ?? null, segmentId, side, parentId, ...anchorCols("src", anchor), body, resolved ? 1 : 0, createdAt ?? null).lastInsertRowid
+      `INSERT INTO comment(id, segment_id, side, parent_id, src_exact, src_prefix, src_suffix, src_start, src_end, body, resolved, author, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, coalesce(?, datetime('now')))`,
+    ).run(id ?? null, segmentId, side, parentId, ...anchorCols("src", anchor), body, resolved ? 1 : 0, author, createdAt ?? null).lastInsertRowid
     return {
       result: commentRow(getComment(db, newId)),
-      forward: { id: Number(newId), segmentId, side, anchor, body, parentId, resolved, createdAt: getComment(db, newId).created_at },
+      forward: { id: Number(newId), segmentId, side, anchor, body, parentId, resolved, author, createdAt: getComment(db, newId).created_at },
       inverse: { name: "deleteComment", params: { id: Number(newId) } },
       segmentIds: [segmentId],
     }
@@ -419,7 +420,7 @@ export const COMMANDS = {
     db.prepare("DELETE FROM comment WHERE id = ?").run(id)
     const restore = [cur, ...replies].map((r) => ({
       id: r.id, segmentId: r.segment_id, side: r.side, parentId: r.parent_id ?? null, body: r.body, resolved: r.resolved === 1,
-      anchor: anchorOf(r, "src"), createdAt: r.created_at,
+      anchor: anchorOf(r, "src"), author: r.author, createdAt: r.created_at,
     }))
     return {
       result: null,

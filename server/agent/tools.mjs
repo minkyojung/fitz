@@ -54,7 +54,7 @@ export function read(db, { ids, chapterId, around, from } = {}) {
     const notes = notesOf.all(r.id).map((n) => n.kind === "author"
       ? { id: n.id, kind: "author", text: n.body_source ?? "", translation: n.body_target ?? "", quote: anchorOf(n, "src")?.exact ?? n.orig_quote ?? null }
       : { id: n.id, kind: "translator", text: n.body_target ?? "", quote: anchorOf(n, "tgt")?.exact ?? null })
-    const comments = commentsOf.all(r.id).map((c) => ({ id: c.id, parentId: c.parent_id ?? null, side: c.side, body: c.body, resolved: c.resolved === 1, quote: anchorOf(c, "src")?.exact ?? null }))
+    const comments = commentsOf.all(r.id).map((c) => ({ id: c.id, parentId: c.parent_id ?? null, side: c.side, author: c.author, body: c.body, resolved: c.resolved === 1, quote: anchorOf(c, "src")?.exact ?? null }))
     const seg = {
       id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
       status: r.status, version: r.version, sourceText: r.source_text, targetText: r.target_text ?? "",
@@ -84,8 +84,6 @@ export const agentBy = (extra) => ({ actor: "agent", toolUseId: extra?._meta?.["
 const AGENT = agentBy(undefined)
 
 const KINDS = ["person", "place", "org", "work", "other"]
-/** What marks a comment as Claude's: the comment table has no author, and a memo must not pass for the translator's. */
-export const CLAUDE_PREFIX = "Claude: "
 
 function segmentAt(db, id) {
   const row = db.prepare("SELECT * FROM segment WHERE id = ?").get(id)
@@ -129,7 +127,7 @@ export function setGlossaryTerm(db, { term, translation, aliases, kind }, by = A
 export function addComment(db, { segmentId, side, body, quote }, by = AGENT) {
   const cur = segmentAt(db, segmentId)
   const anchor = quoteAnchor(side === "source" ? cur.source_text : cur.target_text ?? "", quote, side === "source" ? "source" : "translation")
-  const c = execute(db, "addComment", { segmentId, side, anchor, body: CLAUDE_PREFIX + body }, by)
+  const c = execute(db, "addComment", { segmentId, side, anchor, body, author: by.actor }, by)
   return { id: c.id, segmentId, side, quote: quote ?? null }
 }
 
@@ -159,7 +157,7 @@ export function describeWrite(db, tool, input) {
     case "add_comment": {
       const cur = segmentAt(db, input.segmentId)
       quoteAnchor(input.side === "source" ? cur.source_text : cur.target_text ?? "", input.quote, input.side === "source" ? "source" : "translation")
-      return { summary: `Comment on ¶${cur.id}${input.quote ? ` at "${input.quote}"` : ""}`, segmentId: input.segmentId, before: null, after: CLAUDE_PREFIX + input.body }
+      return { summary: `Comment by Claude on ¶${cur.id}${input.quote ? ` at "${input.quote}"` : ""}`, segmentId: input.segmentId, before: null, after: input.body }
     }
     case "add_translator_note": {
       const cur = segmentAt(db, input.segmentId)

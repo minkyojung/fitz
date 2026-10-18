@@ -4,7 +4,7 @@ import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo } from "../commands.mjs"
-import { CLAUDE_PREFIX, READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -53,7 +53,7 @@ test("read: a paragraph carries its notes, comments and the terms it mentions", 
     id: 2, chapterId: 1, idx: 1, kind: "paragraph", pageStart: 3, pageEnd: 4, status: "untranslated",
     sourceText: "Zemurray's boat", targetText: "",
     notes: [{ id: 1, kind: "author", text: "Bought in 1903.", translation: "1903년에 샀다.", quote: "boat" }],
-    comments: [{ id: 1, parentId: null, side: "source", body: "which boat?", resolved: false, quote: "boat" }],
+    comments: [{ id: 1, parentId: null, side: "source", author: "translator", body: "which boat?", resolved: false, quote: "boat" }],
     terms: [
       { term: "Zemurray", translation: "제무레이", aliases: "샘 제무레이", kind: "person" },
       { term: "boat", translation: "", aliases: "", kind: "other" },
@@ -210,11 +210,11 @@ test("set_glossary_term adds a term, changes one keeping what was not given, and
   assert.deepEqual(glossary(db).terms.map((t) => `${t.term}=${t.translation}`), ["boat=", "Zemurray=제무레이"])
 })
 
-test("add_comment is marked as Claude's and pinned to the quoted words; read shows it", () => {
+test("add_comment is the agent's and pinned to the quoted words; read shows who wrote it", () => {
   const db = fixture()
   addComment(db, { segmentId: 2, side: "source", body: "누구의 배인지 확인 필요", quote: "boat" })
   const c = read(db, { ids: [2] }).segments[0].comments.at(-1)
-  assert.deepEqual([c.body, c.quote, c.side], [`${CLAUDE_PREFIX}누구의 배인지 확인 필요`, "boat", "source"])
+  assert.deepEqual([c.author, c.body, c.quote, c.side], ["agent", "누구의 배인지 확인 필요", "boat", "source"])
   const row = db.prepare("SELECT src_start, src_end FROM comment WHERE id = ?").get(c.id)
   assert.deepEqual(plain(row), { src_start: 11, src_end: 15 })
   assert.throws(() => addComment(db, { segmentId: 2, side: "source", body: "x", quote: "ship" }), { status: 400, message: /"ship" is not in the paragraph's source/ })
@@ -234,7 +234,7 @@ test("each write is described for the translator before it happens", () => {
     { summary: "Write the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
   assert.deepEqual(describeWrite(db, "set_glossary_term", { term: "Zemurray", translation: "제머리" }),
     { summary: "Glossary: Zemurray → 제머리", segmentId: null, before: "Zemurray → 제무레이", after: "Zemurray → 제머리" })
-  assert.equal(describeWrite(db, "add_comment", { segmentId: 2, body: "b" }).after, `${CLAUDE_PREFIX}b`)
+  assert.deepEqual(describeWrite(db, "add_comment", { segmentId: 2, body: "b" }), { summary: "Comment by Claude on ¶2", segmentId: 2, before: null, after: "b" })
   assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 99, text: "x" }), { status: 404 })
 })
