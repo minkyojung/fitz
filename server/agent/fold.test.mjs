@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
-import { applyMessage, emptyConversation, foldMessages } from "./fold.mjs"
+import { applyMessage, emptyConversation, foldMessages, foldStored } from "./fold.mjs"
 
 // A real turn recorded with record.mjs against fixtures/gatsby.sql (Opus 5.5, Claude Code 2.1.302):
 // the translator asks about a phrase in ¶4; Claude reads ¶4 with three paragraphs around it, thinks, answers.
@@ -108,4 +108,38 @@ test("a recorded write: the call, the wait for the translator, and the draft it 
   translate.reduce((state, m) => { const next = applyMessage(state, m); if (next.status !== state.status) statuses.push(next.status); return next }, emptyConversation())
   assert.ok(statuses.includes("requires_action"), statuses.join(" → "))
   assert.equal(s.status, "idle")
+})
+
+// --- read back from disk: getSessionMessages (recorded beside each recording as *.stored.json) and the kept turn
+// make the same conversation the live fold made (docs/agent.md §13). A test to keep.
+
+const stored = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}.stored.json`, import.meta.url), "utf8"))
+const keptTurn = (frames) => {
+  const live = foldMessages(frames)
+  const { kind: _, ...turn } = live.items.at(-1)
+  return new Map([[frames.find((m) => m.type === "result").user_message_uuid, turn]])
+}
+const shape = (state) => state.items.map(({ id: _, ...item }) => item)
+
+for (const [name, frames] of [["nuance", nuance], ["translate", translate]]) {
+  test(`${name}: the conversation read back from disk is the conversation seen live`, () => {
+    const live = foldMessages(frames)
+    const back = foldStored(stored(name), keptTurn(frames), live.sessionId)
+    assert.deepEqual(shape(back), shape(live))
+    assert.deepEqual([back.sessionId, back.status, back.live], [live.sessionId, "idle", null])
+  })
+}
+
+test("read back without a kept turn, the conversation is all there but its turn's end is not invented", () => {
+  const back = foldStored(stored("nuance"))
+  assert.deepEqual(back.items.map((i) => i.kind), ["user", "tool", "thinking", "text"])
+})
+
+test("what Claude Code writes when a turn is stopped is not shown as the translator's words", () => {
+  const msgs = [
+    { type: "user", uuid: "u1", message: { role: "user", content: "¶4는?" } },
+    { type: "user", uuid: "u2", message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user]" }] } },
+    { type: "user", uuid: "u3", message: { role: "user", content: "다시" } },
+  ]
+  assert.deepEqual(foldStored(msgs).items.map((i) => i.text), ["¶4는?", "다시"])
 })

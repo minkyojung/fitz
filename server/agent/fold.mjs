@@ -87,3 +87,41 @@ export function applyMessage(state, m) {
 }
 
 export const foldMessages = (messages, state = emptyConversation()) => messages.reduce(applyMessage, state)
+
+// --- a conversation read back from disk
+
+/** What Claude Code writes into a session as the user's when a turn is interrupted; not the translator's words. */
+const INTERRUPTED = /^\[Request interrupted by user( for tool use)?\]$/
+const isToolResult = (m) => Array.isArray(m.message.content) && m.message.content.some((b) => b.type === "tool_result")
+/** fitz tools answer in JSON (their structuredContent); the session file keeps only the text, so read it back. */
+const structured = (m) => {
+  const results = m.message.content.filter((b) => b.type === "tool_result")
+  if (results.length !== 1 || results[0].is_error) return undefined
+  try { return { structuredContent: JSON.parse(textOf(results[0].content)) } } catch { return undefined }
+}
+
+/** A conversation as getSessionMessages gives it, with the turns the app kept (user message uuid → turn), folded into
+ *  the same state the live fold makes (docs/agent.md §13). The session file has no stream fragments and no result:
+ *  each prompt is the translator's message, and a kept turn closes before the next prompt. */
+export function foldStored(messages, turns = new Map(), sessionId = null) {
+  let state = { ...emptyConversation(), sessionId }
+  let prompt = null
+  const close = () => {
+    const t = prompt && turns.get(prompt)
+    if (t) state = { ...state, items: [...state.items, { kind: "turn", reason: t.reason, isError: t.isError, ms: t.ms, cost: t.cost }] }
+    prompt = null
+  }
+  for (const m of messages) {
+    if (m.parent_tool_use_id) continue
+    if (m.type === "assistant") state = applyMessage(state, m)
+    else if (m.type === "user" && isToolResult(m)) state = applyMessage(state, { ...m, tool_use_result: structured(m) })
+    else if (m.type === "user" && !INTERRUPTED.test(textOf(m.message.content).trim())) {
+      close()
+      prompt = m.uuid
+      state = applyMessage(state, { ...m, isReplay: true })
+    }
+  }
+  close()
+  return state
+}
+

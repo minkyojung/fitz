@@ -157,3 +157,12 @@ test("a page that answers the heartbeat stays connected across beats", async (t)
   await new Promise((r) => setTimeout(r, 120))
   assert.equal(page.ws.readyState, WebSocket.OPEN)
 })
+
+test("the page asks for the conversations and gets them", async (t) => {
+  const srv = await serve(t)
+  const page = await connect(srv)
+  page.say({ type: "start", convId: ID })
+  page.say({ type: "list" })
+  await page.until((r) => r.some((e) => e.type === "conversations"))
+  assert.deepEqual(page.received.find((e) => e.type === "conversations").items.map((c) => c.id), [ID])
+})

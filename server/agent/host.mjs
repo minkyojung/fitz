@@ -4,10 +4,10 @@
 // Knows nothing of sockets: a follower is a function.
 import { randomUUID } from "node:crypto"
 
-import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk"
+import { getSessionInfo, getSessionMessages } from "@anthropic-ai/claude-agent-sdk"
 
-import { applyMessage, emptyConversation } from "./fold.mjs"
-import { addConversation, getConversation, recordTurn, setSession, setTitle, touchConversation } from "./records.mjs"
+import { applyMessage, emptyConversation, foldStored } from "./fold.mjs"
+import { addConversation, getConversation, listConversations, recordTurn, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
 import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
 import { describeWrite } from "./tools.mjs"
@@ -26,11 +26,37 @@ const permission = (decision, toolName, input) => {
   return { behavior: "deny", message: "The turn was stopped before the translator answered." }
 }
 
-/** `openSession` is session.mjs's and `sessionInfo` the SDK's (for the title Claude Code gives a session), or
- *  stand-ins in tests. */
-export function createAgentHost({ db, openSession = openClaudeSession, sessionInfo = (id) => getSessionInfo(id, { dir: AGENT_CWD }) }) {
-  const conversations = new Map()  // convId → { model, effort, session, state, followers, asks }
-  const get = (convId) => conversations.get(convId) ?? fail(404, `no conversation ${convId}`)
+/** `openSession` is session.mjs's; `sessionInfo` and `sessionMessages` are the SDK's (the title Claude Code gives a
+ *  session, and what it kept of one). Tests pass stand-ins. */
+export function createAgentHost({
+  db,
+  openSession = openClaudeSession,
+  sessionInfo = (id) => getSessionInfo(id, { dir: AGENT_CWD }),
+  sessionMessages = (id) => getSessionMessages(id, { dir: AGENT_CWD }),
+}) {
+  const conversations = new Map()  // convId → { model, effort, session, keptSession, state, followers, asks, loaded, ready }
+  const conversation = (record) => ({
+    model: record.model, effort: record.effort, session: null, keptSession: record.sessionId,
+    state: { ...emptyConversation(), sessionId: record.sessionId }, followers: new Set(), asks: new Map(),
+    loaded: true, ready: Promise.resolve(),
+  })
+  /** The conversation in memory, or brought back from book.db and Claude Code's session file (after a restart). While
+   *  its history is being read it is not `loaded`; its followers get their snapshot when it is. */
+  const get = (convId) => {
+    if (conversations.has(convId)) return conversations.get(convId)
+    const record = getConversation(db, convId) ?? fail(404, `no conversation ${convId}`)
+    const conv = conversation(record)
+    conversations.set(convId, conv)
+    if (record.sessionId) {
+      conv.loaded = false
+      conv.ready = Promise.resolve()
+        .then(() => sessionMessages(record.sessionId))
+        .then((messages) => { conv.state = foldStored(messages ?? [], turnsOf(db, record.sessionId), record.sessionId) })
+        .catch((e) => tell(conv, { type: "error", convId, message: `could not read the conversation back: ${e.message}` }))
+        .then(() => { conv.loaded = true; tell(conv, { type: "snapshot", convId, state: conv.state, asks: pending(conv) }) })
+    }
+    return conv
+  }
   const tell = (conv, event) => { for (const follower of conv.followers) follower(event) }
   const pending = (conv) => [...conv.asks.values()].map((a) => a.ask)
 
@@ -112,19 +138,23 @@ export function createAgentHost({ db, openSession = openClaudeSession, sessionIn
     start(convId, { model = DEFAULTS.model, effort = DEFAULTS.effort } = {}) {
       if (conversations.has(convId) || getConversation(db, convId)) fail(409, `conversation ${convId} exists`)
       addConversation(db, { id: convId, model, effort })
-      conversations.set(convId, { model, effort, session: null, keptSession: null, state: emptyConversation(), followers: new Set(), asks: new Map() })
+      conversations.set(convId, conversation({ model, effort, sessionId: null }))
     },
-    /** A snapshot now (with the writes waiting for an answer), then every event. Returns the function that stops following. */
+    list: () => listConversations(db),
+    /** A snapshot (with the writes waiting for an answer) — now, or once a reopened conversation is read back — then
+     *  every event. Returns the function that stops following. */
     open(convId, follower) {
       const conv = get(convId)
-      follower({ type: "snapshot", convId, state: conv.state, asks: pending(conv) })
+      if (conv.loaded) follower({ type: "snapshot", convId, state: conv.state, asks: pending(conv) })
       conv.followers.add(follower)
       return () => conv.followers.delete(follower)
     },
+    /** The uuid the message's echo will carry. A conversation still being read back takes the message once it is
+     *  (a promise then), and is resumed. */
     send(convId, text) {
       const conv = get(convId)
-      touchConversation(db, convId)
-      return ensureSession(convId, conv).send(text)
+      const go = () => { touchConversation(db, convId); return ensureSession(convId, conv).send(text) }
+      return conv.loaded ? go() : conv.ready.then(go)
     },
     answer(convId, requestId, decision) {
       if (!DECISIONS.includes(decision)) fail(400, `decision must be one of ${DECISIONS.join(", ")}`)

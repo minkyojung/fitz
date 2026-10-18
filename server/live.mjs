@@ -32,13 +32,14 @@ export function attachLive(server, { db, host, heartbeatMs = HEARTBEAT_MS }) {
     const following = new Map()  // convId → stop following
     // following again sends a fresh snapshot
     const follow = (convId) => { following.get(convId)?.(); following.set(convId, host.open(convId, send)) }
-    ws.on("message", (raw) => {
+    ws.on("message", async (raw) => {
       let m
       try {
         m = parseClientMessage(String(raw))
         if (m.type === "start") { host.start(m.convId, m); follow(m.convId) }
         else if (m.type === "open") follow(m.convId)
-        else if (m.type === "send") host.send(m.convId, m.text)
+        else if (m.type === "list") send({ type: "conversations", items: host.list() })
+        else if (m.type === "send") await host.send(m.convId, m.text)
         else if (m.type === "stop") host.stop(m.convId)
         else if (m.type === "answer") host.answer(m.convId, m.requestId, m.decision)
       } catch (e) {

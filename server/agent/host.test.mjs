@@ -238,3 +238,49 @@ test("a record that cannot be written does not stop the conversation", async () 
   } finally { console.error = quiet }
   assert.equal(events.filter((e) => e.type === "message").length, nuance.length)
 })
+
+// --- after a restart: the conversation comes back from book.db and Claude Code's session file, and goes on
+
+const storedNuance = JSON.parse(readFileSync(new URL("./fixtures/nuance.stored.json", import.meta.url), "utf8"))
+
+async function afterRestart() {
+  const before = setup()
+  before.host.start(ID, { model: "claude-sonnet-5-5", effort: "low" })
+  before.host.send(ID, "q")
+  before.opened[0].feed(...nuance)
+  await settle()
+  const stubs = stubSessions()
+  const reads = []
+  const host = createAgentHost({ db: before.db, openSession: stubs.openSession, sessionInfo: async () => null,
+    sessionMessages: async (id) => { reads.push(id); return storedNuance } })
+  return { host, db: before.db, reads, ...stubs }
+}
+
+test("after a restart a conversation is read back and its followers get it as it was", async () => {
+  const { host, reads } = await afterRestart()
+  const events = []
+  host.open(ID, (e) => events.push(e))
+  assert.deepEqual(events, [], "nothing until it is read back")
+  await settle()
+  const sessionId = nuance.find((m) => m.subtype === "init").session_id
+  assert.deepEqual(reads, [sessionId])
+  assert.equal(events.length, 1)
+  const live = foldMessages(nuance)
+  assert.deepEqual(events[0].state.items.map(({ id: _, ...i }) => i), live.items.map(({ id: _, ...i }) => i))
+})
+
+test("after a restart the next message resumes the same session with the conversation's model", async () => {
+  const { host, opened } = await afterRestart()
+  const uuid = await host.send(ID, "그럼 ¶5는?")
+  assert.equal(uuid, "uuid-1")
+  assert.equal(opened.length, 1)
+  assert.deepEqual([opened[0].options.resume, opened[0].options.model, opened[0].options.effort], [nuance.find((m) => m.subtype === "init").session_id, "claude-sonnet-5-5", "low"])
+  assert.deepEqual(opened[0].sent, ["그럼 ¶5는?"])
+})
+
+test("the list is book.db's, most recently used first; an unknown conversation is still refused", async () => {
+  const { host } = await afterRestart()
+  host.start("1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11")
+  assert.deepEqual(host.list().map((c) => c.id).sort(), [ID, "1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"].sort())
+  assert.throws(() => host.open("2b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11", () => {}), { status: 404 })
+})

@@ -7,11 +7,13 @@
 //   send  { convId, text }              the translator's message
 //   stop  { convId }                    stop the turn that is going
 //   answer { convId, requestId, decision }  allow | always (this tool, for the rest of the session) | deny
+//   list                                the conversations, most recently used first
 // server → page
 //   snapshot { convId, state, asks }    the conversation as fold.mjs has it, and the writes waiting for an answer
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
 //   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)
+//   conversations { items }            [{ id, sessionId, title, model, effort, createdAt, usedAt }]
 //   changed  { opId, name, segmentIds, kind, actor }  the book changed (any writer; kind: do | undo | redo)
 //   error    { convId?, message }
 
@@ -42,6 +44,8 @@ export function parseClientMessage(raw) {
       if (!DECISIONS.includes(m.decision)) fail(`decision must be one of ${DECISIONS.join(", ")}`)
       return { type: "answer", convId: convId(m.convId), requestId, decision: m.decision }
     }
+    case "list":
+      return { type: "list" }
     case "open":
     case "stop":
       return { type: m.type, convId: convId(m.convId) }
