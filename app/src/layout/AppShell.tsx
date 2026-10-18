@@ -1,5 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react"
-import type { PanelImperativeHandle } from "react-resizable-panels"
+import type { ReactNode } from "react"
+import { useDefaultLayout } from "react-resizable-panels"
 
 import { Sidebar, SidebarContent, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger } from "@/components/ui/sidebar"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -21,7 +21,7 @@ interface AppShellProps {
   right: ReactNode
   panel: ReactNode
   status: ReactNode
-  /** Collapse the scan (left) panel, e.g. while translating. */
+  /** Hide the scan (left) panel, e.g. while translating. */
   leftCollapsed?: boolean
   /** A full-width view that replaces the three panels (the Export tab). */
   main?: ReactNode
@@ -32,13 +32,11 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 
 /** Fixed frame: sidebar | [tabs / left+right+panel / status]. Content is injected per mode. */
 export function AppShell({ mode, onModeChange, sidebar, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
-  const leftRef = useRef<PanelImperativeHandle>(null)
-  useEffect(() => {
-    const p = leftRef.current
-    if (!p) return
-    if (leftCollapsed && !p.isCollapsed()) p.collapse()
-    if (!leftCollapsed && p.isCollapsed()) p.expand()
-  }, [leftCollapsed])
+  // The widths the translator dragged the panels to, kept across reloads: one layout with the scan, one without. A
+  // hidden scan is not rendered, so the library keeps the two apart (panelIds).
+  const layout = useDefaultLayout({
+    id: "fitz-panels", panelIds: leftCollapsed ? ["main", "panel"] : ["scan", "main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
+  })
   return (
     <SidebarProvider defaultOpen={sidebarDefaultOpen()} style={{ "--sidebar-width": "15rem" } as React.CSSProperties}>
       <Sidebar collapsible="offcanvas">
@@ -60,16 +58,20 @@ export function AppShell({ mode, onModeChange, sidebar, left, right, panel, stat
           </Tabs>
         </header>
         {main ? <div className="min-h-0 flex-1 overflow-auto">{main}</div> : (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          <ResizablePanel panelRef={leftRef} defaultSize="42" minSize={240} collapsible collapsedSize={0}>
-            {left}
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize="38" minSize={320}>
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+          {!leftCollapsed && (
+            <>
+              <ResizablePanel id="scan" defaultSize="42" minSize={240} collapsible collapsedSize={0}>
+                {left}
+              </ResizablePanel>
+              <ResizableHandle />
+            </>
+          )}
+          <ResizablePanel id="main" defaultSize={leftCollapsed ? "80" : "38"} minSize={320}>
             {right}
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel defaultSize="20" minSize={200} collapsible collapsedSize={0}>
+          <ResizablePanel id="panel" defaultSize="20" minSize={200} collapsible collapsedSize={0}>
             {panel}
           </ResizablePanel>
         </ResizablePanelGroup>

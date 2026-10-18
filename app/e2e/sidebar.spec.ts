@@ -19,3 +19,36 @@ test("the chapter sidebar collapses and reopens, by button and by ⌘B, and reme
   await page.keyboard.press("Meta+b")
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
 })
+
+test("the panel widths you drag to are kept across reloads: one layout with the scan, one without", async ({ page }) => {
+  const widths = () => page.locator("[data-slot=resizable-panel]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)))
+  const drag = async (handle: number, dx: number) => {
+    const box = (await page.locator("[data-slot=resizable-handle]").nth(handle).boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + 200, { steps: 8 })
+    await page.mouse.up()
+  }
+  const near = (a: number[], b: number[]) => expect(a.length === b.length && a.every((w, i) => Math.abs(w - b[i]) <= 2), `${a} vs ${b}`).toBe(true)
+  const show = async (view: "Review" | "Translate") => { await page.getByRole("tab", { name: view }).click(); await expect.poll(async () => (await widths()).length).toBe(view === "Review" ? 3 : 2) }
+
+  await page.goto("/")
+  await page.getByRole("button", { name: /18: / }).click()
+  await show("Review")
+  const fresh = await widths()
+  await drag(1, -120)
+  const review = await widths()
+  expect(review[2]).toBeGreaterThan(fresh[2] + 60)
+  await show("Translate")  // the scan is folded away: the other layout
+  await drag(0, -100)
+  const translate = await widths()
+  await show("Review")
+  near(await widths(), review)
+
+  await page.reload()
+  await page.getByRole("button", { name: /18: / }).click()
+  await show("Review")
+  near(await widths(), review)
+  await show("Translate")
+  near(await widths(), translate)
+})
