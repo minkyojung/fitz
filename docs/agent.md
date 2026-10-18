@@ -398,3 +398,37 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 **5행 실측**(2026-10-18, 에디터 화면 → 서버(포트 4802, Gatsby 사본) → 진짜 Claude Code, Haiku 5.5 / low; 스크립트는 `.context/real/`, 커밋하지 않음): ¶4의 "reserve all judgments"를 골라 Ask Claude → "앞 문장의 reserved와 말장난인지" → `read(¶4, 2 around)` → 생각 → 답, 8.4초 $0.0015. 이어서 "¶3을 번역해 넣어줘" → 허락 카드(전/후) → Allow → ¶3 번역이 에디터에 바로, 5.1초 $0.0006. 제목은 Claude Code가 붙임('Reserve all judgments'와 'reserved' 말장난). 실행이 만든 세션 하나는 `deleteSession`으로 지우고 사본도 지움(번역자의 세션 둘은 그대로).
 
 이 실행에서 찾아 고친 것: 턴 끝 줄("5s · $0.001")이 답 옆에 끼어 있었다 — `Message`는 자식을 가로로 놓으므로 `MessageFooter`는 `MessageContent` 안에 둔다(e2e가 위치를 확인).
+
+## 18. 다음 작업 (2026-10-19)
+
+어제까지: Claude 탭(§17), 리뷰·OCR 제안(§4), 패널 폭 기억. 테스트 서버 178(+실제 2), 화면 단위 62, e2e 44, lint 12(전부 예전부터 있던 것).
+
+| # | 작업 | 지금 문제 | 정석 방식 | 크기 |
+|---|---|---|---|---|
+| **1** | **되돌리기 나누기**(§14) | ⌘Z가 누가 했든 마지막 변경을 되돌린다 → Claude가 쓴 것을 모르고 지우거나, 그 반대 | ⌘Z = 번역자의 것만(구글 독스·Yjs `trackedOrigins`). Claude의 것 = 대화에서 그 쓰기를 골라 "여기부터 되돌리기"(Claude Code `/rewind`처럼 선형, `ops.tool_use_id`로 이미 이어져 있다). 그 뒤 다른 쪽이 같은 단락을 고쳤으면 되돌리지 않고 이유를 말한다 | 큼 |
+| **2** | **번역 검사**(6단계, §5) | Claude가 쓴 번역이 용어집을 어겨도 아무도 모른다 | 앱이 검사(`checkSegments`: missingTerm·emptyTarget·ratio·unplacedNote)하고 기록. Stop hook이 실패를 돌려보내고 횟수는 앱이 센다(TRIES=3, hook은 fail-open이므로 진실은 `agent_turn`) | 중~큼 |
+| 3a | 대화 도중 모델·강도 바꾸기 | 첫 메시지 전에만 | SDK `Query.setModel()` + 프로토콜 `configure` | 작음 |
+| 3b | 대화 제목 자동 갱신 | 메뉴를 열어야 Claude Code의 제목으로 바뀜 | 서버가 제목을 정하면 `/live`로 알림 | 작음 |
+| 3c | 실제 책 한 장으로 리뷰·OCR 실측 | Gatsby 5단락 값뿐 | 한 장 돌려 시간·비용·품질 기록, 상한(60턴·$5)·지시문 조정 | 작음 |
+| 4 | 작업 진행 표시가 새로고침에 사라짐 | "Claude is reading the chapter…"가 없어짐(제안은 옴) | 서버가 진행 중인 작업 대화를 알려 주고 화면이 다시 따라감 | 작음~중 |
+| 5 | 예전부터 있던 lint 12개 | | 하나씩(effect 안 setState, render 중 ref 읽기) | 작음~중 |
+
+### 18.1 되돌리기 나누기 — 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 파일 | 확인 |
+|---|---|---|---|
+| 0 | 갤러리: Claude의 변경을 되돌리는 자리(Trace의 "Wrote the translation of ¶3" 줄 / 턴 끝 / 둘 다), ⌘Z가 Claude의 변경을 건너뛸 때의 알림 | `app/src/gallery/` | 번역자 확인 |
+| 1 | 기록: op마다 적용 직후의 단락 버전, 되돌린 직후의 버전(redo가 같은 확인을 하도록) | `db/schema.sql`, `pipeline/migrate.py`(작업 DB 먼저 백업), `server/commands.mjs` | pytest + 순수 테스트 |
+| 2 | 번역자의 ⌘Z·⌘⇧Z는 번역자의 op만. 되돌릴 op 뒤에 Claude가 같은 단락을 고쳤으면 되돌리지 않고 그렇다고 답한다. 새 쓰기는 같은 쪽의 다시 하기만 지운다 | `commands.mjs`, `index.mjs`, `app/src/data/useBook.ts` | 서버 테스트(두 쪽이 섞인 스택), e2e |
+| 3 | Claude의 변경 되돌리기: 고른 쓰기부터 그 뒤 Claude의 op를 최근 것부터(충돌에서 멈추고 말한다) | `commands.mjs`, `index.mjs`, `features/agent/Thread.tsx` | 서버 테스트 + e2e(녹화 프레임) |
+| 4 | README·이 문서 | | |
+
+### 18.2 정할 것 (번역자)
+| 작업 | 질문 |
+|---|---|
+| 1 | Claude의 변경 되돌리기 버튼의 자리(갤러리 0행으로 보고 정한다) |
+| 1 | ⌘Z가 Claude의 변경을 건너뛸 때 알릴지 |
+| 1 | "Claude의 변경 되돌리기"가 지금 대화의 것만인지, 모든 대화의 것인지 |
+| 2 | 검사에 걸리면 Claude에게 바로 돌려보낼지, 번역자에게 먼저 보일지 / 길이 비율의 기준 |
+
+시작 전: 번역자의 서버를 새 코드로 다시 켠다(`node server/index.mjs`).
