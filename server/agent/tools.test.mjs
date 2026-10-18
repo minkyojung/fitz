@@ -1,0 +1,167 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { test } from "node:test"
+import { DatabaseSync } from "node:sqlite"
+
+import { pmDoc } from "../commands.mjs"
+import { READ_BUDGET, book, fitzServer, glossary, read, readTools, searchBook } from "./tools.mjs"
+
+const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
+const plain = (v) => JSON.parse(JSON.stringify(v))
+const sql = (s) => s.replace(/'/g, "''")
+
+function fixture() {
+  const db = new DatabaseSync(":memory:")
+  db.exec(SCHEMA)
+  db.exec(`
+    INSERT INTO book(id, title, author, source_pdf) VALUES (1, 'The Fish', 'Cohen', '/secret/book.pdf');
+    INSERT INTO page(book_id, page_no, pdf_index, image_path) VALUES (1, 3, 2, '/secret/pages/p003.png');
+    INSERT INTO chapter(id, book_id, idx, title, start_page) VALUES (1, 1, 0, 'One', 3), (2, 1, 1, 'Two', 9);
+    INSERT INTO segment(id, chapter_id, idx, kind, page_start, page_end, ocr_text, source_doc, source_text, target_doc, target_text, status)
+      VALUES (1, 1, 0, 'heading',   3, 3, 'One', '${pmDoc("One")}', 'One', '${pmDoc("하나")}', '하나', 'reviewed'),
+             (2, 1, 1, 'paragraph', 3, 4, 'Zemurray''s boat', '${sql(pmDoc("Zemurray's boat"))}', 'Zemurray''s boat', NULL, NULL, 'untranslated'),
+             (3, 1, 2, 'paragraph', 4, 4, 'bananas', '${pmDoc("bananas")}', 'bananas', '${pmDoc("바나나")}', '바나나', 'draft'),
+             (4, 1, 3, 'paragraph', 5, 5, 'last', '${pmDoc("last")}', 'last', NULL, NULL, 'untranslated'),
+             (5, 2, 0, 'paragraph', 9, 9, 'Zemurrays everywhere', '${pmDoc("Zemurrays everywhere")}', 'Zemurrays everywhere', NULL, NULL, 'untranslated');
+    INSERT INTO segment_box(segment_id, page_no, x0, y0, x1, y1) VALUES (2, 3, 0.1, 0.5, 0.9, 0.9);
+    INSERT INTO glossary(book_id, term, translation, aliases, kind) VALUES (1, 'Zemurray', '제무레이', '샘 제무레이', 'person'), (1, 'boat', '', NULL, 'other');
+    INSERT INTO note(id, segment_id, kind, src_exact, src_start, src_end, orig_page, orig_quote, body_source, body_target, anchored)
+      VALUES (1, 2, 'author', 'boat', 11, 15, 3, 'boat', 'Bought in 1903.', '1903년에 샀다.', 1);
+    INSERT INTO note(id, segment_id, kind, tgt_exact, body_target, anchored) VALUES (2, 3, 'translator', '바나나', '열대 과일.', 0);
+    INSERT INTO comment(id, segment_id, side, src_exact, body) VALUES (1, 2, 'source', 'boat', 'which boat?');
+  `)
+  return db
+}
+
+test("book: title, author and chapters with progress, nothing else", () => {
+  assert.deepEqual(plain(book(fixture())), {
+    id: 1, title: "The Fish", author: "Cohen",
+    chapters: [
+      { id: 1, idx: 0, title: "One", startPage: 3, segmentCount: 4, confirmedCount: 1 },
+      { id: 2, idx: 1, title: "Two", startPage: 9, segmentCount: 1, confirmedCount: 0 },
+    ],
+  })
+})
+
+test("read: a paragraph carries its notes, comments and the terms it mentions", () => {
+  const { segments, next } = read(fixture(), { ids: [2] })
+  assert.equal(next, undefined)
+  const s = plain(segments[0])
+  assert.equal(typeof s.updatedAt, "string")
+  delete s.updatedAt
+  assert.deepEqual(s, {
+    id: 2, chapterId: 1, idx: 1, kind: "paragraph", pageStart: 3, pageEnd: 4, status: "untranslated",
+    sourceText: "Zemurray's boat", targetText: "",
+    notes: [{ id: 1, kind: "author", text: "Bought in 1903.", translation: "1903년에 샀다.", quote: "boat" }],
+    comments: [{ id: 1, parentId: null, side: "source", body: "which boat?", resolved: false, quote: "boat" }],
+    terms: [
+      { term: "Zemurray", translation: "제무레이", aliases: "샘 제무레이", kind: "person" },
+      { term: "boat", translation: "", aliases: "", kind: "other" },
+    ],
+  })
+})
+
+test("read: a translator's note shows its own text and where it sits in the translation", () => {
+  const [s] = read(fixture(), { ids: [3] }).segments
+  assert.deepEqual(plain(s.notes), [{ id: 2, kind: "translator", text: "열대 과일.", quote: "바나나" }])
+  assert.equal(s.targetText, "바나나")
+})
+
+test("read: terms match the app's rule — plural and possessive tails, whole words only", () => {
+  const [s] = read(fixture(), { ids: [5] }).segments
+  assert.deepEqual(s.terms.map((t) => t.term), ["Zemurray"])
+})
+
+test("read: ids come back in book order whatever order they were asked in", () => {
+  assert.deepEqual(read(fixture(), { ids: [5, 1, 3] }).segments.map((s) => s.id), [1, 3, 5])
+})
+
+test("read: around widens one id within its chapter and stops at the chapter's edges", () => {
+  const db = fixture()
+  assert.deepEqual(read(db, { ids: [3], around: 1 }).segments.map((s) => s.id), [2, 3, 4])
+  assert.deepEqual(read(db, { ids: [1], around: 2 }).segments.map((s) => s.id), [1, 2, 3])
+  assert.deepEqual(read(db, { ids: [5], around: 3 }).segments.map((s) => s.id), [5])
+})
+
+test("read: a chapter in order, and from continues it", () => {
+  const db = fixture()
+  assert.deepEqual(read(db, { chapterId: 1 }).segments.map((s) => s.id), [1, 2, 3, 4])
+  assert.deepEqual(read(db, { chapterId: 1, from: 2 }).segments.map((s) => s.id), [3, 4])
+})
+
+test("read: past the budget it stops and next continues exactly where it stopped", () => {
+  const db = fixture()
+  // two paragraphs of half the budget each: their notes and comments count too, so the pair does not fit
+  const long = "x".repeat(READ_BUDGET / 2)
+  db.prepare("UPDATE segment SET source_text = ? WHERE id IN (2, 3)").run(long)
+  const first = read(db, { chapterId: 1 })
+  assert.deepEqual(first.segments.map((s) => s.id), [1, 2])
+  assert.deepEqual(first.next, { chapterId: 1, from: 2 })
+  const second = read(db, first.next)
+  assert.deepEqual(second.segments.map((s) => s.id), [3, 4])
+  assert.equal(second.next, undefined)
+  const byIds = read(db, { ids: [2, 3, 4] })
+  assert.deepEqual(byIds.segments.map((s) => s.id), [2])
+  assert.deepEqual(byIds.next, { ids: [3, 4] })
+})
+
+test("read: one paragraph over the budget still comes back alone", () => {
+  const db = fixture()
+  db.prepare("UPDATE segment SET source_text = ? WHERE id = 1").run("x".repeat(READ_BUDGET * 2))
+  const r = read(db, { chapterId: 1 })
+  assert.deepEqual(r.segments.map((s) => s.id), [1])
+  assert.deepEqual(r.next, { chapterId: 1, from: 1 })
+})
+
+test("read: refuses arguments that do not say one thing", () => {
+  const db = fixture()
+  assert.throws(() => read(db, {}), /either ids or chapterId/)
+  assert.throws(() => read(db, { ids: [1], chapterId: 1 }), /either ids or chapterId/)
+  assert.throws(() => read(db, { ids: [1, 2], around: 1 }), /around needs exactly one id/)
+  assert.throws(() => read(db, { ids: [1], from: 1 }), /from goes with chapterId/)
+  assert.throws(() => read(db, { ids: [1, 99] }), { status: 404, message: "segment 99 not found" })
+  assert.throws(() => read(db, { chapterId: 9 }), { status: 404, message: "chapter 9 not found" })
+})
+
+test("glossary and search", () => {
+  const db = fixture()
+  assert.deepEqual(plain(glossary(db)), { terms: [
+    { term: "boat", translation: "", aliases: "", kind: "other", occurrences: 1 },
+    { term: "Zemurray", translation: "제무레이", aliases: "샘 제무레이", kind: "person", occurrences: 1 },
+  ] })
+  assert.deepEqual(searchBook(db, { query: "banana" }).hits.map((h) => [h.segmentId, h.count]), [[3, 1]])
+})
+
+// The contract: only text leaves. No page images, no PDF path, no page boxes, no OCR original, no editor JSON.
+const FORBIDDEN_KEYS = ["image_path", "imagePath", "imageUrl", "source_pdf", "sourcePdf", "boxes", "ocrText", "ocr_text", "sourceDoc", "targetDoc", "source_doc", "target_doc"]
+const keysDeep = (v) => (v && typeof v === "object" ? Object.entries(v).flatMap(([k, x]) => [k, ...keysDeep(x)]) : [])
+
+test("no read tool result carries a page image, the PDF, page boxes, the OCR original or editor JSON", async () => {
+  const db = fixture()
+  const outputs = [book(db), read(db, { chapterId: 1 }), read(db, { chapterId: 2 }), read(db, { ids: [2], around: 3 }), glossary(db), searchBook(db, { query: "Zemurray" })]
+  for (const t of readTools(db)) outputs.push((await t.handler(t.name === "read" ? { chapterId: 1 } : t.name === "search" ? { query: "a" } : {}, {})).structuredContent)
+  for (const out of outputs) {
+    const keys = keysDeep(out)
+    assert.deepEqual(keys.filter((k) => FORBIDDEN_KEYS.includes(k)), [])
+    const text = JSON.stringify(out)
+    assert.ok(!/\/secret\/|\.png|\.pdf/.test(text), text)
+  }
+})
+
+test("MCP: four read-only tools whose results are the functions' results as JSON", async () => {
+  const db = fixture()
+  const tools = readTools(db)
+  assert.deepEqual(tools.map((t) => t.name), ["book", "read", "glossary", "search"])
+  for (const t of tools) assert.equal(t.annotations?.readOnlyHint, true, t.name)
+  const r = await tools[1].handler({ ids: [3], around: 1 }, {})
+  assert.deepEqual(plain(r.structuredContent), plain(read(db, { ids: [3], around: 1 })))
+  assert.deepEqual(JSON.parse(r.content[0].text), plain(r.structuredContent))
+  await assert.rejects(tools[1].handler({ ids: [99] }, {}), /segment 99 not found/)
+})
+
+test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {
+  const server = fitzServer(fixture())
+  assert.equal(server.type, "sdk")
+  assert.equal(server.name, "fitz")
+  assert.ok(server.instance)
+})

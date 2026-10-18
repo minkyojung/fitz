@@ -64,11 +64,12 @@ app/src/
 | 도구 | 하는 일 | 인자 | 돌려주는 것 | 기존 코드 |
 |---|---|---|---|---|
 | `book` | 책과 차례 | — | `{ id, title, author, chapters: [{ id, idx, title, startPage, segmentCount, confirmedCount }] }` | `getBook`, `listChapters` |
-| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다 | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, updatedAt, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
+| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다 | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, updatedAt, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
 | `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
 | `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로) | `query` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
 
 - `read`가 주석·용어를 동봉하므로 단락 하나를 번역하는 데 읽기 호출은 1번이다.
+- `read`는 한 번에 글 2만 자(`READ_BUDGET`, 원문+번역+주석+댓글)까지 돌려주고, 남으면 `next`(다음 호출의 인자 그대로)를 준다. 단락 하나는 예산을 넘어도 돌려준다. 이유는 §8의 출력 한도.
 - 평문만 준다. `source_doc`/`target_doc`(JSON), `ocr_text`, `boxes`(좌표), `image_path`, `source_pdf`는 어떤 도구 결과에도 없다.
 - `updatedAt`은 쓰기 도구의 `expectUpdatedAt`으로 되돌려 받는다.
 
@@ -139,6 +140,7 @@ Server → snapshot { convId, state }          — 열 때 한 번
 - 이어 갈 때 지난 메시지는 흐름으로 다시 오지 않는다. `getSessionMessages`로 읽는다.
 - `includePartialMessages`의 `stream_event` 순서: `message_start` → 블록 시작 → 조각 → 그 블록의 `assistant` → … → `message_stop`.
 - 환경에 `ANTHROPIC_API_KEY`가 있으면 묻지 않고 쓴다.
+- MCP 도구 결과가 25,000토큰(`MAX_MCP_OUTPUT_TOKENS`) 또는 50,000자를 넘으면 Claude Code는 결과를 파일로 옮기고 경로만 준다(문서 `[mcp]`). 이 에이전트에는 파일을 여는 도구가 없으므로(`tools: []`) 그 결과는 사라진 것과 같다 → 도구가 스스로 나눠서 돌려준다. 10,000토큰 넘으면 경고.
 
 ## 9. 지금 하지 않는 것
 
@@ -156,7 +158,7 @@ Server → snapshot { convId, state }          — 열 때 한 번
 | # | 조각 | 사람이 보는 것 | 검증 | 결과 |
 |---|---|---|---|---|
 | 1 | 이 문서 + 의존성 | — | `pnpm test` 48 통과, SDK import, 바이너리 2.1.302 | 2026-10-18 완료 |
-| 2 | `agent/tools.mjs` 읽기 도구 4 + 테스트 | — | 금지 필드 부재, 기존 함수와 같은 값 | |
+| 2 | `agent/tools.mjs` 읽기 도구 4 + 테스트 | — | 금지 필드 부재, 기존 함수와 같은 값 | 2026-10-18. 서버 테스트 62 통과. 실제 책: 26장 825단락을 `next`를 따라 39호출에 빠짐·중복 없이 읽음, 결과 최대 29,307자, 금지 필드 0 |
 | 3 | `agent/session.mjs` + `fold.mjs` + 녹화 fixture 1개 | — | 첫 실전: "이 단락 뉘앙스 설명" 1회, 녹화 → `test/fixtures/` | |
 | 4 | WS 라우트 + `protocol.mjs` + 페이지 Agent 탭 | 패널에서 질문, 스트리밍, Stop, 비용 | e2e(가짜 프레임) | |
 | 5 | 쓰기 도구 4 + 승인 카드 | 번역 작업, 승인, ⌘Z로 되돌림 | e2e | |

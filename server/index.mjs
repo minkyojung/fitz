@@ -6,7 +6,7 @@ import { resolve, basename } from "node:path"
 
 import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
-import { execute, listAnnotations, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
+import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -20,15 +20,8 @@ const db = openDb(DB)
 
 const routes = {
   // reads
-  getBook: () => {
-    const b = db.prepare("SELECT id, title, author FROM book ORDER BY id LIMIT 1").get()
-    return { id: b.id, title: b.title, author: b.author }
-  },
-  listChapters: () =>
-    db.prepare(`SELECT c.id, c.idx, c.title, c.start_page, count(s.id) n, coalesce(sum(s.verified), 0) v,
-                       coalesce(sum(s.status IN ('reviewed','final')), 0) t
-                FROM chapter c LEFT JOIN segment s ON s.chapter_id = c.id GROUP BY c.id ORDER BY c.idx`).all()
-      .map((r) => ({ id: r.id, idx: r.idx, title: r.title, startPage: r.start_page, segmentCount: r.n, verifiedCount: r.v, confirmedCount: r.t })),
+  getBook: () => getBook(db),
+  listChapters: () => listChapters(db),
   listSegments: ({ chapterId }) => {
     const boxes = new Map()
     for (const b of db.prepare(`SELECT b.* FROM segment_box b JOIN segment s ON s.id = b.segment_id

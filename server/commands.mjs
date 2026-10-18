@@ -80,7 +80,7 @@ export const segRow = (r) => ({
   targetDoc: r.target_doc ? JSON.parse(r.target_doc) : null, targetText: r.target_text ?? "",
   verified: r.verified === 1, status: r.status,
 })
-const anchorOf = (r, p) =>
+export const anchorOf = (r, p) =>
   r[`${p}_exact`] == null ? null : { exact: r[`${p}_exact`], prefix: r[`${p}_prefix`] ?? "", suffix: r[`${p}_suffix`] ?? "", start: r[`${p}_start`], end: r[`${p}_end`] }
 
 export const noteRow = (r) => ({
@@ -533,6 +533,18 @@ export const redo = (db) =>
     touch(db)
     return summary(row)
   })
+
+export const getBook = (db) => {
+  const b = db.prepare("SELECT id, title, author FROM book ORDER BY id LIMIT 1").get()
+  return { id: b.id, title: b.title, author: b.author }
+}
+
+/** Chapters in book order with their progress counts. */
+export const listChapters = (db) =>
+  db.prepare(`SELECT c.id, c.idx, c.title, c.start_page, count(s.id) n, coalesce(sum(s.verified), 0) v,
+                     coalesce(sum(s.status IN ('reviewed','final')), 0) t
+              FROM chapter c LEFT JOIN segment s ON s.chapter_id = c.id GROUP BY c.id ORDER BY c.idx`).all()
+    .map((r) => ({ id: r.id, idx: r.idx, title: r.title, startPage: r.start_page, segmentCount: r.n, verifiedCount: r.v, confirmedCount: r.t }))
 
 /** Segments whose text contains `query` (case-sensitive, literal), book order. */
 export const search = (db, { query }) => {
