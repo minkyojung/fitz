@@ -178,7 +178,7 @@ test("set_translation writes the paragraph as draft, one block per line, and ⌘
   assert.deepEqual(out, { segmentId: 2, status: "draft", version: seg(db, 2).version, targetText: "제무레이의 배.\n두 번째 블록" })
   assert.ok(out.version > before)
   assert.equal(JSON.parse(seg(db, 2).target_doc).content.length, 2)
-  assert.deepEqual(plain(undo(db)), { id: 1, name: "updateSegment", segmentIds: [2] })
+  assert.deepEqual(plain(undo(db)), { id: 1, name: "updateSegment", segmentIds: [2], actor: "agent" })
   assert.deepEqual({ ...seg(db, 2), version: null }, { target_text: null, target_doc: null, status: "untranslated", version: null })
 })
 
@@ -251,4 +251,14 @@ test("MCP: four write tools beside the four read tools, none of them marked read
   const db = fixture()
   assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"])
   for (const t of writeTools(db)) assert.notEqual(t.annotations?.readOnlyHint, true, t.name)
+})
+
+test("a write that came through a fitz tool is the agent's, with the id of the tool call the SDK handed it", async () => {
+  const db = fixture()
+  const tools = Object.fromEntries(writeTools(db).map((t) => [t.name, t]))
+  const call = (name, args, id) => tools[name].handler(args, { _meta: { "claudecode/toolUseId": id } })
+  await call("set_translation", { segmentId: 2, text: "배", expectVersion: versionOf(db, 2) }, "toolu_A")
+  await call("add_comment", { segmentId: 2, side: "source", body: "확인" }, "toolu_B")
+  assert.deepEqual(db.prepare("SELECT name, actor, tool_use_id FROM ops ORDER BY id").all().map((r) => [r.name, r.actor, r.tool_use_id]),
+    [["updateSegment", "agent", "toolu_A"], ["addComment", "agent", "toolu_B"]])
 })

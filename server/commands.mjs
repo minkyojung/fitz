@@ -507,13 +507,13 @@ const run = (db, name, params) => {
   return cmd(db, params)
 }
 
-const summary = (row) => ({ id: row.id, name: row.name, segmentIds: JSON.parse(row.segment_ids) })
+const summary = (row) => ({ id: row.id, name: row.name, segmentIds: JSON.parse(row.segment_ids), actor: row.actor })
 
 /** Run a command as a new user action: log it, discard the redo stack, mark the db edited. */
 // The book has more than one writer (the editor's routes, the agent's tools): whoever wrote, everyone following the
 // book hears about it once the write is committed. Every write goes through execute/undo/redo, so none is missed.
 const watchers = new WeakMap()  // db → Set<(change) => void>
-/** change: { opId, name, segmentIds, kind: "do" | "undo" | "redo" }. Returns the function that stops watching. */
+/** change: { opId, name, segmentIds, kind: "do" | "undo" | "redo", actor }. Returns the function that stops watching. */
 export const watchChanges = (db, fn) => {
   if (!watchers.has(db)) watchers.set(db, new Set())
   watchers.get(db).add(fn)
@@ -525,15 +525,19 @@ const announce = (db, change) => {
   }
 }
 
-export const execute = (db, name, params) => {
+/** Who made a change is known by the door it came in through (docs/agent.md §16): the editor's HTTP routes are the
+ *  translator's; the fitz tools are the agent's, with the id of the tool call that made it. */
+export const TRANSLATOR = Object.freeze({ actor: "translator" })
+
+export const execute = (db, name, params, by = TRANSLATOR) => {
   let change
   const result = inTransaction(db, () => {
     const { result, forward, inverse, segmentIds } = run(db, name, params)
     db.prepare("DELETE FROM ops WHERE undone = 1").run()
-    const { lastInsertRowid } = db.prepare("INSERT INTO ops(name, params, inverse_name, inverse_params, segment_ids) VALUES (?,?,?,?,?)")
-      .run(name, JSON.stringify(forward), inverse.name, JSON.stringify(inverse.params), JSON.stringify(segmentIds))
+    const { lastInsertRowid } = db.prepare("INSERT INTO ops(name, params, inverse_name, inverse_params, segment_ids, actor, tool_use_id) VALUES (?,?,?,?,?,?,?)")
+      .run(name, JSON.stringify(forward), inverse.name, JSON.stringify(inverse.params), JSON.stringify(segmentIds), by.actor, by.toolUseId ?? null)
     touch(db)
-    change = { opId: Number(lastInsertRowid), name, segmentIds, kind: "do" }
+    change = { opId: Number(lastInsertRowid), name, segmentIds, kind: "do", actor: by.actor }
     return result
   })
   announce(db, change)
@@ -549,7 +553,7 @@ export const undo = (db) => {
     touch(db)
     return summary(row)
   })
-  if (op) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "undo" })
+  if (op) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "undo", actor: op.actor })
   return op
 }
 
@@ -562,7 +566,7 @@ export const redo = (db) => {
     touch(db)
     return summary(row)
   })
-  if (op) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "redo" })
+  if (op) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "redo", actor: op.actor })
   return op
 }
 

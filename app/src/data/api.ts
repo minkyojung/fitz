@@ -138,12 +138,14 @@ export interface SegmentPatch {
 }
 
 /** A committed write, announced to every open page whoever made it; "resync" after a reconnect, when some may have been missed. */
-export type BookChange = { kind: "do" | "undo" | "redo"; opId: number; name: string; segmentIds: number[] } | { kind: "resync" }
+export type BookChange = { kind: "do" | "undo" | "redo"; opId: number; name: string; segmentIds: number[]; actor: OpSummary["actor"] } | { kind: "resync" }
 
 export interface OpSummary {
   id: number
   name: string
   segmentIds: number[]
+  /** Who made the change: the translator (the editor) or the agent (Claude, through a fitz tool). */
+  actor: "translator" | "agent"
 }
 
 export interface OpRecord extends OpSummary {

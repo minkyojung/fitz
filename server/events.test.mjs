@@ -27,7 +27,7 @@ test("a committed write is announced once, after it is in the database", () => {
   const heard = []
   watchChanges(db, (c) => heard.push({ ...c, seen: db.prepare("SELECT target_text FROM segment WHERE id = 1").get().target_text }))
   translate(db, "알파")
-  assert.deepEqual(heard, [{ opId: 1, name: "updateSegment", segmentIds: [1], kind: "do", seen: "알파" }])
+  assert.deepEqual(heard, [{ opId: 1, name: "updateSegment", segmentIds: [1], kind: "do", actor: "translator", seen: "알파" }])
 })
 
 test("the agent's writes are announced like the translator's", () => {
@@ -35,7 +35,7 @@ test("the agent's writes are announced like the translator's", () => {
   const heard = []
   watchChanges(db, (c) => heard.push(c))
   setTranslation(db, { segmentId: 1, text: "알파", expectVersion: db.prepare("SELECT version FROM segment WHERE id = 1").get().version })
-  assert.deepEqual(heard, [{ opId: 1, name: "updateSegment", segmentIds: [1], kind: "do" }])
+  assert.deepEqual(heard, [{ opId: 1, name: "updateSegment", segmentIds: [1], kind: "do", actor: "agent" }])
 })
 
 test("a refused write announces nothing", () => {
@@ -54,7 +54,7 @@ test("undo and redo are announced as what they are", () => {
   watchChanges(db, (c) => heard.push(c))
   undo(db)
   redo(db)
-  assert.deepEqual(heard.map((c) => [c.kind, c.opId, c.name]), [["undo", 1, "updateSegment"], ["redo", 1, "updateSegment"]])
+  assert.deepEqual(heard.map((c) => [c.kind, c.opId, c.name, c.actor]), [["undo", 1, "updateSegment", "translator"], ["redo", 1, "updateSegment", "translator"]])
 })
 
 test("a watcher that fails does not undo or fail the write; one that stops watching hears nothing more", () => {
@@ -89,7 +89,7 @@ test("each change is an event; a closed stream stops listening", () => {
   assert.equal(res.headers["content-type"], "text/event-stream")
   assert.equal(res.headers["access-control-allow-origin"], "http://localhost:5173")
   translate(db, "알파")
-  assert.equal(res.chunks.at(-1), `event: change\ndata: {"opId":1,"name":"updateSegment","segmentIds":[1],"kind":"do"}\n\n`)
+  assert.equal(res.chunks.at(-1), `event: change\ndata: {"opId":1,"name":"updateSegment","segmentIds":[1],"kind":"do","actor":"translator"}\n\n`)
   req.emit("close")
   const written = res.chunks.length
   translate(db, "베타")
@@ -112,9 +112,15 @@ test("over HTTP: an EventSource-style reader gets the change as it happens", asy
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let text = ""
-  const until = async (pattern) => { while (!pattern.test(text)) text += decoder.decode((await reader.read()).value) }
+  const until = async (pattern) => {
+    while (!pattern.test(text)) {
+      const { value, done } = await reader.read()
+      if (done) throw new Error(`stream ended without ${pattern}: ${text}`)
+      text += decoder.decode(value)
+    }
+  }
   await until(/retry: 2000/)
   translate(db, "알파")
-  await until(/event: change/)
-  assert.match(text, /event: change\ndata: \{"opId":1,"name":"updateSegment","segmentIds":\[1\],"kind":"do"\}/)
+  await until(/event: change\ndata: .*\n\n/)
+  assert.match(text, /event: change\ndata: \{"opId":1,"name":"updateSegment","segmentIds":\[1\],"kind":"do","actor":"translator"\}/)
 })

@@ -380,3 +380,22 @@ test("redo of a write made with expectVersion does not depend on that version", 
   assert.ok(redo(db))
   assert.equal(db.prepare("SELECT source_text FROM segment WHERE id = 3").get().source_text, "first")
 })
+
+// --- who made each change: the door it came in through
+
+test("a change is the translator's unless it says otherwise; the agent's carries its tool call", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 3, status: "draft" })
+  execute(db, "updateSegment", { id: 4, status: "draft" }, { actor: "agent", toolUseId: "toolu_X" })
+  assert.deepEqual(db.prepare("SELECT actor, tool_use_id FROM ops ORDER BY id").all().map((r) => [r.actor, r.tool_use_id]),
+    [["translator", null], ["agent", "toolu_X"]])
+  assert.throws(() => execute(db, "updateSegment", { id: 3, status: "reviewed" }, { actor: "someone" }))
+})
+
+test("undo and redo keep who made the change, and say so", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 4, status: "draft" }, { actor: "agent", toolUseId: "toolu_X" })
+  assert.equal(undo(db).actor, "agent")
+  assert.equal(redo(db).actor, "agent")
+  assert.deepEqual(db.prepare("SELECT actor, tool_use_id FROM ops").all().map((r) => [r.actor, r.tool_use_id]), [["agent", "toolu_X"]])
+})

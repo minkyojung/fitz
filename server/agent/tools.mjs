@@ -77,7 +77,11 @@ export const glossary = (db) =>
 
 export const searchBook = (db, { query }) => ({ hits: search(db, { query }) })
 
-// --- writes
+// --- writes: the agent's door. Each is recorded as the agent's, with the id of the tool call that made it.
+
+/** The agent as the author of a write; toolUseId is what Claude Code hands a tool call (measured, 2.1.302). */
+export const agentBy = (extra) => ({ actor: "agent", toolUseId: extra?._meta?.["claudecode/toolUseId"] ?? null })
+const AGENT = agentBy(undefined)
 
 const KINDS = ["person", "place", "org", "work", "other"]
 /** What marks a comment as Claude's: the comment table has no author, and a memo must not pass for the translator's. */
@@ -103,12 +107,12 @@ const CHANGED = (id) => `¶${id} changed since you read it; read it again before
 
 /** Write a paragraph's translation, always as draft: confirming is the translator's. expectVersion is the version
  *  read gave; updateSegment refuses the write if the paragraph changed since — the same check the editor's saves get. */
-export function setTranslation(db, { segmentId, text, expectVersion }) {
+export function setTranslation(db, { segmentId, text, expectVersion }, by = AGENT) {
   const blocks = blocksOf(text)
   if (!blocks.length) throw httpError(400, "the translation is empty")
   const targetDoc = { type: "doc", content: blocks.map((b) => ({ type: "paragraph", content: [{ type: "text", text: b }] })) }
   try {
-    const seg = execute(db, "updateSegment", { id: segmentId, targetDoc, status: "draft", expectVersion })
+    const seg = execute(db, "updateSegment", { id: segmentId, targetDoc, status: "draft", expectVersion }, by)
     return { segmentId, status: seg.status, version: seg.version, targetText: seg.targetText }
   } catch (e) {
     throw e.status === 409 ? httpError(409, CHANGED(segmentId)) : e
@@ -116,24 +120,24 @@ export function setTranslation(db, { segmentId, text, expectVersion }) {
 }
 
 /** Agree a term's Korean form. Aliases and kind not given keep what the entry had. */
-export function setGlossaryTerm(db, { term, translation, aliases, kind }) {
+export function setGlossaryTerm(db, { term, translation, aliases, kind }, by = AGENT) {
   const bookId = getBook(db).id
   const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)
-  return execute(db, "setGlossaryTerm", { bookId, term, translation, aliases: aliases ?? cur?.aliases ?? "", kind: kind ?? cur?.kind ?? "other" })
+  return execute(db, "setGlossaryTerm", { bookId, term, translation, aliases: aliases ?? cur?.aliases ?? "", kind: kind ?? cur?.kind ?? "other" }, by)
 }
 
-export function addComment(db, { segmentId, side, body, quote }) {
+export function addComment(db, { segmentId, side, body, quote }, by = AGENT) {
   const cur = segmentAt(db, segmentId)
   const anchor = quoteAnchor(side === "source" ? cur.source_text : cur.target_text ?? "", quote, side === "source" ? "source" : "translation")
-  const c = execute(db, "addComment", { segmentId, side, anchor, body: CLAUDE_PREFIX + body })
+  const c = execute(db, "addComment", { segmentId, side, anchor, body: CLAUDE_PREFIX + body }, by)
   return { id: c.id, segmentId, side, quote: quote ?? null }
 }
 
 /** A translator's note sits in the translation: its quote is found there. */
-export function addTranslatorNote(db, { segmentId, body, quote }) {
+export function addTranslatorNote(db, { segmentId, body, quote }, by = AGENT) {
   const cur = segmentAt(db, segmentId)
   if (quote !== undefined && !cur.target_text) throw httpError(400, `¶${segmentId} has no translation yet to place the note in`)
-  const n = execute(db, "addNote", { segmentId, anchor: quoteAnchor(cur.target_text ?? "", quote, "translation"), body })
+  const n = execute(db, "addNote", { segmentId, anchor: quoteAnchor(cur.target_text ?? "", quote, "translation"), body }, by)
   return { id: n.id, segmentId, quote: quote ?? null }
 }
 
@@ -206,7 +210,7 @@ export const writeTools = (db) => [
       text: z.string().min(1).describe("The whole translation of the paragraph"),
       expectVersion: z.number().int().describe("version of the paragraph as read returned it"),
     },
-    async (args) => result(setTranslation(db, args))),
+    async (args, extra) => result(setTranslation(db, args, agentBy(extra)))),
   tool("set_glossary_term",
     "Agree the Korean form of a source term (a name, place, title…) for the whole book, or change it. The translator is asked first.",
     {
@@ -215,7 +219,7 @@ export const writeTools = (db) => [
       aliases: z.string().optional().describe("Other accepted Korean forms, comma-separated"),
       kind: z.enum(KINDS).optional(),
     },
-    async (args) => result(setGlossaryTerm(db, args))),
+    async (args, extra) => result(setGlossaryTerm(db, args, agentBy(extra)))),
   tool("add_comment",
     "Leave a working comment on a paragraph for the translator (never printed). `quote` pins it to exact words in that side's text. The translator is asked first.",
     {
@@ -224,7 +228,7 @@ export const writeTools = (db) => [
       body: z.string().min(1),
       quote: z.string().optional().describe("Exact words from that side, found once"),
     },
-    async (args) => result(addComment(db, args))),
+    async (args, extra) => result(addComment(db, args, agentBy(extra)))),
   tool("add_translator_note",
     "Add a translator's note (역주) to a paragraph; it is printed in the book. `quote` places its mark right after exact words of the translation. The translator is asked first.",
     {
@@ -232,7 +236,7 @@ export const writeTools = (db) => [
       body: z.string().min(1).describe("The note's text, in Korean"),
       quote: z.string().optional().describe("Exact words of the translation, found once"),
     },
-    async (args) => result(addTranslatorNote(db, args))),
+    async (args, extra) => result(addTranslatorNote(db, args, agentBy(extra)))),
 ]
 
 export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
