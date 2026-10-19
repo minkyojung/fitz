@@ -47,7 +47,7 @@ const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
 
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
-  const [panelTab, setPanelTab] = useState("history")
+  const [panelTab, setPanelTab] = useState("claude")
   const [findQuery, setFindQuery] = useState("")
   const [findFocusToken, setFindFocusToken] = useState(0)
   const book = useBook()

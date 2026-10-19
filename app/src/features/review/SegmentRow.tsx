@@ -11,6 +11,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SourceText } from "./SourceText"
 import { EditedDot } from "./EditedDot"
+import { HistoryButton } from "./History"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 import { placeSuggestions } from "@/lib/suggestions"
@@ -218,7 +219,8 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         )}
         {s.pageEnd !== s.pageStart && <span className="text-muted-foreground tabular-nums">→ p. {s.pageEnd}</span>}
         {suspects.length > 0 && <span data-suspects className="text-muted-foreground tabular-nums">Suspects {suspects.length}</span>}
-        <EditedDot ocr={s.ocrText} text={s.sourceText} />
+        {/* the selected paragraph has its History button instead, which shows the same and more */}
+        {!selected && <EditedDot ocr={s.ocrText} text={s.sourceText} />}
         {draft && (
           <span data-unsaved className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
@@ -229,6 +231,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         )}
         {selected && (
           <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
+            <HistoryButton segment={s} />
             {editing ? (
               <Button variant="ghost" size="xs" aria-label="Split at caret" onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void splitAtCaret()}>

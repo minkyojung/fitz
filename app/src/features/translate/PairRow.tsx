@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
+import { HistoryButton } from "@/features/review/History"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 import { useSelectionState } from "@/features/selection/SelectionContext"
@@ -135,7 +136,8 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
     >
       <div className="flex flex-col items-center gap-1.5 pt-2">
         <span className={cn("block size-2 rounded-full", STATUS_DOT[s.status])} title={STATUS_LABEL[s.status]} data-status={s.status} />
-        <EditedDot ocr={s.ocrText} text={s.sourceText} />
+        {/* the selected pair has its History button instead, which shows the same and more */}
+        {selected ? <HistoryButton segment={s} /> : <EditedDot ocr={s.ocrText} text={s.sourceText} />}
         {missing.length > 0 && (
           <Tooltip>
             <TooltipTrigger render={<span data-term-missing className="block size-2 rounded-full bg-mark-warning ring-1 ring-mark-warning-ink/60" />} />

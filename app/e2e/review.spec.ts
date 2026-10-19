@@ -213,12 +213,18 @@ test("edits are highlighted against the OCR original and listed in history", asy
   await row.getByRole("textbox").fill(original.replace(firstWord, "EDITED"))
   await row.getByRole("textbox").press("Meta+Enter")
 
+  // a paragraph not selected shows a dot where it was edited, the change on hover
+  await page.keyboard.press("ArrowDown")
   const dot = row.locator("[data-edited]")
   await expect(dot).toBeVisible()
   await dot.hover()
   await expect(page.getByText("Edited — original OCR")).toBeVisible()
   await expect(page.locator("[data-slot=tooltip-content] del, [role=tooltip] del").last()).toContainText(firstWord)
 
+  // selected, it has its History button in the dot's place
+  await page.keyboard.press("ArrowUp")
+  await expect(dot).toHaveCount(0)
+  await row.getByRole("button", { name: "History" }).click()
   const history = page.getByRole("list", { name: "History of this paragraph" })
   await expect(history.getByRole("button", { name: /Edit paragraph/ })).toHaveCount(1)
   await history.getByRole("button", { name: /Edit paragraph/ }).click()
@@ -226,8 +232,25 @@ test("edits are highlighted against the OCR original and listed in history", asy
   await expect(history.locator("ins")).toContainText("EDITED")
 
   await page.keyboard.press("Meta+z")
-  await expect(row.locator("[data-edited]")).toHaveCount(0)
+  await expect(row).not.toContainText("EDITED")
   await expect(history.getByText("Undone")).toBeVisible()
+})
+
+test("in Translate, the selected pair's History lists the edits of its translation", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /7: New Orleans/ }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
+  const pair = page.locator("[data-pair]").nth(2)
+  await pair.locator("[data-target]").click()
+  await expect(pair.getByRole("textbox", { name: "Edit translation" })).toBeFocused()
+  await page.keyboard.type("역사 시험")
+  await page.keyboard.press("Tab")  // saves, and moves on to the next pair
+  await pair.locator("[data-status]").click()
+  await pair.getByRole("button", { name: "History" }).click()
+  await expect(page.getByRole("list", { name: "History of this paragraph" })).toContainText("Edit paragraph")
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Meta+z")
+  await expect(pair.locator("[data-target]")).not.toContainText("역사 시험")
 })
 
 test("in-place editing: no layout shift, character undo inside, paragraph undo after", async ({ page }) => {
