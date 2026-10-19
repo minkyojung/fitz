@@ -21,7 +21,7 @@ const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
 async function serve(t, db = gatsby(), options = {}) {
   const stubs = stubSessions()
   const server = createServer()
-  const keep = { save: () => false, restore: () => false }  // never the home folder
+  const keep = { save: () => false, restore: () => false, savedCost: () => 0 }  // never the home folder
   attachLive(server, { db, host: createAgentHost({ db, openSession: stubs.openSession, sessionInfo: async () => null, keep }), ...options })
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
   const clients = []

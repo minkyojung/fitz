@@ -1,8 +1,8 @@
 // A copy of each conversation's session file, against Claude Code's 30-day sweep of its transcripts (docs/agent.md
-// §13; the "move the session file" way of the SDK's sessions guide). The file is copied whole and never read: its
-// format is Claude Code's own. Restored to its place when the original is gone, so the session can be read back and
-// resumed.
-import { copyFileSync, existsSync, mkdirSync } from "node:fs"
+// §13; the "move the session file" way of the SDK's sessions guide). The file is copied whole: its format is Claude
+// Code's own. Restored to its place when the original is gone, so the session can be read back and resumed. The one
+// thing read in it here is the cost Claude Code saved (§24), which the SDK's reader leaves out.
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -30,6 +30,21 @@ export function sessionKeeper({ cwd, configDir, keepDir = KEEP_DIR }) {
       mkdirSync(dirname(original(sessionId)), { recursive: true })
       copyFileSync(copy(sessionId), original(sessionId))
       return true
+    },
+    /** The running cost Claude Code saved in the session file when its process last ended (its last "cost-state"
+     *  line, measured on 2.1.302): what a resumed one counts on from. 0 when none was saved, or none is found (no
+     *  file, a format changed). */
+    savedCost(sessionId) {
+      let text
+      try { text = readFileSync(original(sessionId), "utf8") } catch { return 0 }
+      for (const line of text.split("\n").reverse()) {
+        if (!line.includes('"cost-state"')) continue
+        try {
+          const m = JSON.parse(line)
+          if (m.type === "cost-state" && Number.isFinite(m.totalCostUSD)) return m.totalCostUSD
+        } catch { /* a line cut short */ }
+      }
+      return 0
     },
   }
 }

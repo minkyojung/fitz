@@ -15,12 +15,12 @@ const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url),
 const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
 
 /** Session copies, recorded instead of made: a test never touches the home folder. */
-const keeper = () => { const calls = []; return { calls, save: (id) => { calls.push(["save", id]); return true }, restore: (id) => { calls.push(["restore", id]); return false } } }
+const keeper = (saved = () => 0) => { const calls = []; return { calls, save: (id) => { calls.push(["save", id]); return true }, restore: (id) => { calls.push(["restore", id]); return false }, savedCost: saved } }
 
-function setup({ sessionInfo = async () => null } = {}) {
+function setup({ sessionInfo = async () => null, saved } = {}) {
   const stubs = stubSessions()
   const db = gatsby()
-  const keep = keeper()
+  const keep = keeper(saved)
   const host = createAgentHost({ db, openSession: stubs.openSession, sessionInfo, keep })
   const events = []
   return { ...stubs, db, keep, host, events, follow: (id = ID) => host.open(id, (e) => events.push(e)) }
@@ -249,7 +249,7 @@ test("a record that cannot be written does not stop the conversation", async () 
 
 const storedNuance = JSON.parse(readFileSync(new URL("./fixtures/nuance.stored.json", import.meta.url), "utf8"))
 
-async function afterRestart() {
+async function afterRestart({ saved } = {}) {
   const before = setup()
   before.host.start(ID, { model: "claude-sonnet-5-5", effort: "low" })
   before.host.send(ID, "q")
@@ -257,7 +257,7 @@ async function afterRestart() {
   await settle()
   const stubs = stubSessions()
   const reads = []
-  const keep = keeper()
+  const keep = keeper(saved)
   const host = createAgentHost({ db: before.db, openSession: stubs.openSession, sessionInfo: async () => null, keep,
     sessionMessages: async (id) => { reads.push(id); return storedNuance } })
   return { host, db: before.db, reads, keep, before, ...stubs }
@@ -627,4 +627,46 @@ test("the title Claude Code gives a conversation is told to its followers, and i
   const later = []
   host.open(ID, (e) => later.push(e))
   assert.deepEqual([later[0].type, later[0].title], ["snapshot", "Reserved 뉘앙스"])
+})
+
+// --- a resumed Claude Code's first turn (docs/agent.md §24)
+
+const SESSION = nuance.find((m) => m.subtype === "init").session_id
+const RESULT = nuance.find((m) => m.type === "result")
+/** The cost of the last turn as a page folds it: from its snapshot, then the messages after. */
+const lastTurnCost = (events) => {
+  const at = events.findLastIndex((e) => e.type === "snapshot")
+  return foldMessages(events.slice(at + 1).filter((e) => e.type === "message").map((e) => e.message), events[at].state).items.at(-1).cost
+}
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} is not ${b}`)
+
+test("after a restart the first turn costs what it added: spent counts on from what the session file saved", async () => {
+  const saved = foldMessages(nuance).spent  // the first process's last running total, saved as it ended
+  const { host, opened, db } = await afterRestart({ saved: () => saved })
+  const events = []
+  host.open(ID, (e) => events.push(e))
+  await settle()
+  assert.equal(events[0].state.spent, saved, "in the snapshot: the page counts from it too")
+  host.send(ID, "그럼 ¶5는?")
+  opened[0].feed({ ...RESULT, uuid: "r2", user_message_uuid: "u2", total_cost_usd: saved + 0.003 })
+  await settle()
+  near(lastTurnCost(events), 0.003)
+  near(turnsOf(db, SESSION).get("u2").cost, 0.003)
+})
+
+test("a Claude Code that died counts on from what its session file saved, not from its last result; followers are told", async () => {
+  const { host, opened, events, follow } = setup({ saved: () => 0 })  // it died before it saved anything
+  host.start(ID)
+  follow()
+  host.send(ID, "q")
+  opened[0].feed(...nuance)
+  await settle()
+  opened[0].crash(new Error("exit code 1"))
+  await settle()
+  assert.equal(events.at(-1).type, "snapshot")
+  assert.equal(events.at(-1).state.spent, 0)
+  host.send(ID, "그럼 ¶5는?")
+  opened[1].feed({ ...RESULT, uuid: "r2", user_message_uuid: "u2", total_cost_usd: 0.003 })
+  await settle()
+  near(lastTurnCost(events), 0.003)
 })

@@ -34,7 +34,8 @@ const permission = (decision, toolName, input) => {
 }
 
 /** `openSession` is session.mjs's; `sessionInfo` and `sessionMessages` are the SDK's (the title Claude Code gives a
- *  session, and what it kept of one); `keep` copies session files against Claude Code's 30-day sweep (keep.mjs).
+ *  session, and what it kept of one); `keep` copies session files against Claude Code's 30-day sweep and reads the cost
+ *  they saved (keep.mjs).
  *  Tests pass stand-ins for all of them, so a test never touches the person's home folder. */
 export function createAgentHost({
   db,
@@ -61,7 +62,8 @@ export function createAgentHost({
       conv.loaded = false
       conv.ready = Promise.resolve()
         .then(() => { restore(record.sessionId); return sessionMessages(record.sessionId) })
-        .then((messages) => { conv.state = foldStored(messages ?? [], turnsOf(db, record.sessionId), record.sessionId) })
+        // what the next Claude Code counts its cost on from (docs/agent.md §24)
+        .then((messages) => { conv.state = { ...foldStored(messages ?? [], turnsOf(db, record.sessionId), record.sessionId), spent: keep.savedCost(record.sessionId) } })
         .catch((e) => tell(conv, { type: "error", convId, message: `could not read the conversation back: ${e.message}` }))
         .then(() => { conv.loaded = true; tell(conv, snapshot(convId, conv)) })
     }
@@ -193,9 +195,10 @@ export function createAgentHost({
           conv.session = null
           for (const a of [...conv.asks.values()]) a.settle("cancelled")
           // a turn cut off with the process is over, even one Claude Code said nothing in; what was half written is
-          // not kept
-          if (cut || conv.state.status !== "idle" || conv.state.live) {
-            conv.state = { ...conv.state, status: "idle", live: null }
+          // not kept. The next Claude Code counts its cost on from what this one saved, if it could (§24).
+          const spent = conv.state.sessionId ? keep.savedCost(conv.state.sessionId) : conv.state.spent
+          if (cut || conv.state.status !== "idle" || conv.state.live || spent !== conv.state.spent) {
+            conv.state = { ...conv.state, status: "idle", live: null, spent }
             tell(conv, snapshot(convId, conv))
           }
         }

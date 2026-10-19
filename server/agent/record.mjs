@@ -50,7 +50,7 @@ const projectDir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claud
 
 // the session is deleted afterwards, so nothing is copied for keeping
 const host = createAgentHost({ db, openSession: (options) => openSession({ ...options, cwd }), sessionInfo: (id) => getSessionInfo(id, { dir: cwd }),
-  keep: { save: () => false, restore: () => false } })
+  keep: { save: () => false, restore: () => false, savedCost: () => 0 } })
 const convId = "00000000-0000-4000-8000-000000000000"
 const frames = []
 const asks = []

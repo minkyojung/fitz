@@ -41,3 +41,15 @@ test("restore puts the copy back only when the original is gone", (t) => {
   assert.equal(keeper.restore(ID), true)
   assert.equal(readFileSync(sessionFile(ID, f), "utf8"), "turn 1\n")
 })
+
+test("savedCost is the running cost Claude Code saved last in the session file, what a resumed one counts on from; 0 when none (docs/agent.md §24)", (t) => {
+  const f = folders(t)
+  const keeper = sessionKeeper(f)
+  assert.equal(keeper.savedCost(ID), 0, "no file")
+  mkdirSync(join(f.configDir, "projects", "-Users-me--fitz-agent"), { recursive: true })
+  writeFileSync(sessionFile(ID, f), '{"type":"user"}\n')
+  assert.equal(keeper.savedCost(ID), 0, "nothing saved yet")
+  const saved = (n) => JSON.stringify({ type: "cost-state", sessionId: ID, totalCostUSD: n, totalAPIDuration: 1 })
+  writeFileSync(sessionFile(ID, f), ['{"type":"user"}', saved(0.5143), '{"type":"assistant"}', saved(0.9185), '{"type":"last-prompt"}', '{"type":"cost-st'].join("\n") + "\n")
+  assert.equal(keeper.savedCost(ID), 0.9185, "the last one; a line cut short is passed over")
+})

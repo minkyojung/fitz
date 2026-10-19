@@ -32,7 +32,7 @@ function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "l
   const cwd = join(work, "cwd")
   mkdirSync(cwd)
   const projectDir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", realpathSync(cwd).replace(/[^A-Za-z0-9]/g, "-"))
-  const host = createAgentHost({ db, openSession: (o) => openSession({ ...o, cwd }), sessionInfo: async () => null, keep: { save: () => false, restore: () => false } })
+  const host = createAgentHost({ db, openSession: (o) => openSession({ ...o, cwd }), sessionInfo: async () => null, keep: { save: () => false, restore: () => false, savedCost: () => 0 } })
   const id = randomUUID()
   const seen = { sessionId: null, init: null, toolUses: [], asks: [] }
   t.after(async () => {
