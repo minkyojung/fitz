@@ -235,7 +235,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 
 - **Stop hook, fitz의 세션 설정 그대로**(2026-10-19, SDK 0.3.302 / Claude Code 2.1.302, Haiku; 스크립트 `.context/measure/stop-hook.mjs`):
   - `{ decision: "block", reason }` → **같은 턴이 이어진다.** Claude가 이유를 읽고 `set_translation`을 다시 불러 고쳤고, `result`는 하나(5턴, 13.6초, $0.002). 두 번째 호출에서 `stop_hook_active: true`.
-  - 돌려보낸 이유는 스트림에 **`isSynthetic` 사용자 메시지** `"Stop hook feedback:\n<reason>"`으로 온다(`isReplay` 아님 → 지금의 fold는 무시한다). **세션 파일에는 남지 않는다**(`getSessionMessages`에 없음) → 다시 열면 사라지므로, 돌려보냈다는 사실과 이유는 **앱이 턴 기록에 남겨야** 한다.
+  - 돌려보낸 이유는 스트림에 **`isSynthetic` 사용자 메시지** `"Stop hook feedback:\n<reason>"`으로 온다(`isReplay` 아님 → 지금의 fold는 무시한다). 세션 파일 원본에는 남지만(`isMeta` 사용자 메시지, `hook_blocking_error` 첨부, `stop_hook_summary` 시스템 항목 — 2026-10-19 실전에서 확인) **`getSessionMessages`는 하나도 돌려주지 않는다** → fitz가 다시 열면 사라지므로, 돌려보냈다는 사실과 이유는 **앱이 턴 기록에 남겨야** 한다. 모델에게는 `<system-reminder>` 안의 `Stop:Callback hook blocking error from command: "callback": <reason>`으로 보인다.
   - 도구를 안 쓴 턴에도 hook이 한 번 불린다 → 검사할 것(그 턴에 Claude가 쓴 단락)이 없으면 그냥 통과.
   - hook이 던지면 턴은 그냥 끝난다(`success`/`completed`, 스트림에 오류 없음): **fail-open**. 통과도 흔적이 없다.
   - hook 도중 `interrupt()` → hook의 `signal`이 abort되고 턴은 `success`/`completed`로 끝난다(`aborted_streaming`이 아님) → 멈춘 턴은 앱이 알고(`stop`을 받았으므로) 검사 결과를 남기지 않는다.
@@ -466,8 +466,20 @@ Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려
 | 2 ✓ | 기록: 턴마다 검사 결과 `{ checked, rounds }`(검사할 때마다 찾은 실패들 — 마지막이 판정, 그 앞의 수가 돌려보낸 횟수), 화면이 묻는 경로 `turnChecks`. 작업 DB는 백업 뒤 마이그레이션(`out/book.db.bak-2026-10-19-before-turn-checks`) | `db/schema.sql`·`pipeline/migrate.py`(작업 DB 백업), `agent/records.mjs`, `index.mjs` | pytest + 서버 테스트 |
 | 3 ✓ | Stop hook: 그 턴에 Claude가 쓴 단락 → 검사 → 실패면 이유를 붙여 돌려보냄(앱이 횟수를 센다, `TRIES = 3`), 턴 끝에 기록, 멈춘 턴은 기록하지 않음, 검사가 못 돌면 "could not check"로(통과가 아니다). 쓴 단락은 스트림이 아니라 쓰기 도구가 쓰는 그 자리에서 알린다(`wrote`): hook은 스트림의 마지막 도구 결과보다 먼저 불릴 수 있다 | `agent/session.mjs`, `agent/host.mjs` | 스텁 세션 |
 | 4 ✓ | 화면: 턴 끝에 ✓/✗와 돌려보낸 횟수(기록을 묻는다 — 스트림의 돌려보냄 메시지는 세션 파일에 남지 않으므로 다시 열 때도 같도록) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
-| 5 | 진짜로 한 번(용어집을 어기게 해서 돌려보냄 → 고침) | `.context` | 실측 |
+| 5 ✓ | 진짜로 한 번(용어집을 어기게 해서 돌려보냄 → 고침) | `.context/real/checks-real.spec.ts` | 실측(아래) |
 | 6 | README·이 문서 | | |
+
+**실측**(2026-10-19, 커밋한 코드를 따로 꺼내 돌림(A, B는 dc37a60, C, D는 53b548b + 고친 글), Haiku 5.5 · low, Gatsby 1장, 용어집 `advantages → 혜택`). 화면에서 ¶3을 번역하게 한 뒤, 번역자가 "advantages를 '유리한 조건'으로 바꿔서 다시 넣어줘"라고 한다. 같은 요청을 네 번 돌렸고 Claude는 두 길을 다 갔다:
+
+| | 1턴: ¶3 번역 | 2턴: 용어집과 다른 표기를 요청 |
+|---|---|---|
+| A | 읽기에서 용어집을 보고 '혜택'으로 씀 → ✓ `Checked ¶3`(8초, $0.0010) | '유리한 조건'으로 쓰고 용어집과 다르다고 덧붙임 → 돌려보냄 → "번역자가 직접 지정했으므로 지금 번역이 맞다"고 답하고 아무것도 쓰지 않음 → 다시 돌려보내지 않음 → ✗ `1 problem left after 1 try`(13초, $0.0009). 위 규칙(dc37a60)이 없었다면 같은 답을 받으며 세 번까지 돌려보냈을 것 |
+| B | ✓ `Checked ¶3`(10초, $0.0009) | 돌려보냄 → '혜택'으로 다시 씀(쓰기 승인 2번) → ✓ `Checked ¶3 · fixed after 1 try`(31초, $0.0020) |
+| C, D | ✓ `Checked ¶3`(17초 $0.002 / 15초 $0.0014) | 돌려보낸 글을 고친 뒤(아래). 둘 다 "번역자가 요청한 표기라 그대로 둔다"고 답하고 멈춤 → ✗ `1 problem left after 1 try`(13초 $0.001 / 15초 $0.0011) |
+
+B는 번역자가 직접 요청한 표기를 검사 때문에 용어집 표기로 되돌렸다(쓰기 승인을 번역자가 거절하면 막을 수는 있다). 검사는 Claude의 실수를 잡는 것이지 번역자의 말을 뒤집는 것이 아니므로, 돌려보내는 글의 "그대로가 맞으면"에 **"번역자가 요청한 표기"**를 예로 넣었다(C, D). 그때 용어집과 다르다는 사실은 ✗ 줄로 번역자에게 보인다.
+
+결과는 모두 턴마다 하나, 기록(`agent_turn.checks`)은 판정과 같고, 대화를 다시 열어도 같은 줄이 보인다(B~D에서 확인). 실전 세션 4개는 `deleteSession`으로 지우고 `~/.fitz/sessions`의 사본도 지웠다.
 
 ## 20. 대화 프롬프트 — 동료 번역가 (2026-10-19)
 

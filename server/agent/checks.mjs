@@ -28,7 +28,8 @@ export function checkSegments(db, ids) {
 }
 
 /** The failures as Claude is told them when its turn is sent back: where, what, and what would make it right — and
- *  leave to say a form is right as it is (a term used in another sense), so a right translation is not rewritten. */
+ *  leave to say a form is right as it is (a term used in another sense, a wording the translator asked for), so a
+ *  right translation is not rewritten and the translator's word is not overruled by the glossary. */
 export function reasonFor(failures) {
   const line = (f) => f.kind === "term"
     ? `- ¶${f.segmentId}: the source has “${f.term}”; the glossary's agreed form is “${f.forms[0]}”${f.forms.length > 1 ? ` (also accepted: ${f.forms.slice(1).join(", ")})` : ""}, and the translation has none of them.`
@@ -36,6 +37,6 @@ export function reasonFor(failures) {
   return [
     "fitz checked the translations you wrote this turn and found:",
     ...failures.map(line),
-    "Fix these with set_translation (read the paragraph again for its version), then stop. If one is right as it is, say why in one line and stop.",
+    "Fix these with set_translation (read the paragraph again for its version), then stop. If one is right as it is (a term used in another sense, or the wording the translator asked you for), leave it, say why in one line and stop.",
   ].join("\n")
 }
