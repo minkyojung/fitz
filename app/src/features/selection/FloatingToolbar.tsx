@@ -46,7 +46,9 @@ export function FloatingToolbar({ blockText, onAsk }: {
     return () => { window.removeEventListener("pointerdown", down, true); for (const t of ends) window.removeEventListener(t, up, true) }
   }, [])
   const selecting = pressedOn !== null && pressedOn !== rangeKey(sel) && !compose // a comment being written stays put
-  useEffect(() => { if (!sel) { setCompose(null); setBody("") } }, [sel])
+  // a comment or note being written goes with the selection it was for
+  const [lastSel, setLastSel] = useState(sel)
+  if (sel !== lastSel) { setLastSel(sel); if (!sel) { setCompose(null); setBody("") } }
 
   if (!sel || !spell || !ann || selecting) return null
   const known = spell.glossary.some((t) => t.term.toLowerCase() === sel.text.toLowerCase())

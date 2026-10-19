@@ -30,17 +30,19 @@ interface Props { chapters: Chapter[] }
 export function ExportView({ chapters }: Props) {
   const [picked, setPicked] = useState<Set<number>>(() => new Set(chapters.map((c) => c.id)))
   const [scheme, setScheme] = useState<ExportScheme>("A")
-  const [summary, setSummary] = useState<ExportSummary | null>(null)
+  const [fetched, setFetched] = useState<ExportSummary | null>(null)
   const [busy, setBusy] = useState(false)
   const request = useRef(0)
   const chapterIds = chapters.filter((c) => picked.has(c.id)).map((c) => c.id)
   const key = chapterIds.join(",")
+  // with no chapter picked there is nothing to sum up, whatever was fetched before
+  const summary = chapterIds.length ? fetched : null
 
   useEffect(() => {
-    const id = ++request.current
-    if (!chapterIds.length) { setSummary(null); return }
+    const id = ++request.current  // an answer to an earlier pick is dropped
+    if (!chapterIds.length) return
     api.exportSummary({ chapterIds, scheme })
-      .then((s) => { if (id === request.current) setSummary(s) })
+      .then((s) => { if (id === request.current) setFetched(s) })
       .catch((e: Error) => toast.error("Export summary failed", { description: e.message }))
   }, [key, scheme]) // eslint-disable-line react-hooks/exhaustive-deps
 
