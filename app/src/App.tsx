@@ -74,7 +74,7 @@ export function App() {
   // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
   const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false })
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
-  const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes })
+  const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes, onSelectChapter: book.setChapterId })
   const translating = mode === "translate"
   const exporting = mode === "export"
   const commands = exporting ? {} : translating ? translate.commands : review.commands
@@ -115,8 +115,12 @@ export function App() {
     [speller, userWords, book.segments],
   )
   const openFind = () => setFindFocusToken((n) => n + 1)
-  // Find searches the source: a hit found while exporting opens in Review
-  const jumpToHit = (segmentId: number, chapterId: number) => { if (exporting) setMode("review"); review.jumpTo(segmentId, chapterId) }
+  // a paragraph from Find or the glossary opens in the stage you are in; Find searches the source, so from Export, in Review
+  const jumpTo = (segmentId: number, chapterId: number) => {
+    if (translating) return translate.jumpTo(segmentId, chapterId)
+    if (exporting) setMode("review")
+    review.jumpTo(segmentId, chapterId)
+  }
   // ⌘L: the words selected (in the text or the open editor) go to Claude; with none, Claude's box takes the cursor
   const askAboutSelection = () => {
     const sel = latestSelection.current
@@ -144,7 +148,7 @@ export function App() {
       leftCollapsed={!scanShown[mode]}
       // what Find found takes the chapters' place; Export picks its chapters itself
       sidebar={findQuery ? (
-        <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpToHit} onReplaceAll={book.replaceAll} />
+        <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpTo} onReplaceAll={book.replaceAll} />
       ) : exporting ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       crumb={exporting ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       main={exporting ? <ExportView chapters={book.chapters} /> : undefined}
@@ -153,7 +157,7 @@ export function App() {
       panel={
         <ReviewPanel
           notes={book.unanchoredNotes} segments={book.segments} selected={panelSelected} onAnchor={book.anchorNote} markers={translate.markers}
-          onJump={review.jumpTo}
+          onJump={jumpTo}
           tab={panelTab} onTabChange={setPanelTab}
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,

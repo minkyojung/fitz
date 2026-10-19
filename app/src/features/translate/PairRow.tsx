@@ -129,6 +129,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
     <div
       ref={ref}
       data-pair={s.id}
+      data-selected={selected || undefined}
       onClick={onSelect}
       className={cn("col-span-3 grid grid-cols-subgrid scroll-mt-8 py-3 transition-opacity", dim && "opacity-30")}
     >

@@ -79,6 +79,22 @@ test("Find lives in the sidebar: what it finds takes the chapters' place until E
   await expect(page.locator("footer")).toContainText("13: King Fish")
 })
 
+test("in Translate, a paragraph Find found opens at its pair: in another chapter, and in the same one", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
+  const results = page.getByRole("region", { name: "Find results" })
+  const selected = page.locator("[data-pair][data-selected]")
+  await page.getByRole("textbox", { name: "Find in book" }).fill("Zemurray")
+  await results.getByRole("button", { name: /13: King Fish/ }).nth(2).click()
+  await expect(page.locator("footer")).toContainText("13: King Fish")
+  await expect(selected).toContainText("Zemurray")
+  const first = await selected.getAttribute("data-pair")
+  await results.getByRole("button", { name: /13: King Fish/ }).nth(4).click()
+  await expect(selected).not.toHaveAttribute("data-pair", first!)
+  await expect(selected).toContainText("Zemurray")
+  await expect(selected).toBeInViewport()
+})
+
 test("the panel widths you drag to are kept across reloads: one layout with the scan, one without", async ({ page }) => {
   const widths = () => page.locator("[data-slot=resizable-panel]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)))
   const drag = async (handle: number, dx: number) => {

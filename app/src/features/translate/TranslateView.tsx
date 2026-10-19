@@ -12,16 +12,19 @@ interface Props {
   focusMode: boolean
   /** The chapter's notes, passed in because this hook runs above the annotations provider. */
   notes: Note[]
+  onSelectChapter: (chapterId: number) => void
 }
 
 const unconfirmed = (s: Segment) => s.status === "untranslated" || s.status === "draft"
 
 /** Bilingual-book view: facing paragraphs, one translation editor at a time, caret flowing between pairs. */
-export function useTranslate({ segments, onPatch, focusMode, notes }: Props) {
+export function useTranslate({ segments, onPatch, focusMode, notes, onSelectChapter }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [caretEdge, setCaretEdge] = useState<"start" | "end">("end")
   const shownChapter = useRef<number | null>(null)
+  /** The pair a jump asked for (Find, the glossary), selected once its chapter arrives. */
+  const jumpTarget = useRef<number | null>(null)
   const markers = useMemo(() => {
     const idx = new Map(segments.map((sg, i) => [sg.id, i]))
     return footnoteMarkers(notes.filter((n) => idx.has(n.segmentId)).map((n) => {
@@ -39,8 +42,10 @@ export function useTranslate({ segments, onPatch, focusMode, notes }: Props) {
       return
     }
     shownChapter.current = first.chapterId
-    // land on the first unconfirmed pair of a chapter
-    setSelectedId((segments.find(unconfirmed) ?? first).id)
+    // land on the pair a jump asked for, else on the first unconfirmed pair of the chapter
+    const target = segments.find((s) => s.id === jumpTarget.current)
+    if (target) jumpTarget.current = null
+    setSelectedId((target ?? segments.find(unconfirmed) ?? first).id)
     setEditingId(null)
   }, [segments, selectedId])
 
@@ -115,5 +120,15 @@ export function useTranslate({ segments, onPatch, focusMode, notes }: Props) {
       </div>
     </ScrollArea>
   )
-  return { view, selected, editing: editingId !== null, commands, markers }
+  /** A paragraph from elsewhere (Find, the glossary): selected now if it is in this chapter, else once its chapter arrives. */
+  const jumpTo = useCallback(
+    (segmentId: number, chapterId: number) => {
+      if (segments.some((s) => s.id === segmentId)) { setSelectedId(segmentId); setEditingId(null); return }
+      jumpTarget.current = segmentId
+      onSelectChapter(chapterId)
+    },
+    [segments, onSelectChapter],
+  )
+
+  return { view, selected, editing: editingId !== null, commands, markers, jumpTo }
 }
