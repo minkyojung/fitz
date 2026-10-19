@@ -44,7 +44,7 @@ function FootnoteRow({ note, text, label }: { note: Note; text: string; label?: 
           <span className="text-muted-foreground" title="Select the words in the translation, then “Place note”">· not placed</span>
         )}
         {translator && (
-          <Button size="icon-xs" variant="ghost" className="ml-auto" aria-label="Delete note" onClick={(e) => { e.stopPropagation(); void ann.actions.deleteNote(note.id) }}>
+          <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="Delete note" onClick={(e) => { e.stopPropagation(); void ann.actions.deleteNote(note.id) }}>
             <IconTrash />
           </Button>
         )}

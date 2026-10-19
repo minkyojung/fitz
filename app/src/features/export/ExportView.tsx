@@ -68,8 +68,8 @@ export function ExportView({ chapters }: Props) {
       <section>
         <div className="mb-2 flex items-center gap-2 text-xs">
           <span className="font-medium">Chapters</span>
-          <Button size="xs" variant="ghost" onClick={() => setPicked(new Set(chapters.map((c) => c.id)))}>All</Button>
-          <Button size="xs" variant="ghost" onClick={() => setPicked(new Set())}>None</Button>
+          <Button size="sm" variant="ghost" onClick={() => setPicked(new Set(chapters.map((c) => c.id)))}>All</Button>
+          <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>None</Button>
         </div>
         <ul className="divide-y rounded-md border text-xs">
           {chapters.map((c) => {

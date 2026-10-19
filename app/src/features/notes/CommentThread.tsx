@@ -31,11 +31,11 @@ export function CommentThread({ root, onShow }: { root: Comment; onShow?: () => 
         )}
         {root.author === "agent" && <Badge variant="secondary" data-author="agent">Claude</Badge>}
         <span className="ml-auto flex shrink-0">
-          <Button size="icon-xs" variant="ghost" aria-label={root.resolved ? "Reopen" : "Resolve"}
+          <Button size="icon-sm" variant="ghost" aria-label={root.resolved ? "Reopen" : "Resolve"}
             onClick={() => void ann.actions.setComment(root.id, { resolved: !root.resolved })}>
             <IconCheck className={cn(root.resolved && "text-mark-term-ink")} />
           </Button>
-          <Button size="icon-xs" variant="ghost" aria-label="Delete comment" onClick={() => void ann.actions.deleteComment(root.id)}>
+          <Button size="icon-sm" variant="ghost" aria-label="Delete comment" onClick={() => void ann.actions.deleteComment(root.id)}>
             <IconTrash />
           </Button>
         </span>
