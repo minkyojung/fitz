@@ -91,7 +91,7 @@ export function ExportView({ chapters }: Props) {
         <div>
           <div className="mb-2 font-medium">Notes</div>
           <ToggleGroup value={[scheme]} onValueChange={(v) => v[0] && setScheme(v[0] as ExportScheme)} size="sm" variant="outline" spacing={0}>
-            {SCHEMES.map((s) => <ToggleGroupItem key={s.value} value={s.value}>{s.label}</ToggleGroupItem>)}
+            {SCHEMES.map((s) => <ToggleGroupItem key={s.value} value={s.value} className="text-xs">{s.label}</ToggleGroupItem>)}
           </ToggleGroup>
           <p className="mt-1.5 text-muted-foreground">{SCHEMES.find((s) => s.value === scheme)!.blurb}</p>
         </div>

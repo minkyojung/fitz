@@ -140,6 +140,7 @@ export function App() {
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleScan, askClaude: askAboutSelection }), [commands, book.undo, book.redo, askClaude])) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
+  const place = exporting ? "Export" : mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : book.chapter?.title ?? "—"
 
   return (
     <DraftContext value={book.drafts}>
@@ -185,13 +186,14 @@ export function App() {
       }
       status={
         <>
-          <span>{exporting ? "Export" : mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : book.chapter?.title ?? "—"}</span>
+          {/* a long chapter title gives way first: the status bar is full at 1280px */}
+          <span className="max-w-48 min-w-0 truncate" title={place}>{place}</span>
           {wholeBook ? null : translating ? (
             <>
               <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
               <span data-sheets>{formatSheets(chapterSheets)}</span>
-              <Toggle size="sm" variant="outline" pressed={focusMode} onPressedChange={setFocusMode} aria-label="Focus mode">Focus</Toggle>
-              <Toggle size="sm" variant="outline" pressed={scanShown[mode]} onPressedChange={toggleScan} aria-label="Show scan">Scan</Toggle>
+              <Toggle size="sm" variant="outline" className="text-xs" pressed={focusMode} onPressedChange={setFocusMode} aria-label="Focus mode">Focus</Toggle>
+              <Toggle size="sm" variant="outline" className="text-xs" pressed={scanShown[mode]} onPressedChange={toggleScan} aria-label="Show scan">Scan</Toggle>
             </>
           ) : (
             <span>
@@ -200,7 +202,8 @@ export function App() {
           )}
           {!wholeBook && <NotesButton segments={book.segments} unlinked={book.unanchoredNotes} onAnchor={book.anchorNote} translating={translating} />}
           {mode === "review" && <span data-suspect-total>Suspects {suspectTotal}</span>}
-          <span className={cn("hidden items-center gap-3 lg:flex", wholeBook && "lg:hidden")}>
+          {/* the keys' reminder, where there is room for it */}
+          <span className={cn("hidden items-center gap-3 min-[1440px]:flex", wholeBook && "min-[1440px]:hidden")}>
             {HINTS.map((h) => (
               <span key={h.command} className="flex items-center gap-1">
                 <Kbd>{chordLabel(KEYMAP[h.command][0])}</Kbd>
@@ -213,10 +216,10 @@ export function App() {
             {SAVE_LABEL[book.saveState].text}
           </span>
           <span className="flex items-center gap-1">
-            <Button variant="ghost" size="icon-xs" aria-label="Undo" onClick={() => void book.undo()}>
+            <Button variant="ghost" size="icon-sm" aria-label="Undo" onClick={() => void book.undo()}>
               <IconArrowBackUp />
             </Button>
-            <Button variant="ghost" size="icon-xs" aria-label="Redo" onClick={() => void book.redo()}>
+            <Button variant="ghost" size="icon-sm" aria-label="Redo" onClick={() => void book.redo()}>
               <IconArrowForwardUp />
             </Button>
           </span>
