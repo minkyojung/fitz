@@ -9,6 +9,7 @@ import { SuggestionsGallery } from "./SuggestionsGallery"
 import { AgentGallery } from "./AgentGallery"
 import { UndoGallery } from "./UndoGallery"
 import { ShellGallery } from "./ShellGallery"
+import { SessionGallery } from "./SessionGallery"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -53,6 +54,7 @@ function Row({ title, ocr, text }: (typeof CASES)[number]) {
 }
 
 export function Gallery() {
+  if (location.search.includes("session")) return <SessionGallery />
   if (location.search.includes("shell")) return <ShellGallery />
   if (location.search.includes("undo")) return <UndoGallery />
   if (location.search.includes("agent")) return <AgentGallery />
