@@ -2,7 +2,15 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
-import { READ_TOOLS, WEB_TOOLS, WRITE_TOOLS, ownEnv } from "./session.mjs"
+import { READ_TOOLS, SYSTEM_PROMPT, TASK_SYSTEM_PROMPT, WEB_TOOLS, WRITE_TOOLS, ownEnv } from "./session.mjs"
+import { WRITE_TOOL_NAMES } from "./tools.mjs"
+
+test("a conversation's prompt names the web and write tools it is given; a task's prompt names none, having none", () => {
+  for (const name of [...WRITE_TOOL_NAMES, ...WEB_TOOLS]) {
+    assert.ok(SYSTEM_PROMPT.includes(name), `the conversation prompt does not name ${name}`)
+    assert.ok(!TASK_SYSTEM_PROMPT.includes(name), `the task prompt names ${name}`)
+  }
+})
 
 test("ownEnv drops what a parent Claude Code session hands its children, and keeps the rest", () => {
   const env = ownEnv({

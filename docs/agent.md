@@ -23,7 +23,7 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 | `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search`, `WebSearch`(대화만) | 읽기와 웹 검색은 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
 | `canUseTool` | 쓰기 도구 → host의 `ask`(번역자에게 묻는다), 그 밖 → 거절 | 답: 허락 / 이 세션 동안 항상(`addRules` + `destination: "session"`) / 거절. Claude Code가 제안하는 "항상" 규칙은 `localSettings` 파일에 적혀 대화가 끝나도 남으므로 쓰지 않는다 |
 | `permissionMode` | `"default"` | bypass가 아니다. 쓰기는 물어야 한다 |
-| `systemPrompt` | 문자열 | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체 |
+| `systemPrompt` | 문자열, 대화는 `SYSTEM_PROMPT`, 작업은 `TASK_SYSTEM_PROMPT` | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체. 작업에는 웹·쓰기 도구가 없어 그 말도 없다(§20) |
 | `settingSources` | `[]` | 사람의 `~/.claude`(CLAUDE.md·hook·MCP)가 섞이지 않는다 |
 | `strictMcpConfig` | `true` | 여기서 준 MCP 서버만. §8 |
 | `settings` | `{ disableClaudeAiConnectors: true, autoMemoryEnabled: false, disableBundledSkills: true }` | `settingSources`가 닿지 않는 것: claude.ai 커넥터, 자동 메모리, 기본 스킬. §8 |
@@ -468,3 +468,20 @@ Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려
 | 4 ✓ | 화면: 턴 끝에 ✓/✗와 돌려보낸 횟수(기록을 묻는다 — 스트림의 돌려보냄 메시지는 세션 파일에 남지 않으므로 다시 열 때도 같도록) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
 | 5 | 진짜로 한 번(용어집을 어기게 해서 돌려보냄 → 고침) | `.context` | 실측 |
 | 6 | README·이 문서 | | |
+
+## 20. 대화 프롬프트 — 동료 번역가 (2026-10-19)
+
+프롬프트를 둘로 나눴다(`session.mjs`). 작업 대화에는 웹 검색과 쓰기 도구가 없는데, 같은 프롬프트가 그것들을 쓸 수 있다고 말하고 있었다. 책에 닿는 길(도구 넷, PDF는 볼 수 없다)은 둘이 함께 쓴다.
+
+대화 프롬프트는 "번역을 아는 조수"에서 "의견을 말하는 동료 번역가, 다만 번역은 번역가의 것"으로. 일하는 방식에 더한 것: 뜻이 먼저 / 번역인 줄 모르게 읽히는 한국어 / 지금까지의 번역이 스타일 가이드 / 이름·용어·반복 표현은 `search`로 다른 곳을 먼저 보고 말한다 / 추천 하나 / 왜 그 말인지, 결정짓는 단어 한두 개의 맥락으로(이 문맥의 뜻, 그것을 정하는 근거, 사전의 첫 뜻보다 맞는 이유, 원문 인용) / 고칠 만큼만 / 근처의 분명한 문제는 끝에 / 모르는 것은 모른다고. 책마다 다른 방침(대상 독자, 경어체, 외래어 표기, 역주)은 넣지 않는다: 지금까지의 번역에서 배우고, 따로 둔다면 번역 방침 문서로.
+
+**실측**(실제 책 사본, Opus 5.5 / medium, `record.mjs`; 녹화는 `.context/agent-runs/prompt-*`, 커밋하지 않음). 같은 질문 셋: ¶36 뉘앙스, ¶826 옮기기, ¶2 uptown.
+
+| | 전 | 후 |
+|---|---|---|
+| `search` | 0/3. "뒤에 다시 나온다면"처럼 짐작 | 3/3. uptown 4곳(¶169가 뜻을 풀어 준다), ripes 20여 곳(2장 제목, ¶56의 정의 → 용어집 제안), Bessarabia·Moldavia는 이 단락뿐(→ 용어집 불필요) |
+| 답의 모양 | 후보 여럿(추천 표시) | 추천 하나 + 결정짓는 단어의 맥락 근거. ¶2의 끊어 쓴 문장을 근거로 같은 리듬 |
+| 글자 수 (¶36 / ¶826 / uptown) | 2,148 / 1,576 / 1,191 | 1,906 / 1,475 / 1,134 |
+| 비용·시간 | $0.079·31초 / $0.084·32초 / $0.055·20초 | $0.099·33초 / $0.122·37초 / $0.076·25초 |
+
+첫 판의 "search for where else it appears"로는 `search`를 한 번도 부르지 않았다(0/3) → "call search with its English first … rather than guessing whether it comes up again"으로 고친 뒤 3/3. 작업 프롬프트: 실제 테스트 3 통과, 리뷰 녹화(Gatsby, Sonnet 5.5 / low)는 심어 둔 ¶4 오역을 찾고 하나(veteran 누락)를 더 찾았다.
