@@ -7,6 +7,7 @@ import { Kbd } from "@/components/ui/kbd"
 
 import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
+import { FindInput, FindResults } from "@/features/review/Find"
 import { ExportView } from "@/features/export/ExportView"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
@@ -46,6 +47,7 @@ const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
   const [panelTab, setPanelTab] = useState("history")
+  const [findQuery, setFindQuery] = useState("")
   const [findFocusToken, setFindFocusToken] = useState(0)
   const book = useBook()
   const review = useReview({
@@ -112,7 +114,9 @@ export function App() {
     () => (speller ? book.segments.reduce((n, s) => n + findSuspects(s.sourceText, speller.correct, userWords).length, 0) : 0),
     [speller, userWords, book.segments],
   )
-  const openFind = () => { setPanelTab("find"); setFindFocusToken((n) => n + 1) }
+  const openFind = () => setFindFocusToken((n) => n + 1)
+  // Find searches the source: a hit found while exporting opens in Review
+  const jumpToHit = (segmentId: number, chapterId: number) => { if (exporting) setMode("review"); review.jumpTo(segmentId, chapterId) }
   // ⌘L: the words selected (in the text or the open editor) go to Claude; with none, Claude's box takes the cursor
   const askAboutSelection = () => {
     const sel = latestSelection.current
@@ -135,10 +139,13 @@ export function App() {
       mode={mode}
       onModeChange={setMode}
       book={book.book}
+      find={<FindInput query={findQuery} onQuery={setFindQuery} focusToken={findFocusToken} />}
       stageProgress={stageProgress}
       leftCollapsed={!scanShown[mode]}
-      // Export picks its chapters itself
-      sidebar={exporting ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
+      // what Find found takes the chapters' place; Export picks its chapters itself
+      sidebar={findQuery ? (
+        <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpToHit} onReplaceAll={book.replaceAll} />
+      ) : exporting ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       crumb={exporting ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       main={exporting ? <ExportView chapters={book.chapters} /> : undefined}
       left={review.left}
@@ -146,8 +153,8 @@ export function App() {
       panel={
         <ReviewPanel
           notes={book.unanchoredNotes} segments={book.segments} selected={panelSelected} onAnchor={book.anchorNote} markers={translate.markers}
-          onJump={review.jumpTo} onReplaceAll={book.replaceAll}
-          tab={panelTab} onTabChange={setPanelTab} findFocusToken={findFocusToken}
+          onJump={review.jumpTo}
+          tab={panelTab} onTabChange={setPanelTab}
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,
             onRun: () => { if (book.chapterId !== null) book.suggest.run(task, book.chapterId) },

@@ -47,6 +47,38 @@ test("Export picks its own chapters: the sidebar's list and the header's chapter
   await expect(chapters).toBeVisible()
 })
 
+test("Find lives in the sidebar: what it finds takes the chapters' place until Esc; folded, ⌘F or its button opens the sidebar first; a hit found in Export opens in Review", async ({ page }) => {
+  await page.goto("/")
+  const chapters = page.getByRole("navigation", { name: "Chapters" })
+  const results = page.getByRole("region", { name: "Find results" })
+  const find = page.getByRole("textbox", { name: "Find in book" })
+  const toggle = page.getByRole("button", { name: "Toggle sidebar", exact: true })
+  await expect(chapters).toBeVisible()
+  await toggle.click()
+  await expect(find).toBeHidden()
+  await page.keyboard.press("Meta+f")
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
+  await expect(find).toBeFocused()
+  await find.fill("Zemurray")
+  await expect(results.getByRole("status")).toContainText(/\d+ paragraphs, \d+ matches/)
+  await expect(chapters).toHaveCount(0)
+  await find.press("Escape")
+  await expect(find).toHaveValue("")
+  await expect(results).toHaveCount(0)
+  await expect(chapters).toBeVisible()
+
+  await toggle.click()
+  await page.getByRole("button", { name: "Find in book" }).click()
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
+  await expect(find).toBeFocused()
+
+  await page.getByRole("button", { name: "Export", exact: true }).click()
+  await find.fill("Zemurray")
+  await results.getByRole("button", { name: /13: King Fish/ }).first().click()
+  await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveAttribute("aria-current", "page")
+  await expect(page.locator("footer")).toContainText("13: King Fish")
+})
+
 test("the panel widths you drag to are kept across reloads: one layout with the scan, one without", async ({ page }) => {
   const widths = () => page.locator("[data-slot=resizable-panel]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)))
   const drag = async (handle: number, dx: number) => {

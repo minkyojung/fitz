@@ -23,9 +23,11 @@ interface AppShellProps {
   onModeChange: (mode: Mode) => void
   /** The book, at the sidebar's head. */
   book: { title: string; author: string | null } | null
+  /** Find in book, under the book. */
+  find: ReactNode
   /** How far the book is in a stage, in percent: the stage's badge. */
   stageProgress: Partial<Record<Mode, number>>
-  /** The chapters, under the stages; none in a stage of the whole book (Export). */
+  /** The chapters, under the stages (or what Find found); none in a stage of the whole book (Export). */
   sidebar: ReactNode
   /** The breadcrumb after the stage: the chapter, as a menu. None in a stage of the whole book. */
   crumb: ReactNode
@@ -44,7 +46,7 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 
 /** Fixed frame: sidebar (sidebar-07: the book, the stages, the chapters; folds to icons) | [breadcrumb /
  *  left+right+panel / status]. Content is injected per mode. */
-export function AppShell({ mode, onModeChange, book, stageProgress, sidebar, crumb, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
+export function AppShell({ mode, onModeChange, book, find, stageProgress, sidebar, crumb, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
   // The widths the translator dragged the panels to, kept across reloads: one layout with the scan, one without. A
   // hidden scan is not rendered, so the library keeps the two apart (panelIds).
   const layout = useDefaultLayout({
@@ -68,6 +70,7 @@ export function AppShell({ mode, onModeChange, book, stageProgress, sidebar, cru
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
+          {find}
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>

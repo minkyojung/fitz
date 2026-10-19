@@ -3,7 +3,6 @@ import { IconSparkles } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Note, Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
-import { FindPanel } from "./FindPanel"
 import { GlossaryPanel } from "./GlossaryPanel"
 import { HistoryPanel } from "./HistoryPanel"
 import { NotesTab } from "@/features/notes/NotesTab"
@@ -17,11 +16,9 @@ interface Props {
   selected: Segment | null
   onAnchor: (noteId: number, segmentId: number) => Promise<unknown>
   onJump: (segmentId: number, chapterId: number) => void
-  onReplaceAll: (query: string, replacement: string) => Promise<unknown>
-  /** Controlled tab so ⌘F can open "Find". */
+  /** Controlled tab, so a comment picked in the text opens Notes and Ask Claude opens Claude. */
   tab: string
   onTabChange: (tab: string) => void
-  findFocusToken: number
   markers: Map<number, string>
   /** Claude's task for this view (the review while translating, the OCR hunt while reviewing the source). */
   suggest: { task: TaskName; run: TaskRun | undefined; onRun: () => void; onDecide: (s: Suggestion, decision: SuggestionDecision) => Promise<unknown> }
@@ -30,14 +27,13 @@ interface Props {
   claudeFocusToken: number
 }
 
-export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onReplaceAll, tab, onTabChange, findFocusToken, markers, suggest, claude, claudeFocusToken }: Props) {
+export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, tab, onTabChange, markers, suggest, claude, claudeFocusToken }: Props) {
   const suggestions = useSuggestions()?.suggestions ?? []
   return (
     <Tabs value={tab} onValueChange={(v) => onTabChange(v as string)} className="flex h-full flex-col gap-0">
-      {/* five tabs do not fit a narrow panel on one row: they wrap to a second */}
+      {/* the tabs do not fit a narrow panel on one row: they wrap to a second */}
       <TabsList className="m-2 shrink-0 flex-wrap self-start group-data-horizontal/tabs:h-auto [&>[data-slot=tabs-trigger]]:h-[26px]">
         <TabsTrigger value="history">History</TabsTrigger>
-        <TabsTrigger value="find">Find</TabsTrigger>
         <TabsTrigger value="glossary">Glossary</TabsTrigger>
         <TabsTrigger value="notes">
           Notes
@@ -52,9 +48,6 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, onRep
       </TabsList>
       <TabsContent value="history" className="min-h-0 flex-1">
         <HistoryPanel segment={selected} refreshKey={segments} />
-      </TabsContent>
-      <TabsContent value="find" className="min-h-0 flex-1">
-        <FindPanel refreshKey={segments} onJump={onJump} onReplaceAll={onReplaceAll} focusToken={findFocusToken} />
       </TabsContent>
       <TabsContent value="glossary" className="min-h-0 flex-1">
         <GlossaryPanel onJump={onJump} />

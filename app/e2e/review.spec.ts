@@ -483,16 +483,17 @@ test("find lists hits across the book, jumps to one, and replace-all is a single
   await expect(page.locator("[data-segment]").first()).toHaveText(/Prologue/)
   await page.locator("body").click({ position: { x: 5, y: 5 } })
   await page.keyboard.press("Meta+f")
-  const find = page.getByRole("textbox", { name: "Find", exact: true })
+  const find = page.getByRole("textbox", { name: "Find in book" })
   await expect(find).toBeFocused()
   await find.fill("Zemurray")
-  const status = page.locator("[data-slot=tabs-content][data-state=active], [role=tabpanel]").locator("[role=status]").first()
+  const results = page.getByRole("region", { name: "Find results" })
+  const status = results.getByRole("status")
   await expect(status).toContainText(/\d+ paragraphs, \d+ matches/)
   const hitCount = Number((await status.innerText()).match(/(\d+) paragraphs/)![1])
   expect(hitCount).toBeGreaterThan(5)
 
   // jump to a hit in a later chapter
-  const hit = page.getByRole("tabpanel").getByRole("button", { name: /13: King Fish/ }).first()
+  const hit = results.getByRole("button", { name: /13: King Fish/ }).first()
   await hit.click()
   await expect(page.locator("footer")).toContainText("13: King Fish")
   await expect(page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })).toContainText("Zemurray")
@@ -516,9 +517,9 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
   // make an OCR-style error: turn a sentence-initial "It was" into "Tt was"
   await page.locator("body").click({ position: { x: 5, y: 5 } })
   await page.keyboard.press("Meta+f")
-  const find = page.getByRole("textbox", { name: "Find", exact: true })
+  const find = page.getByRole("textbox", { name: "Find in book" })
   await find.fill("It was a brisk night")
-  await page.getByRole("tabpanel").getByRole("button", { name: /Prologue/ }).first().click()
+  await page.getByRole("region", { name: "Find results" }).getByRole("button", { name: /Prologue/ }).first().click()
   const row = page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })
   await expect(row).toContainText("It was a brisk night")
   const original = await rowText(row)
@@ -542,6 +543,7 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
   await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
   // a name with no evidence gets no inline fix; add it to the dictionary and it stays gone after reload
+  await find.press("Escape")  // what Find found gives the chapters their place back
   await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /9: To the Collins/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Collins/)
