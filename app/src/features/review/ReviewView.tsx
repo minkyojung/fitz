@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 
 import { PageViewer } from "./PageViewer"
 import { SegmentList } from "./SegmentList"
@@ -32,32 +32,35 @@ export function useReview({ pages, segments, onPatch, onSplit, onMerge, onPageOu
   // A different chapter arrived (or a page is pending): land on the pending page's first segment,
   // else the chapter's first segment. Reloads of the same chapter (split/merge/undo) keep the selection;
   // an empty selection on a blank page is not a chapter change.
-  const shownChapter = useRef<number | null>(null)
-  useEffect(() => {
+  // Done while rendering, when what it reads changed (React's adjustment for state that follows a prop), not in an
+  // effect after the screen showed the old selection.
+  const [shownChapter, setShownChapter] = useState<number | null>(null)
+  const [seen, setSeen] = useState<{ segments: Segment[]; selectedId: number | null; pendingPage: number | null; pendingSegmentId: number | null } | null>(null)
+  if (seen?.segments !== segments || seen.selectedId !== selectedId || seen.pendingPage !== pendingPage || seen.pendingSegmentId !== pendingSegmentId) {
+    setSeen({ segments, selectedId, pendingPage, pendingSegmentId })
     const first = segments[0]
-    if (!first) return
-    if (pendingSegmentId !== null) {
+    if (!first) {
+      // nothing to land on
+    } else if (pendingSegmentId !== null) {
       const target = segments.find((s) => s.id === pendingSegmentId)
-      if (!target) return // its chapter has not loaded yet
-      shownChapter.current = first.chapterId
-      setPendingSegmentId(null)
-      setSelectedId(target.id)
-      setPageNo(target.pageStart)
-      setEditingId(null)
-      return
-    }
-    const sameChapter = first.chapterId === shownChapter.current
-    if (sameChapter && pendingPage === null) {
+      if (target) { // else its chapter has not loaded yet
+        setShownChapter(first.chapterId)
+        setPendingSegmentId(null)
+        setSelectedId(target.id)
+        setPageNo(target.pageStart)
+        setEditingId(null)
+      }
+    } else if (first.chapterId === shownChapter && pendingPage === null) {
       if (selectedId !== null && !segments.some((s) => s.id === selectedId)) setSelectedId(null) // selection vanished (merge)
-      return
+    } else {
+      setShownChapter(first.chapterId)
+      const target = pendingPage === null ? first : segments.find((s) => s.pageStart <= pendingPage && pendingPage <= s.pageEnd) ?? null
+      setSelectedId(target?.id ?? null)
+      setPageNo(pendingPage ?? first.pageStart)
+      setPendingPage(null)
+      setEditingId(null)
     }
-    shownChapter.current = first.chapterId
-    const target = pendingPage === null ? first : segments.find((s) => s.pageStart <= pendingPage && pendingPage <= s.pageEnd) ?? null
-    setSelectedId(target?.id ?? null)
-    setPageNo(pendingPage ?? first.pageStart)
-    setPendingPage(null)
-    setEditingId(null)
-  }, [segments, selectedId, pendingPage, pendingSegmentId])
+  }
 
   const selected = segments.find((s) => s.id === selectedId) ?? null
 

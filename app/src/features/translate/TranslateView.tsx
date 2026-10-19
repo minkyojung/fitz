@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PairRow } from "./PairRow"
@@ -22,9 +22,9 @@ export function useTranslate({ segments, onPatch, focusMode, notes, onSelectChap
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [caretEdge, setCaretEdge] = useState<"start" | "end">("end")
-  const shownChapter = useRef<number | null>(null)
+  const [shownChapter, setShownChapter] = useState<number | null>(null)
   /** The pair a jump asked for (Find, the glossary), selected once its chapter arrives. */
-  const jumpTarget = useRef<number | null>(null)
+  const [jumpTarget, setJumpTarget] = useState<number | null>(null)
   const markers = useMemo(() => {
     const idx = new Map(segments.map((sg, i) => [sg.id, i]))
     return footnoteMarkers(notes.filter((n) => idx.has(n.segmentId)).map((n) => {
@@ -34,20 +34,24 @@ export function useTranslate({ segments, onPatch, focusMode, notes, onSelectChap
     }))
   }, [notes, segments])
 
-  useEffect(() => {
+  // A different chapter arrived: land on the pair a jump asked for, else on its first unconfirmed pair. The same
+  // chapter again (a reload after a write) keeps the selection, unless its pair is gone. Done while rendering, when what
+  // it reads changed (React's adjustment for state that follows a prop), not in an effect after the screen showed the
+  // old selection.
+  const [seen, setSeen] = useState<{ segments: Segment[]; selectedId: number | null } | null>(null)
+  if (seen?.segments !== segments || seen.selectedId !== selectedId) {
+    setSeen({ segments, selectedId })
     const first = segments[0]
-    if (!first) return
-    if (first.chapterId === shownChapter.current) {
+    if (first && first.chapterId === shownChapter) {
       if (selectedId !== null && !segments.some((s) => s.id === selectedId)) setSelectedId(null)
-      return
+    } else if (first) {
+      setShownChapter(first.chapterId)
+      const target = segments.find((s) => s.id === jumpTarget)
+      if (target) setJumpTarget(null)
+      setSelectedId((target ?? segments.find(unconfirmed) ?? first).id)
+      setEditingId(null)
     }
-    shownChapter.current = first.chapterId
-    // land on the pair a jump asked for, else on the first unconfirmed pair of the chapter
-    const target = segments.find((s) => s.id === jumpTarget.current)
-    if (target) jumpTarget.current = null
-    setSelectedId((target ?? segments.find(unconfirmed) ?? first).id)
-    setEditingId(null)
-  }, [segments, selectedId])
+  }
 
   const selected = segments.find((s) => s.id === selectedId) ?? null
   const indexOf = (id: number | null) => segments.findIndex((s) => s.id === id)
@@ -124,7 +128,7 @@ export function useTranslate({ segments, onPatch, focusMode, notes, onSelectChap
   const jumpTo = useCallback(
     (segmentId: number, chapterId: number) => {
       if (segments.some((s) => s.id === segmentId)) { setSelectedId(segmentId); setEditingId(null); return }
-      jumpTarget.current = segmentId
+      setJumpTarget(segmentId)
       onSelectChapter(chapterId)
     },
     [segments, onSelectChapter],
