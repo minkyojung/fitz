@@ -71,7 +71,10 @@ export function createAgentHost({
   /** At work: a turn going on, and the Claude Code it goes on in alive (docs/agent.md §23). Not the fold's status, which
    *  is idle until Claude Code's first message. */
   const working = (conv) => conv.turn !== null && conv.session !== null
-  const snapshot = (convId, conv) => ({ type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort, working: working(conv) })
+  const snapshot = (convId, conv) => ({
+    type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort, working: working(conv),
+    title: getConversation(db, convId)?.title ?? null,
+  })
   const pending = (conv) => [...conv.asks.values()].map((a) => a.ask)
 
   /** A write put to the translator. Resolves when they answer, or when the turn stops (signal). */
@@ -135,7 +138,7 @@ export function createAgentHost({
         if (!getConversation(db, convId)?.title) {
           void Promise.resolve(sessionInfo(message.session_id)).then((info) => {
             const title = info?.customTitle ?? info?.summary
-            if (title) setTitle(db, convId, title)
+            if (title) { setTitle(db, convId, title); tell(conv, { type: "titled", convId, title }) }
           }).catch((e) => console.error("agent: no title for", convId, e.message))
         }
       }

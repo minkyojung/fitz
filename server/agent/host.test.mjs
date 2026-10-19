@@ -613,3 +613,18 @@ test("a task whose Claude Code ends before saying anything tells its followers i
   await settle()
   assert.deepEqual([events.at(-1).type, events.at(-1).working, events.at(-1).state.items.length], ["snapshot", false, 0])
 })
+
+test("the title Claude Code gives a conversation is told to its followers, and is in the snapshot of whoever opens it after", async () => {
+  const { host, opened, events, follow } = setup({ sessionInfo: async (id) => ({ sessionId: id, summary: "Reserved 뉘앙스" }) })
+  host.start(ID)
+  follow()
+  assert.equal(events[0].title, null, "none before its first turn ends")
+  host.send(ID, "q")
+  opened[0].feed(...nuance)
+  await settle()
+  await settle()
+  assert.deepEqual(events.filter((e) => e.type === "titled"), [{ type: "titled", convId: ID, title: "Reserved 뉘앙스" }])
+  const later = []
+  host.open(ID, (e) => later.push(e))
+  assert.deepEqual([later[0].type, later[0].title], ["snapshot", "Reserved 뉘앙스"])
+})

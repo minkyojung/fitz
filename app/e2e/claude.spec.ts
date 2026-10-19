@@ -191,6 +191,20 @@ test("past conversations are listed (not the review's), and one opens as it was,
   await expect(page.getByRole("button", { name: /Opus 5.5 · medium/ })).toBeVisible()
 })
 
+test("the title Claude Code gives the conversation shows in the header once the server keeps it, the menu unopened (docs/agent.md §23)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("이 문장 뉘앙스는?")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [], title: null })
+  fake.play(convId!, nuance)
+  const title = page.locator("[data-conversation-title]")
+  await expect(title).toContainText("¶4의 'unusually communicative")  // its first message, until it has a title
+  fake.tell({ type: "titled", convId, title: "Reserved 뉘앙스" })
+  await expect(title).toHaveText("Reserved 뉘앙스")
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

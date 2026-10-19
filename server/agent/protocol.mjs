@@ -11,10 +11,11 @@
 //   answer { convId, requestId, decision }  allow | always (this tool, for the rest of the session) | deny
 //   list                                the conversations, most recently used first
 // server → page
-//   snapshot { convId, state, asks, model, effort, working }  the conversation as fold.mjs has it, the writes waiting
-//                                       for an answer, the model and effort its next message goes to, and whether a turn
-//                                       is going on in a live Claude Code (docs/agent.md §23)
+//   snapshot { convId, state, asks, model, effort, working, title }  the conversation as fold.mjs has it, the writes
+//                                       waiting for an answer, the model and effort its next message goes to, whether a
+//                                       turn is going on in a live Claude Code, and its title (docs/agent.md §23)
 //   configured { convId, model, effort }  those changed
+//   titled   { convId, title }          the title Claude Code gave it, kept once its first turn ends
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
 //   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)

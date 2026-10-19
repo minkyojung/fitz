@@ -44,6 +44,15 @@ test("the model and effort the next message goes to: from the snapshot, then as 
   assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [] }]).config, null, "not said: not known")
 })
 
+test("the title: from the snapshot, then as the server says Claude Code gave one (docs/agent.md §23)", () => {
+  let view = play([{ type: "snapshot", state: foldMessages([]), asks: [], title: null }])
+  assert.equal(view.title, null)
+  view = play([{ type: "titled", title: "Reserved 뉘앙스" }], view)
+  assert.equal(view.title, "Reserved 뉘앙스")
+  assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [], title: "Reserved 뉘앙스" }]).title, "Reserved 뉘앙스", "opened after")
+  assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [] }]).title, null, "not said: not known")
+})
+
 test("what the translator pointed at goes before their words, and comes apart again for showing", () => {
   const sent = withPointed("말장난이야?", { segmentId: 604, side: "source", quote: "reserve all judgments" })
   assert.equal(sent, "¶604 (English): “reserve all judgments”\n\n말장난이야?")

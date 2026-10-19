@@ -57,7 +57,7 @@ export function ClaudeTab({ claude, focusToken, segments, suggest }: Props) {
 /** The conversation's title is the menu of conversations: a new one, and the recent ones. */
 function ConversationMenu({ claude }: { claude: Claude }) {
   const first = claude.view.state.items.find((i) => i.kind === "user")
-  const title = claude.summary?.title ?? (first?.kind === "user" ? readPointed(first.text).text : null) ?? (claude.pending ? readPointed(claude.pending).text : null) ?? "New conversation"
+  const title = claude.view.title ?? claude.summary?.title ?? (first?.kind === "user" ? readPointed(first.text).text : null) ?? (claude.pending ? readPointed(claude.pending).text : null) ?? "New conversation"
   return (
     <DropdownMenu onOpenChange={(o) => { if (o) void claude.refreshList() }}>
       <DropdownMenuTrigger render={<Button size="sm" variant="ghost" className="min-w-0 shrink justify-start" />}>

@@ -23,16 +23,19 @@ export interface ConversationView {
   error: string | null
   /** The model and effort its next message goes to, as the server says (null until it does). */
   config: { model: string; effort: string } | null
+  /** The title Claude Code gave it, as the server says (null until it does). */
+  title: string | null
 }
 
-export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null, config: null })
+export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null, config: null, title: null })
 const configOf = (e: LiveEvent) => (typeof e.model === "string" && typeof e.effort === "string" ? { model: e.model, effort: e.effort } : null)
+const titleOf = (e: LiveEvent) => (typeof e.title === "string" ? e.title : null)
 
 /** The conversation after one of its events. */
 export function applyEvent(view: ConversationView, e: LiveEvent): ConversationView {
   switch (e.type) {
     case "snapshot":
-      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null, config: configOf(e) }
+      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null, config: configOf(e), title: titleOf(e) }
     case "message":
       return { ...view, state: applyMessage(view.state, e.message as SdkMessage) }
     case "ask":
@@ -43,6 +46,8 @@ export function applyEvent(view: ConversationView, e: LiveEvent): ConversationVi
       return { ...view, error: String(e.message) }
     case "configured":
       return { ...view, config: configOf(e) }
+    case "titled":
+      return { ...view, title: titleOf(e) }
     default:
       return view
   }
