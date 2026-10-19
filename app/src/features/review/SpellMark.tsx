@@ -42,7 +42,7 @@ export function SpellMark({ suspect: s, context, onAccept }: Props) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<mark data-spell className={top ? SPELL_STRUCK_CLASS : SPELL_MARK_CLASS} />} onClick={(e) => e.stopPropagation()}>
+      <PopoverTrigger nativeButton={false} render={<mark data-spell className={top ? SPELL_STRUCK_CLASS : SPELL_MARK_CLASS} />} onClick={(e) => e.stopPropagation()}>
         {s.word}
       </PopoverTrigger>
       {top && (
