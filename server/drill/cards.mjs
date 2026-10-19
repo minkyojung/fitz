@@ -4,6 +4,17 @@
 import { DRILL } from "../agent/tasks.mjs"
 import { findOnce, inTransaction } from "../commands.mjs"
 
+// Cards, answers and runs are not changes to the book (⌘Z never meets them), so Session has its own announcement, as
+// Claude's suggestions do: the pages hear that Session changed and ask again.
+const watchers = new WeakMap()  // db → Set<(event) => void>
+/** Returns the function that stops watching. */
+export const watchSession = (db, fn) => {
+  if (!watchers.has(db)) watchers.set(db, new Set())
+  watchers.get(db).add(fn)
+  return () => watchers.get(db).delete(fn)
+}
+export const announceSession = (db, event = {}) => { for (const fn of watchers.get(db) ?? []) fn(event) }
+
 /** The paragraph whose translation a logged change wrote, or null. updateSegment logs whole states, so it wrote a
  *  translation when its translation differs from the one before; accepting a review suggestion writes one too. */
 function translationWritten(db, row) {

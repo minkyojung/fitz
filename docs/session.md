@@ -54,6 +54,8 @@
 - **실패**(네트워크 등): 10분 뒤 다시, 3번까지. 그래도 안 되면 Session에 실패와 **Try again**.
 - **겹치지 않는다**: 실행 중이면 다음 확인은 건너뛴다. 서버가 실행 중에 꺼지면 그 실행은 다음 시작 때 실패로 바뀐다.
 - **자르는 선**: 실행이 시작한 때. 그 뒤의 변경은 다음 날 저녁으로.
+- **어느 서버에서**: 책 자체(`out/book.db`)를 연 서버만. 사본을 여는 서버(`--db`: 테스트, e2e, 측정)는 끈다 — 사본으로 21:00에 Claude를 부르지 않게. `--evening on|off`로 바꾸고, 서버가 켜질 때 한 줄로 말한다.
+- **기다림**: 10분 안에 답이 없으면 실패(19단락에 1분이 안 걸렸다). 서버가 꺼질 때 돌던 실행의 Claude Code를 닫고, 다음 시작 때 그 실행을 실패로 적는다.
 - **모델**: Opus 5.5 / medium(§8). 한도는 리뷰·오탈자와 같은 상한(60턴, $5)이 폭주만 막는다.
 - 만든 카드는 **바로** 풀 수 있다: 저녁 실행이 이미 작업과 몇 시간 떨어져 있으니, 그날 밤이든 다음 날 아침이든.
 
@@ -114,7 +116,7 @@
 | 2 ✓ | 테이블(§6) + 마이그레이션(작업 DB 백업 뒤: `out/book.db.bak-2026-10-19-before-session`) | `db/schema.sql`, `pipeline/migrate.py` | pytest |
 | 3 ✓ | 순수 규칙: 날짜, 상자, 저녁 실행의 판정(처음엔 다음 21:00부터 — 그 전엔 놓친 저녁이 없다) | `server/drill/schedule.mjs` | 단위 |
 | 4 ✓ | 작업 `drill`(지시문·모양) + 재료 모으기(시간으로, §3) + 검사·섞기·저장 | `server/agent/tasks.mjs`, `server/drill/cards.mjs` | 서버 |
-| 5 | 저녁 실행: 1분 확인, 따라잡기, 재시도, 기록 | `server/drill/evening.mjs`, `server/index.mjs` | 서버(가짜 시계, 가짜 세션) |
+| 5 ✓ | 저녁 실행: 1분 확인, 따라잡기, 재시도, 기록, 책 자체에만 켜짐 | `server/drill/evening.mjs`, `server/index.mjs` | 서버(가짜 시계, 가짜 세션) |
 | 6 | 오늘의 카드, 답, 이미 앎, 이의, 고르기, 챌린지 결정(명령), 더 풀기·더 만들기 | `server/drill/cards.mjs`, `server/commands.mjs`, `server/index.mjs` | 서버 + 실제 HTTP |
 | 7 | 진짜로 한 번(Haiku 테스트, 실제 책 사본으로 Opus 한 번) | `server/drill/real.test.mjs` | 실측 |
 | 8 | 화면: Session, 배지, 카드, 챌린지, 끝 화면, 툴바 버튼, Ask의 자동 재료 | `app/src/features/session/`, `api.ts`, `http.ts`, … | e2e |

@@ -8,6 +8,8 @@ import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { turnChecks } from "./agent/records.mjs"
+import { openSession } from "./agent/session.mjs"
+import { startEvening } from "./drill/evening.mjs"
 import { attachLive } from "./live.mjs"
 import { corsHeaders, fromThisMachine } from "./origin.mjs"
 import { agentOps, execute, getBook, httpError, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo, undoAgent } from "./commands.mjs"
@@ -146,12 +148,17 @@ const server = createServer(async (req, res) => {
 // the translation agent (docs/agent.md): the server owns every Claude Code process; the page's live connection
 // carries its conversations and the book's changes
 const agent = createAgentHost({ db })
+// Session's evening run (docs/session.md §4): on for the book itself, off for a copy — tests, e2e and measurements open
+// copies (--db), and a copy must not spend on Claude at 21:00 — unless --evening says otherwise
+const EVENING = arg("evening", DB === resolve("out/book.db") ? "on" : "off") === "on"
+const evening = startEvening(db, { openSession, enabled: EVENING })
 attachLive(server, { db, host: agent })
 // Claude Code finishes writing its session files before the server goes
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void agent.close().finally(() => process.exit(0)) })
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void Promise.all([agent.close(), evening.close()]).finally(() => process.exit(0)) })
 
 server.listen(PORT, () => {
   console.log(`api  http://localhost:${PORT}/api/*   db=${DB}`)
   // an API key in the environment is used without asking, over the Claude login
   console.log(`live  ws://localhost:${PORT}/live    agent on ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY from the environment" : "the Claude login on this Mac"}`)
+  console.log(`session  cards every evening at 21:00: ${EVENING ? "on" : "off (a copy of the book; --evening on to turn it on)"}`)
 })
