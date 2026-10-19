@@ -143,7 +143,7 @@ function EveningLine({ day, onRetry, busy }: { day: SessionDay; onRetry: () => v
       <>
         <IconAlertTriangle className="size-4 text-destructive" />
         {last.slot === day.today ? "Tonight's" : `${last.slot}'s`} cards could not be made: {last.error} (tried {last.tries} {last.tries === 1 ? "time" : "times"}).
-        <Button size="xs" variant="outline" className="ml-1" onClick={onRetry} disabled={busy}>Try again</Button>
+        <Button size="sm" variant="outline" className="ml-1" onClick={onRetry} disabled={busy}>Try again</Button>
       </>
     ) : last.status === "skipped" ? <>Nothing changed {last.slot === day.today ? "today" : `on ${last.slot}`}, so there were no new cards.</>
     : <><IconCheck className="size-4 text-mark-term-ink" />Made {last.made} {last.made === 1 ? "card" : "cards"}{last.finishedAt ? ` at ${clockOf(last.finishedAt)}` : ""}{last.slot === day.today ? "" : ` for ${last.slot}`} from the paragraphs that changed.</>
@@ -204,7 +204,7 @@ function CardView({ card, pos, total, picked, answer, aside, busy, failure, chap
         <Badge variant="outline">{card.kind === "meaning" ? "Meaning" : "Nuance"}</Badge>
         <span className="text-muted-foreground">{card.again ? "Once more" : card.isNew ? "New" : `Box ${card.box} of 5`}</span>
         {card.origin !== "claude" && <span className="text-muted-foreground">· {card.origin === "picked" ? "you picked it" : "you asked about it"}</span>}
-        <Button size="xs" variant="ghost" className="ml-auto text-muted-foreground" onClick={onJump}>¶{card.segmentId}{chapter && ` · ${chapter}`}</Button>
+        <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={onJump}>¶{card.segmentId}{chapter && ` · ${chapter}`}</Button>
       </div>
       <p className="reading text-[17px] leading-relaxed" lang="en"><Quoted text={card.sentence} quote={card.quote} /></p>
       <p className="text-sm font-medium">{card.question}</p>
@@ -281,7 +281,7 @@ function ChallengeView({ challenge: ch, index, total, decided, busy, failure, ch
       <div className="flex items-center gap-2 text-xs">
         <Badge variant="outline">Challenge</Badge>
         <span className="text-muted-foreground">{ch.writtenBy === "agent" ? "Claude's translation" : "Your translation"}</span>
-        <Button size="xs" variant="ghost" className="ml-auto text-muted-foreground" onClick={onJump}>¶{ch.segmentId}{chapter && ` · ${chapter}`}</Button>
+        <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={onJump}>¶{ch.segmentId}{chapter && ` · ${chapter}`}</Button>
       </div>
       <p className="reading text-[15px] text-muted-foreground" lang="en">{ch.source}</p>
       <p className="reading text-[17px] leading-relaxed" lang="ko">

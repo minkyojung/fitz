@@ -20,7 +20,7 @@
 ## 1. 이름
 
 화면은 **Session**, 코드·테이블은 `drill_*`. `session`은 이미 Claude Code의 세션(`agent/session.mjs`, `agent_conversation.session_id`,
-`agent_turn.session_id`, `~/.fitz/sessions`)이라, 같은 말을 두 뜻으로 쓰지 않는다. 선례: 화면의 Claude 탭 ↔ 코드의 `agent`.
+`agent_turn.session_id`, `~/.fitz/sessions`)이라, 같은 말을 두 뜻으로 쓰지 않는다. 선례: 화면의 Claude 패널 ↔ 코드의 `agent`.
 
 ## 2. 문제
 
@@ -34,7 +34,7 @@
 - **I know this**(이미 앎): 그 카드는 다시 나오지 않고, 그 표현은 다음부터 고르지 않는다.
 - **Answer looks wrong**(정답이 이상함): 그 카드는 빠지고, Claude와 이야기할 수 있다.
 - **Use the suggestion** = 리뷰 제안의 Accept와 같은 길: 지금 번역에서 구절을 다시 찾아 정확히 한 번일 때만 그 자리를 바꾼다. 번역자의 쓰기, ⌘Z.
-- **Discuss with Claude** = 그 챌린지(또는 이의 있는 카드)를 첫 메시지로 Claude 탭에 새 대화.
+- **Discuss with Claude** = Translate에서 그 단락을 열고, 그 말을 Claude 패널(헤더의 ✦)의 상자에 둔다 — 무엇을 물을지는 번역자가 쓴다.
 - 보기의 순서는 저장할 때 서버가 섞는다(Claude는 정답을 첫 자리에 몰아 둔다, §8).
 
 ## 3. 재료 — 두 쪽의 변경 전부, 누가 썼는지 남긴다
