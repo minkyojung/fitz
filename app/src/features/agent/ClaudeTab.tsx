@@ -39,7 +39,7 @@ export function ClaudeTab({ claude, focusToken, segments, suggest }: Props) {
       <Collapsible open={suggestionsShown} onOpenChange={setSuggestionsShown} className="shrink-0 border-b">
         <div className="flex h-9 items-center gap-1 px-1.5">
           <ConversationMenu claude={claude} />
-          <Button size="xs" variant={suggestionsShown ? "secondary" : "ghost"} className="ml-auto shrink-0" aria-expanded={suggestionsShown}
+          <Button size="sm" variant={suggestionsShown ? "secondary" : "ghost"} className="ml-auto shrink-0" aria-expanded={suggestionsShown}
             onClick={() => setSuggestionsShown(!suggestionsShown)}>
             Suggestions <Badge variant="secondary" data-open-suggestions>{open}</Badge>
           </Button>
@@ -60,7 +60,7 @@ function ConversationMenu({ claude }: { claude: Claude }) {
   const title = claude.summary?.title ?? (first?.kind === "user" ? readPointed(first.text).text : null) ?? (claude.pending ? readPointed(claude.pending).text : null) ?? "New conversation"
   return (
     <DropdownMenu onOpenChange={(o) => { if (o) void claude.refreshList() }}>
-      <DropdownMenuTrigger render={<Button size="xs" variant="ghost" className="min-w-0 shrink justify-start" />}>
+      <DropdownMenuTrigger render={<Button size="sm" variant="ghost" className="min-w-0 shrink justify-start" />}>
         <span className="truncate" data-conversation-title>{title}</span>
         <IconChevronDown data-icon="inline-end" />
       </DropdownMenuTrigger>

@@ -62,7 +62,7 @@ export function Thread({ claude }: { claude: Claude }) {
         <MessageScrollerViewport aria-label="Conversation with Claude">
           <MessageScrollerContent className="gap-5 p-3" aria-busy={working}>
             {!blocks.length && !pending && (
-              <p className="px-1 py-6 text-center text-xs text-muted-foreground">
+              <p className="px-1 py-6 text-center text-xs/relaxed text-muted-foreground">
                 Ask about this chapter, or select words in the text and choose Ask Claude (⌘L).
               </p>
             )}
@@ -111,7 +111,7 @@ function UserMessage({ text }: { text: string }) {
     <Message align="end">
       <MessageContent>
         <Bubble align="end" variant="muted">
-          <BubbleContent className="space-y-1 text-[13px] whitespace-pre-wrap">
+          <BubbleContent className="space-y-1 text-sm/relaxed whitespace-pre-wrap">
             {pointed && <Pointed pointed={pointed} />}
             <p lang="ko">{words}</p>
           </BubbleContent>
@@ -161,17 +161,17 @@ function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, 
         {turn && checks && <ChecksLine checks={checks} />}
         {/* inside the content: Message lays its children in a row, and the turn's end goes under the answer */}
         {end && (
-          <MessageFooter data-turn-end className={end.stopped ? "gap-1 px-0 text-destructive" : "gap-1 px-0"}>
+          <MessageFooter data-turn-end className={end.stopped ? "gap-1 px-0 text-xs font-normal text-destructive" : "gap-1 px-0 text-xs font-normal"}>
             {end.text}
             {undoable.length > 0 && (
-              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-muted-foreground" disabled={busy} onClick={() => void undo()}>
+              <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => void undo()}>
                 <IconArrowBackUp data-icon="inline-start" />Undo from here ({undoable.length})
               </Button>
             )}
           </MessageFooter>
         )}
         {refusal && (
-          <p data-refusal className="text-xs text-destructive">
+          <p data-refusal className="text-xs/relaxed text-destructive">
             Not undone: {refusal}. {refusal.startsWith("You") ? "Undo yours first (⌘Z), or keep it." : "Take that back first, or keep it."}
           </p>
         )}
@@ -181,11 +181,11 @@ function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, 
 }
 
 // a chat answer's headings are its own sections, not the page's: the text's size, set apart by weight only
-const WORDS = "space-y-2 [&_:is(h1,h2,h3,h4)]:mt-3 [&_:is(h1,h2,h3,h4)]:mb-1 [&_:is(h1,h2,h3,h4)]:text-[13px] [&_:is(h1,h2,h3,h4)]:font-semibold"
+const WORDS = "space-y-2 [&_:is(h1,h2,h3,h4)]:mt-3 [&_:is(h1,h2,h3,h4)]:mb-1 [&_:is(h1,h2,h3,h4)]:text-sm [&_:is(h1,h2,h3,h4)]:font-semibold"
 
 function Words({ text, streaming = false }: { text: string; streaming?: boolean }) {
   return (
-    <div lang="ko" className="text-[13px] leading-relaxed">
+    <div lang="ko" className="text-sm/relaxed">
       <Streamdown className={WORDS} plugins={PLUGINS} mode={streaming ? "streaming" : "static"}>{text}</Streamdown>
     </div>
   )
@@ -202,7 +202,7 @@ function ChecksLine({ checks }: { checks: TurnChecks }) {
         <TraceTitle>{text}</TraceTitle>
       </TraceLine>
       {details.length > 0 && (
-        <ul className="ml-5 space-y-0.5 text-xs text-muted-foreground" lang="ko">
+        <ul className="ml-5 space-y-0.5 text-xs/relaxed text-muted-foreground" lang="ko">
           {details.map((d) => <li key={d}>{d}</li>)}
         </ul>
       )}
@@ -252,8 +252,8 @@ function Confirmation({ ask, onAnswer }: { ask: Ask; onAnswer: (d: AskDecision) 
     <ItemCard variant="outline" size="sm" data-ask={ask.requestId}>
       <ItemMedia variant="icon">{ICON[ask.tool] ?? <IconPencil />}</ItemMedia>
       <ItemContent className="min-w-0">
-        <ItemTitle className="line-clamp-none">{summary}?</ItemTitle>
-        {before && after ? <DiffView before={before} after={after} lang="ko" className="text-[13px]" /> : after && <p lang="ko" className="text-[13px] whitespace-pre-wrap">{after}</p>}
+        <ItemTitle className="line-clamp-none text-sm/relaxed">{summary}?</ItemTitle>
+        {before && after ? <DiffView before={before} after={after} lang="ko" className="text-sm/relaxed" /> : after && <p lang="ko" className="text-sm/relaxed whitespace-pre-wrap">{after}</p>}
       </ItemContent>
       <ItemActions className="w-full justify-end">
         <Button size="sm" variant="ghost" onClick={() => onAnswer("deny")}>Deny</Button>

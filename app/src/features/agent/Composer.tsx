@@ -37,7 +37,8 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
           ref={box}
           aria-label="Message to Claude"
           placeholder="Ask Claude about this chapter…"
-          className="min-h-14 text-[13px]"
+          // the textarea's own md:text-xs would win over a size given without md:
+          className="min-h-14 text-sm/relaxed md:text-sm/relaxed"
           lang="ko"
           value={text}
           onChange={(e) => setText(e.target.value)}

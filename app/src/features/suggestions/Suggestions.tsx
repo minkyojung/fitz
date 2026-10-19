@@ -35,7 +35,7 @@ export function Suggestions({ task, segments, run, onRun, onDecide }: Props) {
           <span className="text-muted-foreground"><IconSparkles className="mr-1 inline size-3.5 animate-pulse" />Claude is reading the chapter…</span>
         ) : (
           <>
-            <Button size="xs" variant="outline" onClick={onRun}><IconSparkles data-icon="inline-start" />{t.start}</Button>
+            <Button size="sm" variant="outline" onClick={onRun}><IconSparkles data-icon="inline-start" />{t.start}</Button>
             {run?.state === "done" && <span className="text-muted-foreground">{open.length ? t.found(open.length) : "No open suggestions"}</span>}
             {run?.state === "failed" && <span className="text-destructive">{run.message}</span>}
           </>
@@ -67,7 +67,7 @@ function Card({ s, label, number, stale, comment, selected, onPick, onDecide }: 
   const decide = (d: SuggestionDecision) => { setBusy(true); void onDecide(d).finally(() => setBusy(false)) }
   return (
     <li ref={setEl} data-panel-suggestion={s.id} data-selected={selected || undefined} onClick={onPick}
-      className={cn("cursor-pointer space-y-1.5 border-b border-l-2 border-l-transparent px-3 py-2 text-sm", selected && "border-l-ring bg-muted")}>
+      className={cn("cursor-pointer space-y-1.5 border-b border-l-2 border-l-transparent px-3 py-2 text-sm/relaxed", selected && "border-l-ring bg-muted")}>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {number > 0 && <span className="tabular-nums">¶{number}</span>}
         {s.level && <Badge variant={s.level === "high" ? "destructive" : "secondary"}>{s.level}</Badge>}
@@ -76,12 +76,12 @@ function Card({ s, label, number, stale, comment, selected, onPick, onDecide }: 
       <p lang={s.side === "source" ? "en" : "ko"}>
         <span className="line-through decoration-destructive/60">{s.quote}</span> → <span className="text-mark-term-ink">{s.replacement}</span>
       </p>
-      <p className="text-xs text-muted-foreground" lang="ko">{s.why}</p>
-      {stale && <p data-stale className="text-xs text-mark-warning-ink">The paragraph changed since: these words are no longer there to replace.</p>}
+      <p className="text-xs/relaxed text-muted-foreground" lang="ko">{s.why}</p>
+      {stale && <p data-stale className="text-xs/relaxed text-mark-warning-ink">The paragraph changed since: these words are no longer there to replace.</p>}
       <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
-        <Button size="xs" disabled={busy || stale} onClick={() => decide("accept")}><IconCheck data-icon="inline-start" />Accept</Button>
-        <Button size="xs" variant="ghost" disabled={busy} onClick={() => decide("dismiss")}><IconX data-icon="inline-start" />Dismiss</Button>
-        {comment && <Button size="xs" variant="ghost" disabled={busy} onClick={() => decide("comment")}><IconMessage data-icon="inline-start" />Keep as comment</Button>}
+        <Button size="sm" disabled={busy || stale} onClick={() => decide("accept")}><IconCheck data-icon="inline-start" />Accept</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => decide("dismiss")}><IconX data-icon="inline-start" />Dismiss</Button>
+        {comment && <Button size="sm" variant="ghost" disabled={busy} onClick={() => decide("comment")}><IconMessage data-icon="inline-start" />Keep as comment</Button>}
       </div>
     </li>
   )
