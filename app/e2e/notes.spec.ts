@@ -15,7 +15,7 @@ async function selectWord(block: Locator, word: string) {
 
 test("comments: add on the source, see the mark, reply, resolve (mark disappears), undo brings it back", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /16: Bananas Go to War/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /16: Bananas Go to War/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Bananas Go to War/)
   const row = rows.nth(1)
@@ -49,8 +49,8 @@ test("comments: add on the source, see the mark, reply, resolve (mark disappears
 
 test("translator's note: add on the translation, asterisk marker with tooltip, edit body, delete", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /17: Israel is Real/ }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /17: Israel is Real/ }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pairs = page.locator("[data-pair]")
   await expect(pairs.first()).toContainText("Israel")
   const pair = pairs.nth(1)
@@ -86,7 +86,7 @@ test("translator's note: add on the translation, asterisk marker with tooltip, e
 
 test("keyboard selection inside the editor shows the same toolbar; a comment made there is anchored after saving", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /19: Backlash/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /19: Backlash/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Backlash/)
   const row = rows.nth(1)
@@ -110,8 +110,8 @@ test("keyboard selection inside the editor shows the same toolbar; a comment mad
 
 test("author's note: provisional number at the paragraph's end, placed after selected words, undo unplaces it", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /17: Israel is Real/ }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /17: Israel is Real/ }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pairs = page.locator("[data-pair]")
   await expect(pairs.first()).toContainText("Israel")
   const pair = pairs.nth(7) // its source carries the chapter's first author's note ("several hundred Jewish refugees")
@@ -144,8 +144,8 @@ test("author's note: provisional number at the paragraph's end, placed after sel
 
 test("author's note: the panel shows the English and takes a translation; the badge counts the rest", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /17: Israel is Real/ }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /17: Israel is Real/ }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pair = page.locator("[data-pair]").nth(7)
   await expect(pair).toContainText("several hundred Jewish refugees")
   const marker = pair.locator("p[lang=en] sup[data-note]").first()

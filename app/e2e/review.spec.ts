@@ -26,7 +26,7 @@ async function setCaret(editable: Locator, offset: number) {
 
 test("review edits persist across reload", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /1: Selma/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /1: Selma/ }).click()
 
   // second row = first body paragraph of chapter 1 (row 0 is the heading)
   const rows = page.locator("[data-segment]")
@@ -37,7 +37,7 @@ test("review edits persist across reload", async ({ page }) => {
   // verify
   await row.getByRole("checkbox", { name: "Verified" }).click()
   await expect(row.getByRole("checkbox", { name: "Verified" })).toBeChecked()
-  await expect(page.getByRole("button", { name: /1: Selma/ })).toContainText("1/15")
+  await expect(page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /1: Selma/ })).toContainText("1/15")
 
   // kind
   await row.getByRole("button", { name: "Quote" }).click()
@@ -50,7 +50,7 @@ test("review edits persist across reload", async ({ page }) => {
   await expect(row).toContainText("Edited paragraph text.")
 
   await page.reload()
-  await page.getByRole("button", { name: /1: Selma/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /1: Selma/ }).click()
   const again = page.locator("[data-segment]").nth(1)
   await expect(again).toContainText("Edited paragraph text.")
   await expect(again.getByRole("checkbox", { name: "Verified" })).toBeChecked()
@@ -60,7 +60,7 @@ test("review edits persist across reload", async ({ page }) => {
 
 test("page navigation follows the selected segment", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /1: Selma/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /1: Selma/ }).click()
   await expect(page.getByText("p. 11", { exact: true }).first()).toBeVisible()
   await page.getByRole("button", { name: "Next page" }).click()
   await expect(page.getByText("p. 12", { exact: true }).first()).toBeVisible()
@@ -69,7 +69,7 @@ test("page navigation follows the selected segment", async ({ page }) => {
 
 test("split at caret and merge back restore the paragraph", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /2: Ripes/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /2: Ripes/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Ripes/)
   const before = await rows.count()
@@ -117,7 +117,7 @@ test("an unanchored note can be linked to a segment", async ({ page }) => {
 
 test("undo restores a merge, redo reapplies it", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /3: The Fruit Jobber/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Fruit Jobber/)
   const before = await rows.count()
@@ -136,13 +136,13 @@ test("undo restores a merge, redo reapplies it", async ({ page }) => {
   await expect(rows).toHaveCount(before - 1)
 
   await page.reload()
-  await page.getByRole("button", { name: /3: The Fruit Jobber/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /3: The Fruit Jobber/ }).click()
   await expect(page.locator("[data-segment]")).toHaveCount(before - 1)
 })
 
 test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undoes", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /4: Brown to Green/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /4: Brown to Green/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Brown to Green/)
   await page.locator("body").click({ position: { x: 5, y: 5 } }) // drop focus from the sidebar button
@@ -156,11 +156,11 @@ test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undo
   await expect(rows.nth(1).getByRole("checkbox")).toBeChecked()
   await expect(rows.nth(2).getByRole("checkbox")).toBeChecked()
   await expect(rows.nth(3).getByRole("checkbox")).toBeChecked()
-  await expect(page.getByRole("button", { name: /4: Brown to Green/ })).toContainText("3/")
+  await expect(page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /4: Brown to Green/ })).toContainText("3/")
 
   await page.keyboard.press("Meta+z")
   await expect(rows.nth(3).getByRole("checkbox")).not.toBeChecked()
-  await expect(page.getByRole("button", { name: /4: Brown to Green/ })).toContainText("2/")
+  await expect(page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /4: Brown to Green/ })).toContainText("2/")
 
   await page.keyboard.press("ArrowUp")
   await page.keyboard.press("Enter")
@@ -178,7 +178,7 @@ test("keyboard-only review: arrows move, space verifies, enter edits, cmd+z undo
 
 test("status bar shows saved, and save failure when the server rejects", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /5: Bananas/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /5: Bananas/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Bananas/)
   const status = page.locator("footer [role=status]")
@@ -202,7 +202,7 @@ test("status bar shows saved, and save failure when the server rejects", async (
 
 test("edits are highlighted against the OCR original and listed in history", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /6: The Octopus/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /6: The Octopus/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Octopus/)
   const row = rows.nth(1)
@@ -232,7 +232,7 @@ test("edits are highlighted against the OCR original and listed in history", asy
 
 test("in-place editing: no layout shift, character undo inside, paragraph undo after", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /7: New Orleans/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /7: New Orleans/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/New Orleans/)
   // a row without spelling marks: inline fixes change the read view's flow until accepted
@@ -269,7 +269,7 @@ test("in-place editing: no layout shift, character undo inside, paragraph undo a
 
 test("clicking a word starts editing with the caret at that word; clicking another row saves and moves", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /8: The Isthmus/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /8: The Isthmus/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Isthmus/)
   // pin the two rows by id: filtered locators are live and would shift once marks come and go
@@ -310,7 +310,7 @@ test("clicking a word starts editing with the caret at that word; clicking anoth
 
 test("tab moves editing to the next paragraph, shift+tab back, each step saves", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /9: To the Collins/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /9: To the Collins/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Collins/)
   const t = (i: number) => rows.nth(i).locator("p")
@@ -335,7 +335,7 @@ test("tab moves editing to the next paragraph, shift+tab back, each step saves",
 
 test("an interrupted edit is offered for recovery after reload, and discarded on demand", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /10: Revolutin/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /10: Revolutin/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Revolutin/)
   const row = rows.nth(1)
@@ -348,7 +348,7 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   await page.waitForTimeout(500) // past the draft debounce
   await page.reload() // "crash": the edit was never committed
 
-  await page.getByRole("button", { name: /10: Revolutin/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /10: Revolutin/ }).click()
   const again = page.locator("[data-segment]").nth(1)
   await expect(again.locator("p")).toHaveText(original)
   await expect(again.getByText("Unsaved")).toBeVisible()
@@ -358,17 +358,18 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
   await expect(again.locator("p")).toHaveText(original + " DRAFT")
   await expect(again.getByText("Unsaved")).toHaveCount(0)
   await page.reload()
-  await page.getByRole("button", { name: /10: Revolutin/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /10: Revolutin/ }).click()
   await expect(page.locator("[data-segment]").nth(1).getByText("Unsaved")).toHaveCount(0)
 
   // discard path
   const row2 = page.locator("[data-segment]").nth(2)
-  await row2.locator("p").click()
+  // on its first word: a click on a marked word (a suspect spelling, a term) opens that word's popover instead
+  await row2.locator("p").click({ position: { x: 4, y: 4 } })
   await expect(row2.getByRole("textbox")).toBeFocused()
   await page.keyboard.type("x")
   await page.waitForTimeout(500)
   await page.reload()
-  await page.getByRole("button", { name: /10: Revolutin/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /10: Revolutin/ }).click()
   const row2b = page.locator("[data-segment]").nth(2)
   await row2b.getByRole("button", { name: "Discard" }).click()
   await expect(row2b.getByText("Unsaved")).toHaveCount(0)
@@ -376,7 +377,7 @@ test("an interrupted edit is offered for recovery after reload, and discarded on
 
 test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /11: To the Isthmus/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /11: To the Isthmus/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Isthmus/)
   const row = rows.nth(1)
@@ -404,7 +405,7 @@ test("a failed save keeps the draft so nothing is lost", async ({ page }) => {
 
 test("the selected segment is outlined on the scanned page and follows the selection", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /12: The Banana War/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /12: The Banana War/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Banana War/)
   await selectRow(rows.nth(1))
@@ -541,7 +542,7 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
   await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
   // a name with no evidence gets no inline fix; add it to the dictionary and it stays gone after reload
-  await page.getByRole("button", { name: /9: To the Collins/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /9: To the Collins/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Collins/)
   const name = rows.locator("mark[data-spell]", { hasText: "Hondurefio" }).first()
@@ -551,7 +552,7 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
   await page.getByRole("option", { name: "Add to dictionary" }).click()
   await expect(rows.locator("mark[data-spell]", { hasText: "Hondurefio" })).toHaveCount(0)
   await page.reload()
-  await page.getByRole("button", { name: /9: To the Collins/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /9: To the Collins/ }).click()
   await expect(page.locator("[data-segment]").first()).toHaveText(/Collins/)
   await expect(page.locator("[data-segment]").first()).toBeVisible()
   await expect(page.locator("mark[data-spell]", { hasText: "Hondurefio" })).toHaveCount(0)
@@ -563,8 +564,8 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
 test("translate mode: facing pairs, blocks inside a pair, confirm-and-next, persistence, undo", async ({ page }) => {
   await page.goto("/")
   await expect(page.locator("[data-segment]").first()).toHaveText(/Prologue/)
-  await page.getByRole("button", { name: /14: The Fish That Swallowed/ }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /14: The Fish That Swallowed/ }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pairs = page.locator("[data-pair]")
   await expect(pairs.first()).toContainText("The Fish That Swallowed")
   // the first unconfirmed pair is selected; its translation is empty
@@ -590,8 +591,8 @@ test("translate mode: facing pairs, blocks inside a pair, confirm-and-next, pers
   await expect(page.locator("footer [data-sheets]")).toContainText("sheets")
 
   await page.reload()
-  await page.getByRole("button", { name: /14: The Fish That Swallowed/ }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /14: The Fish That Swallowed/ }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   await expect(page.locator("[data-pair]").nth(1).locator("[data-target] p")).toHaveCount(2)
 
   await page.locator("body").click({ position: { x: 5, y: 5 } })

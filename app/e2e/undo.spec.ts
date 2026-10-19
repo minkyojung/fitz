@@ -20,8 +20,8 @@ function claudeWrites(id: number, text: string, toolUseId: string) {
 
 async function open(page: Page) {
   await page.goto("/")
-  await page.getByRole("button", { name: /18: / }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pairs = page.locator("[data-pair]")
   await expect(pairs.nth(3)).toBeVisible()
   return { a: pairs.nth(2), b: pairs.nth(3), ids: [Number(await pairs.nth(2).getAttribute("data-pair")), Number(await pairs.nth(3).getAttribute("data-pair"))] }

@@ -25,7 +25,7 @@ async function selectWord(p: Locator, word: string) {
 
 test("glossary: add a term from a selection, set its translation, see it marked, and get warned when the translation omits it", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("button", { name: /15: Los Pericos/ }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /15: Los Pericos/ }).click()
   const rows = page.locator("[data-segment]")
   await expect(rows.first()).toHaveText(/Los Pericos/)
   const row = rows.filter({ hasText: "Zemurray" }).first()
@@ -49,7 +49,7 @@ test("glossary: add a term from a selection, set its translation, see it marked,
   await expect(page.getByText("Zemurray → 제무레이")).toBeVisible()
 
   // 3) Translate mode: a translation that spells the name differently is flagged; fixing it clears the flag
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pair = page.locator("[data-pair]").filter({ hasText: "Zemurray" }).first()
   await pair.locator("[data-target]").click()
   await expect(pair.getByRole("textbox", { name: "Edit translation" })).toBeFocused()

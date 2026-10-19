@@ -6,7 +6,7 @@ import { cn } from "cn"
 import { Kbd } from "@/components/ui/kbd"
 
 import { AppShell, type Mode } from "@/layout/AppShell"
-import { ChapterList } from "@/features/review/ChapterList"
+import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
 import { ExportView } from "@/features/export/ExportView"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
@@ -16,7 +16,7 @@ import { SelectionContext } from "@/features/selection/SelectionContext"
 import type { TextSelection } from "@/lib/selection"
 import { AnnotationsContext, type Selected } from "@/features/notes/AnnotationsContext"
 import { SuggestionsContext } from "@/features/suggestions/SuggestionsContext"
-import type { TaskName } from "@/data/api"
+import type { Chapter, TaskName } from "@/data/api"
 import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
 import { useTranslate } from "@/features/translate/TranslateView"
@@ -101,6 +101,12 @@ export function App() {
     [book.suggestions, task, suggestionSelected, selectSuggestion],
   )
   const chapterSheets = useMemo(() => sheets(book.segments.map((s) => s.targetText).join("\n")), [book.segments])
+  // the whole book's progress in each stage, for the stage's badge in the sidebar
+  const stageProgress = useMemo(() => {
+    const total = book.chapters.reduce((n, c) => n + c.segmentCount, 0)
+    const pct = (count: (c: Chapter) => number) => (total ? Math.round((book.chapters.reduce((n, c) => n + count(c), 0) / total) * 100) : 0)
+    return { review: pct((c) => c.verifiedCount), translate: pct((c) => c.confirmedCount) }
+  }, [book.chapters])
   const { speller, userWords } = book.spell
   const suspectTotal = useMemo(
     () => (speller ? book.segments.reduce((n, s) => n + findSuspects(s.sourceText, speller.correct, userWords).length, 0) : 0),
@@ -128,8 +134,12 @@ export function App() {
     <AppShell
       mode={mode}
       onModeChange={setMode}
+      book={book.book}
+      stageProgress={stageProgress}
       leftCollapsed={!scanShown[mode]}
-      sidebar={<ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
+      // Export picks its chapters itself
+      sidebar={exporting ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
+      crumb={exporting ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       main={exporting ? <ExportView chapters={book.chapters} /> : undefined}
       left={review.left}
       right={translating ? translate.view : review.right}

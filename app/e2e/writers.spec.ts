@@ -12,8 +12,8 @@ const undoOnServer = (request: APIRequestContext) => request.post(`${API}/undo`)
 
 async function openChapter(page: Page) {
   await page.goto("/")
-  await page.getByRole("button", { name: /18: / }).click()
-  await page.getByRole("tab", { name: "Translate" }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pair = page.locator("[data-pair]").nth(2)
   await expect(pair).toBeVisible()
   return { pair, id: Number(await pair.getAttribute("data-pair")) }
@@ -80,8 +80,8 @@ test("a comment Claude left says so in the notes panel; the translator's does no
   const claudes = Number(insert.run(id, "Claude가 남긴 메모", "agent").lastInsertRowid)
   try {
     await page.reload()
-    await page.getByRole("button", { name: /18: / }).click()
-    await page.getByRole("tab", { name: "Translate" }).click()
+    await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
+    await page.getByRole("button", { name: "Translate", exact: true }).click()
     await page.locator(`[data-pair="${id}"]`).click()
     await page.getByRole("tab", { name: /Notes/ }).click()
     const claude = page.locator(`[data-panel-comment="${claudes}"]`)

@@ -35,8 +35,8 @@ test.afterEach(unseed)
 /** The third paragraph of chapter 18, in the given view. */
 async function open(page: Page, view: "Translate" | "Review") {
   await page.goto("/")
-  await page.getByRole("button", { name: /18: / }).click()
-  await page.getByRole("tab", { name: view }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
+  await page.getByRole("button", { name: view, exact: true }).click()
   const row = page.locator(view === "Translate" ? "[data-pair]" : "[data-segment]").nth(2)
   await expect(row).toBeVisible()
   return { row, id: Number(await row.getAttribute(view === "Translate" ? "data-pair" : "data-segment")) }

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 
 test("export: pick one chapter, see the summary and warnings, download a .docx", async ({ page }) => {
   await page.goto("/")
-  await page.getByRole("tab", { name: "Export" }).click()
+  await page.getByRole("button", { name: "Export", exact: true }).click()
   await page.getByRole("button", { name: "None" }).click()
   await expect(page.locator("[data-export-summary]")).toContainText("Pick at least one chapter")
   await page.getByRole("checkbox", { name: /17: Israel is Real/ }).click()

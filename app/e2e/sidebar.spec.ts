@@ -1,16 +1,31 @@
 import { expect, test } from "@playwright/test"
 
-// An off-canvas sidebar slides out of view but stays in the DOM, so assert on its state attribute.
+// The sidebar folds to icons, not out of the DOM, so assert on its state attribute.
 const sidebar = (page: import("@playwright/test").Page) => page.locator('[data-slot="sidebar"][data-state]').first()
 
-test("the chapter sidebar collapses and reopens, by button and by ⌘B, and remembers its state", async ({ page }) => {
+test("the sidebar folds to icons and opens again, by button and by ⌘B, and remembers it; folded, the stages stay and the header's chapter menu changes the chapter", async ({ page }) => {
   await page.goto("/")
-  await expect(page.getByRole("button", { name: /1: Selma/ })).toBeVisible()
+  const chapters = page.getByRole("navigation", { name: "Chapters" })
+  const toggle = page.getByRole("button", { name: "Toggle sidebar", exact: true })  // the sidebar's rail is "Toggle Sidebar"
+  await expect(chapters.getByRole("button", { name: /1: Selma/ })).toBeVisible()
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
-  await page.getByRole("button", { name: "Toggle chapters" }).click()
+  await toggle.click()
   await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed")
-  await page.getByRole("button", { name: "Toggle chapters" }).click()
+  await expect(chapters).toBeHidden()
+
+  const translate = page.getByRole("button", { name: "Translate", exact: true })
+  await translate.click()
+  await expect(translate).toHaveAttribute("aria-current", "page")
+  const crumb = page.locator("header [data-slot=dropdown-menu-trigger]")
+  await crumb.click()
+  await page.getByRole("menuitemradio", { name: /18: / }).click()
+  await expect(page.getByRole("menu")).toHaveCount(0)  // a chapter picked closes the menu
+  await expect(crumb).toHaveText("18: Operation Success")
+  await expect(page.locator("footer")).toContainText("18: Operation Success")
+
+  await toggle.click()
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
+  await expect(chapters.getByRole("button", { name: /18: / })).toHaveAttribute("data-active")
   await page.locator("body").click({ position: { x: 700, y: 400 } })
   await page.keyboard.press("Meta+b")
   await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed")
@@ -18,6 +33,18 @@ test("the chapter sidebar collapses and reopens, by button and by ⌘B, and reme
   await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed") // remembered via cookie
   await page.keyboard.press("Meta+b")
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
+})
+
+test("Export picks its own chapters: the sidebar's list and the header's chapter make way", async ({ page }) => {
+  await page.goto("/")
+  const chapters = page.getByRole("navigation", { name: "Chapters" })
+  await expect(chapters).toBeVisible()
+  await page.getByRole("button", { name: "Export", exact: true }).click()
+  await expect(chapters).toHaveCount(0)
+  await expect(page.locator("header [data-slot=dropdown-menu-trigger]")).toHaveCount(0)
+  await expect(page.locator("header")).toContainText("Export")
+  await page.getByRole("button", { name: "Review", exact: true }).click()
+  await expect(chapters).toBeVisible()
 })
 
 test("the panel widths you drag to are kept across reloads: one layout with the scan, one without", async ({ page }) => {
@@ -30,10 +57,10 @@ test("the panel widths you drag to are kept across reloads: one layout with the 
     await page.mouse.up()
   }
   const near = (a: number[], b: number[]) => expect(a.length === b.length && a.every((w, i) => Math.abs(w - b[i]) <= 2), `${a} vs ${b}`).toBe(true)
-  const show = async (view: "Review" | "Translate") => { await page.getByRole("tab", { name: view }).click(); await expect.poll(async () => (await widths()).length).toBe(view === "Review" ? 3 : 2) }
+  const show = async (view: "Review" | "Translate") => { await page.getByRole("button", { name: view, exact: true }).click(); await expect.poll(async () => (await widths()).length).toBe(view === "Review" ? 3 : 2) }
 
   await page.goto("/")
-  await page.getByRole("button", { name: /18: / }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
   await show("Review")
   const fresh = await widths()
   await drag(1, -120)
@@ -46,7 +73,7 @@ test("the panel widths you drag to are kept across reloads: one layout with the 
   near(await widths(), review)
 
   await page.reload()
-  await page.getByRole("button", { name: /18: / }).click()
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
   await show("Review")
   near(await widths(), review)
   await show("Translate")
