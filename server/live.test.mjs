@@ -11,6 +11,7 @@ import { foldMessages } from "./agent/fold.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachLive } from "./live.mjs"
 import { saveSuggestions } from "./agent/suggestions.mjs"
+import { announceSession } from "./drill/cards.mjs"
 import { localOrigin } from "./origin.mjs"
 import { settle, stubSessions } from "./agent/fixtures/stubSession.mjs"
 
@@ -147,6 +148,15 @@ test("every open page hears of Claude's new suggestions", async (t) => {
   saveSuggestions(db, { conversationId: ID, task: "typos", answer: { suggestions: [{ segmentId: 4, quote: "in a reserved way", replacement: "x", why: "-" }] } })
   await page.until((r) => r.some((e) => e.type === "suggested"))
   assert.deepEqual(page.received.filter((e) => e.type === "suggested"), [{ type: "suggested", segmentIds: [4] }])
+})
+
+test("every open page hears that Session changed", async (t) => {
+  const db = gatsby()
+  const srv = await serve(t, db)
+  const page = await connect(srv)
+  announceSession(db, { run: 3 })
+  await page.until((r) => r.some((e) => e.type === "session"))
+  assert.deepEqual(page.received.filter((e) => e.type === "session"), [{ type: "session", run: 3 }])
 })
 
 test("a page that closed stops listening; the others go on", async (t) => {

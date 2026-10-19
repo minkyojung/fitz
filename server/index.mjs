@@ -10,6 +10,9 @@ import { createAgentHost } from "./agent/host.mjs"
 import { turnChecks } from "./agent/records.mjs"
 import { openSession } from "./agent/session.mjs"
 import { startEvening } from "./drill/evening.mjs"
+import { announceSession } from "./drill/cards.mjs"
+import { dayOf } from "./drill/schedule.mjs"
+import { answerCard, closeChallenge, moreToday, pickWords, sessionToday, setCardAside } from "./drill/today.mjs"
 import { attachLive } from "./live.mjs"
 import { corsHeaders, fromThisMachine } from "./origin.mjs"
 import { agentOps, execute, getBook, httpError, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo, undoAgent } from "./commands.mjs"
@@ -94,6 +97,26 @@ const routes = {
   claudeChanges: ({ toolUseIds }) => agentOps(db, toolCallIds(toolUseIds)),
   /** What the checks found in a conversation's turns (docs/agent.md §19). */
   turnChecks: ({ sessionId }) => turnChecks(db, sessionIdOf(sessionId)),
+
+  // Session (docs/session.md): the day's quiz, graded here. Not an edit of the book, but for Use the suggestion
+  sessionToday: () => sessionToday(db, { today: dayOf(new Date()), running: evening.running() }),
+  answerCard: ({ id, choice }) => answerCard(db, { id, choice, today: dayOf(new Date()) }),
+  /** why: known (I know this) | disputed (Answer looks wrong) */
+  setCardAside: ({ id, why }) => setCardAside(db, { id, why, today: dayOf(new Date()) }),
+  /** keep | discuss | change (Use the suggestion: the translator's write, undone with ⌘Z) */
+  decideChallenge: ({ id, decision }) => {
+    if (decision !== "change") return closeChallenge(db, { id, decision, today: dayOf(new Date()) })
+    const result = execute(db, "decideChallenge", { id, decidedOn: dayOf(new Date()) })
+    announceSession(db)
+    return result
+  },
+  /** kind: cards (ten more new cards today) | challenges (three more) */
+  moreToday: ({ kind }) => moreToday(db, { kind, today: dayOf(new Date()) }),
+  /** origin: picked (Add to Session) | asked (asked Claude about these words of the source) */
+  pickWords: ({ segmentId, quote, origin }) => pickWords(db, { segmentId, quote, origin }),
+  /** Make more from the last week, and Try again tonight's run: they start, and the page hears when they end. */
+  makeMoreCards: () => { void evening.more(); return { started: true } },
+  retryEvening: () => { void evening.retry(); return { started: true } },
 }
 
 /** A Claude Code session id as the page sends it. */

@@ -117,7 +117,7 @@
 | 3 ✓ | 순수 규칙: 날짜, 상자, 저녁 실행의 판정(처음엔 다음 21:00부터 — 그 전엔 놓친 저녁이 없다) | `server/drill/schedule.mjs` | 단위 |
 | 4 ✓ | 작업 `drill`(지시문·모양) + 재료 모으기(시간으로, §3) + 검사·섞기·저장 | `server/agent/tasks.mjs`, `server/drill/cards.mjs` | 서버 |
 | 5 ✓ | 저녁 실행: 1분 확인, 따라잡기, 재시도, 기록, 책 자체에만 켜짐 | `server/drill/evening.mjs`, `server/index.mjs` | 서버(가짜 시계, 가짜 세션) |
-| 6 | 오늘의 카드, 답, 이미 앎, 이의, 고르기, 챌린지 결정(명령), 더 풀기·더 만들기 | `server/drill/cards.mjs`, `server/commands.mjs`, `server/index.mjs` | 서버 + 실제 HTTP |
+| 6 ✓ | 오늘의 카드, 답, 이미 앎, 이의, 고르기, 챌린지 결정(명령), 더 풀기·더 만들기, 다시 시도. `/live`의 `session` 알림 | `server/drill/cards.mjs`, `server/commands.mjs`, `server/index.mjs` | 서버 + 실제 HTTP |
 | 7 | 진짜로 한 번(Haiku 테스트, 실제 책 사본으로 Opus 한 번) | `server/drill/real.test.mjs` | 실측 |
 | 8 | 화면: Session, 배지, 카드, 챌린지, 끝 화면, 툴바 버튼, Ask의 자동 재료 | `app/src/features/session/`, `api.ts`, `http.ts`, … | e2e |
 | 9 | README · 이 문서에 결과 | | |

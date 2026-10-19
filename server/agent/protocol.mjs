@@ -20,6 +20,7 @@
 //   conversations { items }            [{ id, sessionId, title, model, effort, task, chapterId, createdAt, usedAt }]
 //   changed  { opId, name, segmentIds, kind, actor }  the book changed (any writer; kind: do | undo | redo)
 //   suggested { segmentIds }            Claude made new suggestions on these paragraphs (deciding one is a change)
+//   session  { run? }                   Session's cards, answers or runs changed (docs/session.md): ask sessionToday again
 //   error    { convId?, message }
 
 import { TASK_NAMES } from "./tasks.mjs"

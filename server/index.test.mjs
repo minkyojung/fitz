@@ -121,3 +121,37 @@ test("the page asks what the checks found in a conversation's turns", async () =
   assert.deepEqual((await api("turnChecks", { sessionId })).body, [{ userUuid: "u1", checks: { checked: [4], rounds: [[]] } }])
   assert.equal((await api("turnChecks", { sessionId: "../x" })).status, 400)
 })
+
+test("Session over HTTP: today's cards, an answer graded, words picked, a challenge used and taken back with undo", async () => {
+  const api = async (name, body = {}) => { const r = await send({ path: `/api/${name}`, body: JSON.stringify(body) }); return { status: r.status, body: JSON.parse(r.text) } }
+  const { dayOf } = await import("./drill/schedule.mjs")
+  const today = dayOf(new Date())
+  const db = new DatabaseSync(dbPath)
+  const KO4 = "아버지는 더 말이 없었지만, 우리는 말을 아끼면서도 잘 통했다."
+  db.prepare("UPDATE segment SET target_doc = ?, target_text = ? WHERE id = 4").run(JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: KO4 }] }] }), KO4)
+  db.prepare("INSERT INTO drill_run(id, slot, status) VALUES (1, ?, 'done')").run(today)
+  const insert = db.prepare(`INSERT INTO drill_card(run_id, segment_id, kind, origin, written_by, quote, question, options, answer, proposal, why, base_version, due_on, made_on)
+    VALUES (1, 4, ?, 'claude', 'agent', ?, '?', ?, ?, ?, 'why', 1, ?, ?)`)
+  const card = Number(insert.run("meaning", "veteran bores", '["가","나","다","라"]', 2, null, today, today).lastInsertRowid)
+  const ch = Number(insert.run("challenge", "잘 통했다", null, null, "유난히 잘 통했다", today, today).lastInsertRowid)
+  db.close()
+
+  const s = (await api("sessionToday")).body
+  assert.deepEqual([s.today, s.cards.map((c) => c.id), s.challenges.map((c) => c.id), s.evening.running], [today, [card], [ch], false])
+  assert.equal("answer" in s.cards[0], false, "the answer is not sent before the translator answers")
+  const graded = await api("answerCard", { id: card, choice: 2 })
+  assert.deepEqual([graded.status, graded.body.correct, graded.body.box], [200, true, 2])
+  assert.equal((await api("answerCard", { id: card, choice: 2 })).status, 409)
+  assert.equal((await api("pickWords", { segmentId: 4, quote: "curious natures", origin: "picked" })).status, 200)
+  assert.equal((await api("pickWords", { segmentId: 4, quote: "boars", origin: "picked" })).status, 400)
+  assert.equal((await api("moreToday", { kind: "cards" })).body.cards, 10)
+
+  const target = async () => (await api("listSegments", { chapterId: 1 })).body.find((x) => x.id === 4).targetText
+  assert.equal((await api("decideChallenge", { id: ch, decision: "change" })).status, 200)
+  assert.equal(await target(), KO4.replace("잘 통했다", "유난히 잘 통했다"))
+  await api("undo")
+  assert.equal(await target(), KO4)
+  assert.deepEqual((await api("sessionToday")).body.challenges.map((c) => c.id), [ch])
+  assert.deepEqual((await api("decideChallenge", { id: ch, decision: "keep" })).body, { id: ch, status: "kept" })
+  assert.equal((await api("setCardAside", { id: card, why: "known" })).status, 200)
+})
