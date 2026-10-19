@@ -233,6 +233,15 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 - **웹 검색**(`tools: ["WebSearch"]` + `allowedTools`에 `WebSearch`, Opus 5.5, 2026-10-19, 녹화 `websearch.jsonl`): init의 tools = `WebSearch` + fitz 8, 번역자에게 묻지 않고 돌았다(`requires_action` 없음). 검색 하나가 `tool_use` 하나다. 입력은 `query`와, d.ts(0.3.302)에 없는 `mode: "standard" | "extended"`. 모델이 읽는 결과는 `Web search results for query: "…"` 로 시작하는 글(링크 목록과 요약)이고, 흐름의 `tool_use_result`는 `{ query, results, durationSeconds, searchCount }`라 `structuredContent`가 없다 → fold는 그 글을 결과로 쥐고, 세션 파일에서 다시 읽어도 같다. "¶2의 국내 번역본들을 웹에서" 질문: `read` 1 + 검색 3, 63초, $0.159, 요청 4,180 → 9,520토큰(검색 결과만큼 자란다). Claude는 확인하지 못한 것을 확인하지 못했다고 말하고 출처 주소를 달았다. Haiku 실제 테스트: 검색 1회, 8.7초. 같은 코드로 오탈자 작업(Sonnet)의 tools는 여전히 읽기 넷 + `StructuredOutput`.
 - 검색이 도는 중에 사람이 메시지를 보내면 그 호출은 결과 자리에 `{ detachedToolCall: true }`를 싣고 비켜나며 진짜 결과는 다음 턴에 온다(SDK d.ts). fitz의 입력칸은 턴 중에 막혀 있어 이 길은 열리지 않는다.
 
+- **Stop hook, fitz의 세션 설정 그대로**(2026-10-19, SDK 0.3.302 / Claude Code 2.1.302, Haiku; 스크립트 `.context/measure/stop-hook.mjs`):
+  - `{ decision: "block", reason }` → **같은 턴이 이어진다.** Claude가 이유를 읽고 `set_translation`을 다시 불러 고쳤고, `result`는 하나(5턴, 13.6초, $0.002). 두 번째 호출에서 `stop_hook_active: true`.
+  - 돌려보낸 이유는 스트림에 **`isSynthetic` 사용자 메시지** `"Stop hook feedback:\n<reason>"`으로 온다(`isReplay` 아님 → 지금의 fold는 무시한다). **세션 파일에는 남지 않는다**(`getSessionMessages`에 없음) → 다시 열면 사라지므로, 돌려보냈다는 사실과 이유는 **앱이 턴 기록에 남겨야** 한다.
+  - 도구를 안 쓴 턴에도 hook이 한 번 불린다 → 검사할 것(그 턴에 Claude가 쓴 단락)이 없으면 그냥 통과.
+  - hook이 던지면 턴은 그냥 끝난다(`success`/`completed`, 스트림에 오류 없음): **fail-open**. 통과도 흔적이 없다.
+  - hook 도중 `interrupt()` → hook의 `signal`이 abort되고 턴은 `success`/`completed`로 끝난다(`aborted_streaming`이 아님) → 멈춘 턴은 앱이 알고(`stop`을 받았으므로) 검사 결과를 남기지 않는다.
+  - `includeHookEvents: true`여도 SDK 콜백 hook에는 `hook_started`·`hook_response`가 오지 않았다.
+  - `last_assistant_message`(마지막 답의 글)와 `background_tasks`(빈 배열)가 입력에 온다.
+
 ## 9. 지금 하지 않는 것
 
 | 것 | 이유 |
@@ -445,3 +454,17 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 | 2 | 검사에 걸리면 Claude에게 바로 돌려보낼지, 번역자에게 먼저 보일지 / 길이 비율의 기준 |
 
 시작 전: 번역자의 서버를 새 코드로 다시 켠다(`node server/index.mjs`).
+
+## 19. 번역 검사 (6단계, 2026-10-19 계획)
+
+Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려보낸다(같은 턴, 최대 3번). 결과는 턴 끝에 보이고 턴 기록에 남는다. 검사는 **그 턴에 Claude가 쓴 단락만**. 규칙: **용어집 표기**(화면의 `missingTerms`와 같은 규칙: 용어가 원문에 있으면 합의된 번역이나 대체 표기 중 하나가 번역문에 있어야), **역주 자리**(내보내기의 unplaced·lostAnchor와 같은 판정). 빈 번역은 도구가 이미 거절하므로 빼고, 길이는 기준을 세울 번역이 아직 없어(실제 책 번역 단락 2개) 이번엔 넣지 않는다.
+
+| # | 무엇 | 파일 | 확인 |
+|---|---|---|---|
+| 0 ✓ | Stop hook을 fitz의 설정으로 잰다 | `.context/measure/stop-hook.mjs` | §8에 기록 |
+| 1 | 검사 규칙(순수): `checkSegments(db, ids)` | `server/agent/checks.mjs` | 순수 테스트 |
+| 2 | 기록: 턴마다 검사 결과(검사한 단락, 남은 실패, 돌려보낸 횟수와 이유) | `db/schema.sql`·`pipeline/migrate.py`(작업 DB 백업), `agent/records.mjs`, `index.mjs` | pytest + 서버 테스트 |
+| 3 | Stop hook: 그 턴에 Claude가 쓴 단락 → 검사 → 실패면 이유를 붙여 돌려보냄(앱이 횟수를 센다), 턴 끝에 기록, 멈춘 턴은 기록하지 않음 | `agent/session.mjs`, `agent/host.mjs` | 스텁 세션 |
+| 4 | 화면: 턴 끝에 ✓/✗와 돌려보낸 횟수(기록을 묻는다 — 스트림의 돌려보냄 메시지는 세션 파일에 남지 않으므로 다시 열 때도 같도록) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
+| 5 | 진짜로 한 번(용어집을 어기게 해서 돌려보냄 → 고침) | `.context` | 실측 |
+| 6 | README·이 문서 | | |
