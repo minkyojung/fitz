@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { ago, doingLine, toolLine, turnLine } from "./trace.ts"
+import { ago, checksLine, doingLine, toolLine, turnLine } from "./trace.ts"
 
 const tool = (name: string, input: Record<string, unknown>, status: "running" | "done" | "error" = "done", result: unknown = null) =>
   ({ kind: "tool" as const, id: "t", name, input, status, result })
@@ -42,4 +42,15 @@ test("how long ago", () => {
   assert.equal(ago("2026-10-18 11:55:00", now), "5m")
   assert.equal(ago("2026-10-18 09:00:00", now), "3h")
   assert.equal(ago("2026-10-15 12:00:00", now), "3d")
+})
+
+test("a turn's checks in a line: passed, fixed after being sent back, left wrong, or not checked", () => {
+  const term = { segmentId: 3, kind: "term" as const, term: "advantages", forms: ["혜택", "좋은 조건"] }
+  assert.deepEqual(checksLine({ checked: [3, 4], rounds: [[]] }), { ok: true, text: "Checked ¶3, ¶4", details: [] })
+  assert.deepEqual(checksLine({ checked: [3], rounds: [[term], []] }), { ok: true, text: "Checked ¶3 · fixed after 1 try", details: [] })
+  assert.deepEqual(checksLine({ checked: [3, 4], rounds: [[term], [term], [term], [term, { segmentId: 4, kind: "note", quote: "유보하는" }]] }), {
+    ok: false, text: "2 problems left after 3 tries",
+    details: ["¶3: “advantages” → 혜택 / 좋은 조건 is not in the translation", "¶4: the note at “유보하는” lost its place"],
+  })
+  assert.deepEqual(checksLine({ checked: [3], rounds: [], error: "could not check: no such table" }), { ok: null, text: "Not checked", details: ["could not check: no such table"] })
 })

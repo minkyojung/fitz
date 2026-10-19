@@ -120,4 +120,5 @@ export const api: Api = {
   answerAsk: (convId, requestId, decision) => live().send({ type: "answer", convId, requestId, decision }),
   undoClaude: (toolUseIds) => call("undoClaude", { toolUseIds }),
   claudeChanges: (toolUseIds) => call("claudeChanges", { toolUseIds }),
+  turnChecks: (sessionId) => call("turnChecks", { sessionId }),
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { api } from "./http"
-import type { AskDecision, ConversationSummary } from "./api"
+import type { AskDecision, ConversationSummary, TurnChecks } from "./api"
 import { applyEvent, emptyView, withPointed, type ConversationView, type Pointed } from "@/lib/conversation"
 import { WRITE_TOOLS } from "@/lib/trace"
 
@@ -88,15 +88,26 @@ export function useClaude() {
     }
   }, [refreshChanges])
 
+  // What the checks found in each turn (docs/agent.md §19), by the translator's message that began it: the app's
+  // record, asked for whenever a turn ends, so a conversation opened again shows the same
+  const sessionId = view.state.sessionId
+  const turnsEnded = view.state.items.filter((i) => i.kind === "turn").length
+  const [checks, setChecks] = useState<{ sessionId: string; byUser: Map<string, TurnChecks> } | null>(null)
+  useEffect(() => {
+    if (!sessionId || !turnsEnded) return
+    api.turnChecks(sessionId).then((rows) => setChecks({ sessionId, byUser: new Map(rows.map((r) => [r.userUuid, r.checks])) })).catch(() => undefined)
+  }, [sessionId, turnsEnded])
+  const checksOf = useCallback((userUuid: string) => (checks?.sessionId === sessionId ? checks.byUser.get(userUuid) ?? null : null), [checks, sessionId])
+
   const summary = list.find((c) => c.id === convId) ?? null
   return useMemo(() => ({
     convId, view, list, summary, choice, setChoice, pointed, point: setPointed, pending,
-    refreshList, send, stands, undoFrom,
+    refreshList, send, stands, undoFrom, checksOf,
     open: (id: string) => follow(id),
     newConversation: () => { unfollow.current?.(); unfollow.current = null; setConvId(null); setView(emptyView()); setPending(null) },
     stop: () => { if (convId) api.stopTurn(convId) },
     answer: (requestId: string, decision: AskDecision) => { if (convId) api.answerAsk(convId, requestId, decision) },
-  }), [convId, view, list, summary, choice, pointed, pending, refreshList, send, stands, undoFrom, follow])
+  }), [convId, view, list, summary, choice, pointed, pending, refreshList, send, stands, undoFrom, checksOf, follow])
 }
 
 export type Claude = ReturnType<typeof useClaude>

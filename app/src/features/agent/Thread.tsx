@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { IconArrowBackUp, IconBook, IconMessage, IconNote, IconPencil, IconSearch, IconWorldSearch } from "@tabler/icons-react"
+import { IconAlertTriangle, IconArrowBackUp, IconBook, IconCircleCheck, IconMessage, IconNote, IconPencil, IconSearch, IconWorldSearch } from "@tabler/icons-react"
 import { Streamdown } from "streamdown"
 import { cjk } from "@streamdown/cjk"
 
@@ -13,11 +13,11 @@ import {
 import {
   Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle,
 } from "@/components/ui/trace"
-import type { AskDecision } from "@/data/api"
+import type { AskDecision, TurnChecks } from "@/data/api"
 import type { Claude } from "@/data/useClaude"
 import { DiffView } from "@/features/review/DiffView"
 import { readPointed, type Ask, type Item } from "@/lib/conversation"
-import { WRITE_TOOLS, doingLine, toolLine, turnLine } from "@/lib/trace"
+import { WRITE_TOOLS, checksLine, doingLine, toolLine, turnLine } from "@/lib/trace"
 import { Pointed } from "./Pointed"
 
 // Korean emphasis next to quotes ("**"말"**과") needs the CJK rules; Claude's words are sanitized by Streamdown
@@ -54,6 +54,8 @@ export function Thread({ claude }: { claude: Claude }) {
   const { view, pending } = claude
   const blocks = blocksOf(view.state.items)
   const working = view.state.status !== "idle" || pending !== null
+  /** A turn's checks are kept by the translator's message that began it. */
+  const checksAt = (i: number) => { const began = blocks[i - 1]; return began?.kind === "user" ? claude.checksOf(began.item.uuid) : null }
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="min-h-0 flex-1">
@@ -74,6 +76,7 @@ export function Thread({ claude }: { claude: Claude }) {
                   <ClaudeMessage parts={b.parts} turn={b.turn} live={i === blocks.length - 1 && !pending ? view.state.live : null}
                     working={i === blocks.length - 1 && !pending && view.state.status !== "idle"} waiting={view.asks.length > 0}
                     stands={claude.stands} onUndo={claude.undoFrom}
+                    checks={checksAt(i)}
                     undoable={working ? [] : blocks.slice(i).flatMap(writesOf).filter((id) => claude.stands(id) === true)} />
                 </MessageScrollerItem>
               ),
@@ -121,9 +124,9 @@ function UserMessage({ text }: { text: string }) {
 /** Claude's side of a turn: runs of reading and thinking as one Trace each, its words between them, the turn's end —
  *  and there, Undo from here: Claude's changes from this turn to the end of the conversation, taken back together
  *  (Claude Code's rewind), or not at all, saying why (docs/agent.md §18). */
-function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, onUndo }: {
+function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, onUndo, checks }: {
   parts: Item[]; turn: Extract<Item, { kind: "turn" }> | null; live: Claude["view"]["state"]["live"]; working: boolean; waiting: boolean
-  stands: Claude["stands"]; undoable: string[]; onUndo: Claude["undoFrom"]
+  stands: Claude["stands"]; undoable: string[]; onUndo: Claude["undoFrom"]; checks: TurnChecks | null
 }) {
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -155,6 +158,7 @@ function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, 
             )}
           </Trace>
         )}
+        {turn && checks && <ChecksLine checks={checks} />}
         {/* inside the content: Message lays its children in a row, and the turn's end goes under the answer */}
         {end && (
           <MessageFooter data-turn-end className={end.stopped ? "gap-1 px-0 text-destructive" : "gap-1 px-0"}>
@@ -184,6 +188,25 @@ function Words({ text, streaming = false }: { text: string; streaming?: boolean 
     <div lang="ko" className="text-[13px] leading-relaxed">
       <Streamdown className={WORDS} plugins={PLUGINS} mode={streaming ? "streaming" : "static"}>{text}</Streamdown>
     </div>
+  )
+}
+
+/** What the checks found in the translations Claude wrote in the turn: a line, and what is left wrong under it. */
+function ChecksLine({ checks }: { checks: TurnChecks }) {
+  const { ok, text, details } = checksLine(checks)
+  const icon = <TraceIcon>{ok ? <IconCircleCheck /> : <IconAlertTriangle />}</TraceIcon>
+  return (
+    <Trace data-checks={ok === true ? "passed" : ok === false ? "failed" : "unchecked"}>
+      <TraceLine status={ok === false ? "error" : undefined}>
+        {icon}
+        <TraceTitle>{text}</TraceTitle>
+      </TraceLine>
+      {details.length > 0 && (
+        <ul className="ml-5 space-y-0.5 text-xs text-muted-foreground" lang="ko">
+          {details.map((d) => <li key={d}>{d}</li>)}
+        </ul>
+      )}
+    </Trace>
   )
 }
 

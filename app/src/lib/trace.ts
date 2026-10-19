@@ -59,6 +59,23 @@ export function turnLine(t: Turn): { text: string; stopped: boolean } {
   return { text: parts.filter(Boolean).join(" · "), stopped: false }
 }
 
+type Checks = { checked: number[]; rounds: ({ segmentId: number; kind: "term"; term: string; forms: string[] } | { segmentId: number; kind: "note"; quote: string })[][]; error?: string }
+
+/** A turn's checks in a line (docs/agent.md §19): passed (after being sent back how often), what is left wrong, or
+ *  not checked and why — never shown as passed when it was not. */
+export function checksLine(c: Checks): { ok: boolean | null; text: string; details: string[] } {
+  if (c.error) return { ok: null, text: "Not checked", details: [c.error] }
+  const left = c.rounds.at(-1) ?? []
+  const sent = c.rounds.length - 1
+  const after = sent ? ` after ${sent} ${sent === 1 ? "try" : "tries"}` : ""
+  if (!left.length) return { ok: true, text: `Checked ${paras(c.checked)}${sent ? ` · fixed${after}` : ""}`, details: [] }
+  return {
+    ok: false,
+    text: `${left.length} problem${left.length === 1 ? "" : "s"} left${after}`,
+    details: left.map((f) => (f.kind === "term" ? `¶${f.segmentId}: “${f.term}” → ${f.forms.join(" / ")} is not in the translation` : `¶${f.segmentId}: the note at “${f.quote}” lost its place`)),
+  }
+}
+
 /** How long ago, briefly: now, 5m, 2h, 3d. `at` is SQLite's datetime('now'), UTC without a zone. */
 export function ago(at: string, now = Date.now()): string {
   const s = Math.max(0, (now - Date.parse(`${at.replace(" ", "T")}Z`)) / 1000)

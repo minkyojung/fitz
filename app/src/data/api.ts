@@ -185,6 +185,14 @@ export interface ConversationSummary {
   createdAt: string
   usedAt: string
 }
+/** What the checks found wrong in a translation Claude wrote (docs/agent.md §19). */
+export type CheckFailure =
+  | { segmentId: number; kind: "term"; term: string; forms: string[] }
+  | { segmentId: number; kind: "note"; noteId: number; noteKind: "author" | "translator"; quote: string }
+/** A turn's checks: the paragraphs checked, and what each check found — the last is the verdict, the ones before it
+ *  were sent back to Claude. `error` when the checks could not run (never a pass). */
+export interface TurnChecks { checked: number[]; rounds: CheckFailure[][]; error?: string }
+
 /** The translator's answer to a write Claude asks for: once, for the rest of the conversation, or not. */
 export type AskDecision = "allow" | "always" | "deny"
 
@@ -273,4 +281,6 @@ export interface Api {
   undoClaude(toolUseIds: string[]): Promise<OpSummary[]>
   /** The change each tool call made, and whether it was taken back. */
   claudeChanges(toolUseIds: string[]): Promise<{ toolUseId: string; opId: number; undone: boolean }[]>
+  /** What the checks found in a conversation's turns, by the translator's message that began each. */
+  turnChecks(sessionId: string): Promise<{ userUuid: string; checks: TurnChecks }[]>
 }

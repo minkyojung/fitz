@@ -297,3 +297,40 @@ test("Undo from here is refused, and says why, when you changed the same paragra
     expect((await api("undoClaude", { toolUseIds: [writeCall] })).ok()).toBe(true)
   }
 })
+
+// --- the checks of a turn's translations (docs/agent.md §19): what the app kept for the recorded turn is shown at its end
+
+function keepChecks(checks: object | null) {
+  const init = translate.find((m) => m.type === "system" && m.subtype === "init")!
+  const result = translate.find((m) => m.type === "result")! as SdkMessage & { user_message_uuid?: string; uuid: string }
+  return import("node:sqlite").then(({ DatabaseSync }) => {
+    const db = new DatabaseSync("/tmp/fitz-e2e.db", { timeout: 5000 })
+    try {
+      if (checks) db.prepare("INSERT OR REPLACE INTO agent_turn(session_id, user_uuid, reason, checks) VALUES (?, ?, 'completed', ?)").run(init.session_id as string, result.user_message_uuid ?? result.uuid, JSON.stringify(checks))
+      else db.prepare("DELETE FROM agent_turn WHERE session_id = ?").run(init.session_id as string)
+    } finally { db.close() }
+  })
+}
+
+test("the turn's end shows what the checks found: passed after one fix, or what is left wrong", async ({ page }) => {
+  const term = { segmentId: 3, kind: "term", term: "advantages", forms: ["혜택"] }
+  try {
+    await keepChecks({ checked: [3], rounds: [[term], []] })
+    const fake = await fakeServer(page)
+    await page.goto("/")
+    await page.getByRole("button", { name: /18: / }).click()
+    await playTranslate(page, fake)
+    await expect(thread(page).locator('[data-checks="passed"]')).toHaveText("Checked ¶3 · fixed after 1 try")
+
+    await keepChecks({ checked: [3], rounds: [[term], [term], [term], [term]] })
+    await page.reload()
+    const again = await fakeServer(page)
+    await page.getByRole("button", { name: /18: / }).click()
+    await playTranslate(page, again)
+    const failed = thread(page).locator('[data-checks="failed"]')
+    await expect(failed).toContainText("1 problem left after 3 tries")
+    await expect(failed).toContainText("¶3: “advantages” → 혜택 is not in the translation")
+  } finally {
+    await keepChecks(null)
+  }
+})
