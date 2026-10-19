@@ -8,9 +8,9 @@ import { findOnce } from "@/lib/suggestions"
 import { cn } from "cn"
 import { useSuggestions } from "./SuggestionsContext"
 
-const TASK: Record<TaskName, { start: string; label: string; found: (n: number) => string; comment: boolean }> = {
-  review: { start: "Review this chapter with Claude", label: "Claude", found: (n) => `${n} suggestion${n === 1 ? "" : "s"}`, comment: true },
-  typos: { start: "Find OCR errors with Claude", label: "Claude · OCR", found: (n) => `${n} likely OCR error${n === 1 ? "" : "s"} · check them against the scan`, comment: false },
+const TASK: Record<TaskName, { start: string; found: (n: number) => string; comment: boolean }> = {
+  review: { start: "Review this chapter with Claude", found: (n) => `${n} suggestion${n === 1 ? "" : "s"}`, comment: true },
+  typos: { start: "Find OCR errors with Claude", found: (n) => `${n} likely OCR error${n === 1 ? "" : "s"} · check them against the scan`, comment: false },
 }
 
 interface Props {
@@ -47,7 +47,7 @@ export function Suggestions({ task, segments, run, onRun, onDecide }: Props) {
           const seg = segments[at]
           const text = seg ? (s.side === "source" ? seg.sourceText : seg.targetText) : ""
           return (
-            <Card key={s.id} s={s} label={t.label} number={at + 1} stale={findOnce(text, s.quote) === -1} comment={t.comment}
+            <Card key={s.id} s={s} number={at + 1} stale={findOnce(text, s.quote) === -1} comment={t.comment}
               selected={ctx.selected === s.id} onPick={() => ctx.select(s.id)} onDecide={(d) => onDecide(s, d)} />
           )
         })}
@@ -56,8 +56,8 @@ export function Suggestions({ task, segments, run, onRun, onDecide }: Props) {
   )
 }
 
-function Card({ s, label, number, stale, comment, selected, onPick, onDecide }: {
-  s: Suggestion; label: string; number: number; stale: boolean; comment: boolean; selected: boolean
+function Card({ s, number, stale, comment, selected, onPick, onDecide }: {
+  s: Suggestion; number: number; stale: boolean; comment: boolean; selected: boolean
   onPick: () => void; onDecide: (decision: SuggestionDecision) => Promise<unknown>
 }) {
   const [el, setEl] = useState<HTMLLIElement | null>(null)
@@ -71,7 +71,6 @@ function Card({ s, label, number, stale, comment, selected, onPick, onDecide }: 
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {number > 0 && <span className="tabular-nums">¶{number}</span>}
         {s.level && <Badge variant={s.level === "high" ? "destructive" : "secondary"}>{s.level}</Badge>}
-        <Badge variant="outline">{label}</Badge>
       </div>
       <p lang={s.side === "source" ? "en" : "ko"}>
         <span className="line-through decoration-destructive/60">{s.quote}</span> → <span className="text-mark-term-ink">{s.replacement}</span>
