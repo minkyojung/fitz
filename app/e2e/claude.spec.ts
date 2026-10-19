@@ -205,6 +205,29 @@ test("the title Claude Code gives the conversation shows in the header once the 
   await expect(title).toHaveText("Reserved 뉘앙스")
 })
 
+test("the words typed, the model button's words and the Send button keep to one edge, 16px in (docs/agent.md §25)", async ({ page }) => {
+  await fakeServer(page)
+  const box = await openClaude(page)
+  const edges = await box.evaluate((area) => {
+    const group = area.closest("[data-slot=input-group]")!
+    const frame = group.getBoundingClientRect()
+    const r = area.getBoundingClientRect()
+    const css = getComputedStyle(area)
+    const model = [...group.querySelectorAll("button")].find((b) => b.textContent?.includes(" · "))!
+    const words = document.createRange()
+    words.selectNodeContents(model.firstChild!)
+    return {
+      text: r.left + parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft) - frame.left,
+      textEnd: frame.right - (r.right - parseFloat(css.borderRightWidth) - parseFloat(css.paddingRight)),
+      model: words.getBoundingClientRect().left - frame.left,
+      send: frame.right - group.querySelector("[aria-label=Send]")!.getBoundingClientRect().right,
+    }
+  })
+  expect(edges.model).toBeCloseTo(edges.text, 0)  // a ghost button's words, where the box has none
+  expect(edges.send).toBeCloseTo(edges.textEnd, 0)  // a boxed button's box
+  expect(edges.text).toBeCloseTo(17, 0)  // the frame's 1px and 16px
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

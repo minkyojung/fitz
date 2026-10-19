@@ -29,7 +29,7 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
     <form className="shrink-0 p-2" onSubmit={(e) => { e.preventDefault(); send() }}>
       <InputGroup>
         {claude.pointed && (
-          <InputGroupAddon align="block-start">
+          <InputGroupAddon align="block-start" className="px-4">
             <Pointed pointed={claude.pointed} onRemove={() => claude.point(null)} />
           </InputGroupAddon>
         )}
@@ -37,8 +37,9 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
           ref={box}
           aria-label="Message to Claude"
           placeholder="Ask Claude about this chapter…"
-          // the textarea's own md:text-xs would win over a size given without md:
-          className="min-h-14 text-sm/relaxed md:text-sm/relaxed"
+          // the textarea's own md:text-xs would win over a size given without md:. The words, the chip above and the
+          // buttons below keep to one edge 16px in (docs/agent.md §25)
+          className="min-h-14 px-4 text-sm/relaxed md:text-sm/relaxed"
           lang="ko"
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -48,10 +49,11 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
             send()
           }}
         />
-        <InputGroupAddon align="block-end" className="pt-1">
+        <InputGroupAddon align="block-end" className="px-4 pt-1">
           <DropdownMenu>
             <DropdownMenuTrigger disabled={working} title={working ? "Change it once Claude has answered" : "For the next message"}
-              render={<InputGroupButton size="sm" variant="ghost" className="text-muted-foreground" />}>
+              // a ghost button's words keep to the edge, not its unseen box: pulled out by its border and padding
+              render={<InputGroupButton size="sm" variant="ghost" className="-ml-2.25 text-muted-foreground" />}>
               {modelName(claude.config.model)} · {claude.config.effort}<IconChevronDown data-icon="inline-end" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="top" className="w-44">
