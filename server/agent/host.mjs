@@ -12,11 +12,14 @@ import { sessionKeeper } from "./keep.mjs"
 import { addConversation, getConversation, listConversations, recordTurn, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
 import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
+import { checkSegments, reasonFor } from "./checks.mjs"
 import { saveSuggestions } from "./suggestions.mjs"
 import { TASKS, TASK_NAMES } from "./tasks.mjs"
 import { describeWrite } from "./tools.mjs"
 
 export const DEFAULTS = { model: "claude-opus-5-5", effort: "medium" }
+/** How many times a turn's translations are sent back to Claude before what is left wrong is the translator's. */
+export const TRIES = 3
 
 const FITZ = "mcp__fitz__"
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }) }
@@ -40,11 +43,12 @@ export function createAgentHost({
   sessionMessages = (id) => getSessionMessages(id, { dir: AGENT_CWD }),
   keep = sessionKeeper({ cwd: AGENT_CWD }),
 }) {
-  const conversations = new Map()  // convId → { model, effort, task, session, keptSession, state, followers, asks, loaded, ready }
+  const conversations = new Map()  // convId → { model, effort, task, session, keptSession, state, followers, asks, loaded, ready, turn }
   const conversation = (record) => ({
     model: record.model, effort: record.effort, task: record.task, session: null, keptSession: record.sessionId,
     state: { ...emptyConversation(), sessionId: record.sessionId }, followers: new Set(), asks: new Map(),
     loaded: true, ready: Promise.resolve(),
+    turn: null,  // the turn going on: { wrote: paragraphs Claude translated, rounds: what each check found, stopped, error }
   })
   /** The conversation in memory, or brought back from book.db and Claude Code's session file (after a restart). While
    *  its history is being read it is not `loaded`; its followers get their snapshot when it is. */
@@ -84,6 +88,29 @@ export function createAgentHost({
     })
   }
 
+  /** Claude would end its turn: check the translations it wrote in it (docs/agent.md §19). Something wrong goes back to
+   *  Claude with what and where, the same turn going on, at most TRIES times; then what is left is the verdict. A turn
+   *  the translator stopped is not judged; a check that could not run says so rather than pass. */
+  function checkTurn(conv, { signal }) {
+    const t = conv.turn
+    if (!t || !t.wrote.size || t.stopped || signal.aborted) return {}
+    try {
+      const failures = checkSegments(db, [...t.wrote])
+      t.rounds.push(failures)
+      return failures.length && t.rounds.length <= TRIES ? { decision: "block", reason: reasonFor(failures) } : {}
+    } catch (e) {
+      t.error = `could not check: ${e.message}`
+      console.error("agent:", t.error)
+      return {}
+    }
+  }
+  /** What a finished turn's checks found, as the turn record keeps it; null when there was nothing to judge. */
+  const checksOf = (t) => (!t || t.stopped || !t.wrote.size ? null : {
+    checked: [...t.wrote].sort((a, b) => a - b),
+    rounds: t.rounds,
+    ...((t.error || !t.rounds.length) && { error: t.error ?? "the turn ended before it could be checked" }),
+  })
+
   /** Keep what the session file lacks. A record that fails is reported, never fatal to the conversation. */
   function keepRecords(convId, conv, message) {
     try {
@@ -93,7 +120,8 @@ export function createAgentHost({
       }
       if (message.type === "result") {
         const turn = conv.state.items.at(-1)
-        recordTurn(db, message.session_id, message.user_message_uuid ?? message.uuid, turn)
+        recordTurn(db, message.session_id, message.user_message_uuid ?? message.uuid, { ...turn, checks: checksOf(conv.turn) })
+        conv.turn = null
         try { keep.save(message.session_id) } catch (e) { console.error("agent: could not copy session", message.session_id, e.message) }
         if (!getConversation(db, convId)?.title) {
           void Promise.resolve(sessionInfo(message.session_id)).then((info) => {
@@ -133,6 +161,8 @@ export function createAgentHost({
     const session = openSession({
       db, resume: conv.state.sessionId ?? undefined, model: conv.model, effort: conv.effort, task: conv.task,
       ask: (toolName, input, options) => ask(convId, conv, toolName, input, options),
+      wrote: (segmentId) => conv.turn?.wrote.add(segmentId),
+      ...(!conv.task && { stop: (_input, options) => checkTurn(conv, options) }),
     })
     conv.session = session
     void (async () => {
@@ -164,7 +194,11 @@ export function createAgentHost({
    *  (a promise then), and is resumed. */
   function send(convId, text) {
     const conv = get(convId)
-    const go = () => { touchConversation(db, convId); return ensureSession(convId, conv).send(text) }
+    const go = () => {
+      touchConversation(db, convId)
+      conv.turn = { wrote: new Set(), rounds: [], stopped: false, error: null }
+      return ensureSession(convId, conv).send(text)
+    }
     return conv.loaded ? go() : conv.ready.then(go)
   }
 
@@ -195,7 +229,9 @@ export function createAgentHost({
       waiting.settle(decision)
     },
     stop(convId) {
-      void get(convId).session?.interrupt().catch(() => {})
+      const conv = get(convId)
+      if (conv.turn) conv.turn.stopped = true  // stopped by the translator: not judged
+      void conv.session?.interrupt().catch(() => {})
     },
     /** Resolves once every Claude Code process has exited. */
     close() {

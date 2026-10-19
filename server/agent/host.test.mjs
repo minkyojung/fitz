@@ -5,10 +5,11 @@ import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
 import { foldMessages } from "./fold.mjs"
-import { DEFAULTS, createAgentHost } from "./host.mjs"
-import { getConversation, listConversations, turnsOf } from "./records.mjs"
+import { DEFAULTS, TRIES, createAgentHost } from "./host.mjs"
+import { getConversation, listConversations, turnChecks, turnsOf } from "./records.mjs"
 import { settle, stubSessions } from "./fixtures/stubSession.mjs"
 import { TASKS } from "./tasks.mjs"
+import { execute, pmDoc } from "../commands.mjs"
 
 const nuance = readFileSync(new URL("./fixtures/nuance.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
 const ID = "0b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
@@ -32,9 +33,9 @@ test("Claude Code starts with the first message, once, with the conversation's m
   host.send(ID, "¶4는?")
   host.send(ID, "그럼 ¶5는?")
   assert.equal(opened.length, 1)
-  const { ask, ...options } = opened[0].options
+  const { ask, wrote, stop, ...options } = opened[0].options
   assert.deepEqual(options, { db, resume: undefined, model: DEFAULTS.model, effort: DEFAULTS.effort, task: null })
-  assert.equal(typeof ask, "function")
+  assert.deepEqual([typeof ask, typeof wrote, typeof stop], ["function", "function", "function"])
   assert.deepEqual(opened[0].sent, ["¶4는?", "그럼 ¶5는?"])
   host.start("1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11", { model: "claude-sonnet-5-5", effort: "low" })
   host.send("1b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11", "x")
@@ -395,4 +396,95 @@ test("the real recorded answers are kept: the OCR errors planted in the source, 
   const review = kept.filter((s) => s.task === "review")
   assert.deepEqual(review.map((s) => [s.segment_id, s.side, s.level]), [[4, "target", "high"]])
   assert.match(review[0].quote, /서둘러 내리는/)
+})
+
+// --- the checks of a turn's translations (docs/agent.md §19): the Stop hook is called here as Claude Code would
+
+const signal = () => new AbortController().signal
+const write = (db, id, text) => execute(db, "updateSegment", { id, targetDoc: JSON.parse(pmDoc(text)) }, { actor: "agent", toolUseId: "toolu_t" })
+const turnOf = (db) => {
+  const sessionId = nuance.find((m) => m.subtype === "init").session_id
+  return turnChecks(db, sessionId).find((t) => t.userUuid === (nuance.find((m) => m.type === "result").user_message_uuid ?? nuance.find((m) => m.type === "result").uuid))?.checks ?? null
+}
+
+test("a turn that translated is checked when Claude would stop: sent back with what is wrong, then passes; the turn keeps both", async () => {
+  const { host, opened, db } = setup()
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "advantages", translation: "혜택" })
+  host.start(ID)
+  host.send(ID, "¶3을 번역해 넣어줘")
+  const s = opened[0].options
+  write(db, 3, "“…” 아버지는 말씀하셨다. “다들 너처럼 유리한 처지는 아니란다.”")
+  s.wrote(3)
+  const sent = await s.stop({ stop_hook_active: false }, { signal: signal() })
+  assert.equal(sent.decision, "block")
+  assert.match(sent.reason, /¶3: the source has “advantages”; the glossary's agreed form is “혜택”/)
+  write(db, 3, "“…” 아버지는 말씀하셨다. “다들 너처럼 혜택을 누린 건 아니란다.”")
+  s.wrote(3)
+  assert.deepEqual(await s.stop({ stop_hook_active: true }, { signal: signal() }), {})
+  opened[0].feed(...nuance)
+  await settle()
+  const checks = turnOf(db)
+  assert.deepEqual(checks.checked, [3])
+  assert.equal(checks.rounds.length, 2, "sent back once")
+  assert.deepEqual(checks.rounds[1], [], "and then nothing wrong")
+})
+
+test(`sent back at most ${TRIES} times; then what is left wrong is the verdict`, async () => {
+  const { host, opened, db } = setup()
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "advantages", translation: "혜택" })
+  host.start(ID)
+  host.send(ID, "q")
+  write(db, 3, "유리한 처지")
+  opened[0].options.wrote(3)
+  const answers = []
+  for (let i = 0; i <= TRIES; i++) answers.push((await opened[0].options.stop({}, { signal: signal() })).decision ?? "pass")
+  assert.deepEqual(answers, [...Array(TRIES).fill("block"), "pass"])
+  opened[0].feed(...nuance)
+  await settle()
+  const checks = turnOf(db)
+  assert.equal(checks.rounds.length, TRIES + 1)
+  assert.equal(checks.rounds.at(-1)[0].term, "advantages")
+})
+
+test("nothing translated, nothing to check; a turn the translator stopped is not judged", async () => {
+  const quiet = setup()
+  quiet.host.start(ID)
+  quiet.host.send(ID, "q")
+  assert.deepEqual(await quiet.opened[0].options.stop({}, { signal: signal() }), {})
+  quiet.opened[0].feed(...nuance)
+  await settle()
+  assert.equal(turnOf(quiet.db), null)
+
+  const { host, opened, db } = setup()
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "advantages", translation: "혜택" })
+  host.start(ID)
+  host.send(ID, "q")
+  write(db, 3, "유리한 처지")
+  opened[0].options.wrote(3)
+  host.stop(ID)
+  assert.deepEqual(await opened[0].options.stop({}, { signal: signal() }), {})
+  opened[0].feed(...nuance)
+  await settle()
+  assert.equal(turnOf(db), null)
+})
+
+test("a check that cannot run says so; it is not a pass", async () => {
+  const { host, opened, db } = setup()
+  host.start(ID)
+  host.send(ID, "q")
+  write(db, 3, "번역")
+  opened[0].options.wrote(3)
+  db.exec("DROP TABLE glossary")
+  const quiet = console.error
+  console.error = () => {}
+  try { assert.deepEqual(await opened[0].options.stop({}, { signal: signal() }), {}) } finally { console.error = quiet }
+  opened[0].feed(...nuance)
+  await settle()
+  assert.match(turnOf(db).error, /^could not check: /)
+})
+
+test("a task conversation has no Stop hook: it writes nothing", () => {
+  const { host, opened } = setup()
+  host.start(ID, { task: "review", chapterId: 1 })
+  assert.equal(opened[0].options.stop, undefined)
 })

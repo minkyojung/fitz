@@ -464,7 +464,7 @@ Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려
 | 0 ✓ | Stop hook을 fitz의 설정으로 잰다 | `.context/measure/stop-hook.mjs` | §8에 기록 |
 | 1 ✓ | 검사 규칙(순수): `checkSegments(db, ids)`, 돌려보낼 글 `reasonFor`. 용어집 규칙은 한 곳(`glossaryRule.mjs`)에 두고 화면의 노란 경고·서버의 읽기 도구·검사가 함께 쓴다(화면은 `fold.mjs`처럼 그 파일을 가져온다) | `server/agent/checks.mjs`, `glossaryRule.mjs`(+`.d.mts`), `app/src/lib/glossary.ts`, `agent/tools.mjs`, `app/vite.config.ts` | 순수 테스트 5, 화면의 용어집 테스트가 그대로 통과 |
 | 2 ✓ | 기록: 턴마다 검사 결과 `{ checked, rounds }`(검사할 때마다 찾은 실패들 — 마지막이 판정, 그 앞의 수가 돌려보낸 횟수), 화면이 묻는 경로 `turnChecks`. 작업 DB는 백업 뒤 마이그레이션(`out/book.db.bak-2026-10-19-before-turn-checks`) | `db/schema.sql`·`pipeline/migrate.py`(작업 DB 백업), `agent/records.mjs`, `index.mjs` | pytest + 서버 테스트 |
-| 3 | Stop hook: 그 턴에 Claude가 쓴 단락 → 검사 → 실패면 이유를 붙여 돌려보냄(앱이 횟수를 센다), 턴 끝에 기록, 멈춘 턴은 기록하지 않음 | `agent/session.mjs`, `agent/host.mjs` | 스텁 세션 |
+| 3 ✓ | Stop hook: 그 턴에 Claude가 쓴 단락 → 검사 → 실패면 이유를 붙여 돌려보냄(앱이 횟수를 센다, `TRIES = 3`), 턴 끝에 기록, 멈춘 턴은 기록하지 않음, 검사가 못 돌면 "could not check"로(통과가 아니다). 쓴 단락은 스트림이 아니라 쓰기 도구가 쓰는 그 자리에서 알린다(`wrote`): hook은 스트림의 마지막 도구 결과보다 먼저 불릴 수 있다 | `agent/session.mjs`, `agent/host.mjs` | 스텁 세션 |
 | 4 | 화면: 턴 끝에 ✓/✗와 돌려보낸 횟수(기록을 묻는다 — 스트림의 돌려보냄 메시지는 세션 파일에 남지 않으므로 다시 열 때도 같도록) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
 | 5 | 진짜로 한 번(용어집을 어기게 해서 돌려보냄 → 고침) | `.context` | 실측 |
 | 6 | README·이 문서 | | |

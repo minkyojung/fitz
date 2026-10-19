@@ -197,7 +197,9 @@ export const readTools = (db) => [
 
 /** The in-process MCP server handed to query() as mcpServers.fitz. alwaysLoad keeps the schemas in the prompt,
  *  so the first call is not preceded by a ToolSearch round trip. */
-export const writeTools = (db) => [
+/** `wrote(segmentId)` hears each paragraph a set_translation wrote, as it is written: the checks of the turn
+ *  (docs/agent.md §19) take these, with no wait on the stream. */
+export const writeTools = (db, { wrote } = {}) => [
   tool("set_translation",
     "Write the Korean translation of one paragraph, replacing what is there. It is saved as a draft for the translator to confirm. " +
     "Pass the paragraph's `version` from your last read as `expectVersion`; if the paragraph changed since (the translator may be editing too), the write is refused and you should read it again. " +
@@ -207,7 +209,11 @@ export const writeTools = (db) => [
       text: z.string().min(1).describe("The whole translation of the paragraph"),
       expectVersion: z.number().int().describe("version of the paragraph as read returned it"),
     },
-    async (args, extra) => result(setTranslation(db, args, agentBy(extra)))),
+    async (args, extra) => {
+      const out = setTranslation(db, args, agentBy(extra))
+      wrote?.(out.segmentId)
+      return result(out)
+    }),
   tool("set_glossary_term",
     "Agree the Korean form of a source term (a name, place, title…) for the whole book, or change it. The translator is asked first.",
     {
@@ -240,5 +246,5 @@ export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
 export const WRITE_TOOL_NAMES = ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"]
 
 /** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */
-export const fitzTools = (db, { write = true } = {}) => (write ? [...readTools(db), ...writeTools(db)] : readTools(db))
+export const fitzTools = (db, { write = true, wrote } = {}) => (write ? [...readTools(db), ...writeTools(db, { wrote })] : readTools(db))
 export const fitzServer = (db, options) => createSdkMcpServer({ name: "fitz", version: "0.1.0", alwaysLoad: true, tools: fitzTools(db, options) })

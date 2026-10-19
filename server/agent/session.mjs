@@ -63,7 +63,7 @@ function inbox() {
  *  `ask(toolName, input, { signal })` is the host's: it puts a write to the translator and resolves with Claude Code's
  *  PermissionResult. `task` (tasks.mjs) makes it a task conversation: read tools only, an answer of the task's shape,
  *  and limits. */
-export function openSession({ db, resume, model, effort, ask, task, cwd = AGENT_CWD }) {
+export function openSession({ db, resume, model, effort, ask, task, wrote, stop, cwd = AGENT_CWD }) {
   mkdirSync(cwd, { recursive: true })
   const input = inbox()
   const q = query({
@@ -82,11 +82,14 @@ export function openSession({ db, resume, model, effort, ask, task, cwd = AGENT_
       skills: [],
       settings: { disableClaudeAiConnectors: true, autoMemoryEnabled: false, disableBundledSkills: true },
       tools: task ? [] : WEB_TOOLS,                              // web search only, no Read/Edit/Bash/WebFetch: the PDF and page images cannot be opened
-      mcpServers: { fitz: fitzServer(db, { write: !task }) },     // a task only finds: no write tools at all
+      mcpServers: { fitz: fitzServer(db, { write: !task, wrote }) },  // a task only finds: no write tools at all
       allowedTools: task ? READ_TOOLS : [...READ_TOOLS, ...WEB_TOOLS],  // reading and searching never ask
       permissionMode: "default",                                 // not bypass: every write is asked about
       canUseTool: async (toolName, input, options) =>            // writes go to the translator; nothing else is offered
         !task && WRITE_TOOLS.includes(toolName) ? ask(toolName, input, options) : { behavior: "deny", message: `${toolName} is not available in this conversation.` },
+      // the checks of a turn's translations (docs/agent.md §19): an SDK callback, not a settings hook. Fail-open, measured:
+      // a throw or a timeout ends the turn as passed — so the verdict the app keeps, not the hook, is the truth
+      ...(stop && { hooks: { Stop: [{ hooks: [async (input, _id, { signal }) => stop(input, { signal })] }] } }),
       // a task answers in its shape (Claude Code adds a StructuredOutput tool for it, measured) and is bounded
       ...(task && { outputFormat: outputFormatOf(task), ...TASK_LIMITS }),
       includePartialMessages: true,                              // text as it is written
