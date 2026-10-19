@@ -95,6 +95,25 @@ test("in Translate, a paragraph Find found opens at its pair: in another chapter
   await expect(selected).toBeInViewport()
 })
 
+test("Claude's panel opens and closes from the header's button; closed, it stays closed after a reload; ⌘L opens it to its box", async ({ page }) => {
+  await page.goto("/")
+  const claude = page.getByRole("button", { name: "Claude", exact: true })
+  const box = page.getByRole("textbox", { name: "Message to Claude" })
+  await expect(claude).toHaveAttribute("aria-pressed", "true")
+  await expect(box).toBeVisible()
+  await claude.click()
+  await expect(claude).toHaveAttribute("aria-pressed", "false")
+  await expect(box).toBeHidden()
+  await page.reload()
+  await expect(page.getByRole("navigation", { name: "Chapters" })).toBeVisible()
+  await expect(claude).toHaveAttribute("aria-pressed", "false")
+  await expect(box).toBeHidden()
+  await page.keyboard.press("Meta+l")
+  await expect(claude).toHaveAttribute("aria-pressed", "true")
+  await expect(box).toBeVisible()
+  await expect(box).toBeFocused()
+})
+
 test("the panel widths you drag to are kept across reloads: one layout with the scan, one without", async ({ page }) => {
   const widths = () => page.locator("[data-slot=resizable-panel]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)))
   const drag = async (handle: number, dx: number) => {

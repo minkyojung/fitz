@@ -42,9 +42,8 @@ async function open(page: Page, view: "Translate" | "Review") {
   return { row, id: Number(await row.getAttribute(view === "Translate" ? "data-pair" : "data-segment")) }
 }
 const card = (page: Page, id: number) => page.locator(`[data-panel-suggestion="${id}"]`)
-/** The suggestions live under the Claude tab's head, folded until opened. */
+/** The suggestions live under the head of Claude's panel, folded until opened. */
 async function showSuggestions(page: Page) {
-  await page.getByRole("tab", { name: /Claude/ }).click()
   const toggle = page.getByRole("button", { name: /^Suggestions/ })
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
 }
@@ -59,12 +58,16 @@ test("a review suggestion only points; its card's Accept replaces the words, and
   await expect(mark.locator("mark")).toHaveText("시험하는")
   await expect(mark.locator("ins")).toHaveText("검사하는")
 
-  // clicking it in the text selects its card, as a comment does; nothing changes and nothing opens for editing
+  // clicking it in the text selects its card, opening Claude's panel if it is closed; nothing changes and nothing opens
+  // for editing
+  const claudeButton = page.getByRole("button", { name: "Claude", exact: true })
+  await claudeButton.click()
+  await expect(claudeButton).toHaveAttribute("aria-pressed", "false")
   await mark.click()
   await expect(card(page, sid)).toHaveAttribute("data-selected", "true")
   await expect(mark).toHaveAttribute("data-selected", "true")
   await expect(row.getByRole("textbox", { name: "Edit translation" })).toHaveCount(0)
-  await expect(page.getByRole("tab", { name: /Claude/ })).toHaveAttribute("aria-selected", "true")
+  await expect(claudeButton).toHaveAttribute("aria-pressed", "true")
   await expect(page.getByRole("button", { name: /^Suggestions/ })).toHaveAttribute("aria-expanded", "true")
 
   await card(page, sid).getByRole("button", { name: "Accept" }).click()

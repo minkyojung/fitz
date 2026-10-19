@@ -35,7 +35,7 @@ export function ClaudeTab({ claude, focusToken, segments, suggest }: Props) {
   const [openedFor, setOpenedFor] = useState<number | null>(null)
   if (picked !== null && picked !== openedFor) { setOpenedFor(picked); setSuggestionsShown(true) }
   return (
-    <div className="flex h-full min-h-0 flex-col border-t">
+    <div className="flex h-full min-h-0 flex-col">
       <Collapsible open={suggestionsShown} onOpenChange={setSuggestionsShown} className="shrink-0 border-b">
         <div className="flex h-9 items-center gap-1 px-1.5">
           <ConversationMenu claude={claude} />

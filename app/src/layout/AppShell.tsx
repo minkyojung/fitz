@@ -1,14 +1,17 @@
-import type { CSSProperties, ReactNode } from "react"
-import { useDefaultLayout } from "react-resizable-panels"
-import { IconBook, IconBook2, IconFileExport, IconLanguage, IconScan, type Icon } from "@tabler/icons-react"
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react"
+import { useDefaultLayout, usePanelRef } from "react-resizable-panels"
+import { IconBook, IconBook2, IconFileExport, IconLanguage, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
+import { Button } from "@/components/ui/button"
+import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem,
   SidebarProvider, SidebarRail, SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /** The stages of the work, and the glossary: a page of the whole book, at the sidebar's foot. */
 export type Mode = "review" | "translate" | "export" | "glossary"
@@ -36,7 +39,14 @@ interface AppShellProps {
   crumb: ReactNode
   left: ReactNode
   right: ReactNode
+  /** Claude's panel, the right one. */
   panel: ReactNode
+  /** Claude's panel is open: the header's button and ⌘L open it, dragging its edge to nothing closes it. */
+  claudeOpen: boolean
+  onClaudeOpenChange: (open: boolean) => void
+  /** What of Claude's waits (an answer it asks for, its suggestions): a dot on the header's button while the panel is
+   *  closed, saying this. */
+  claudeWaiting: string | null
   status: ReactNode
   /** Hide the scan (left) panel, e.g. while translating. */
   leftCollapsed?: boolean
@@ -49,13 +59,31 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 
 /** Fixed frame: sidebar (sidebar-07: the book, the stages, the chapters; folds to icons) | [breadcrumb /
  *  left+right+panel / status]. Content is injected per mode. */
-export function AppShell({ mode, onModeChange, book, find, stageProgress, pendingTerms, sidebar, crumb, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
+export function AppShell({
+  mode, onModeChange, book, find, stageProgress, pendingTerms, sidebar, crumb, left, right, panel, claudeOpen, onClaudeOpenChange, claudeWaiting, status,
+  leftCollapsed = false, main,
+}: AppShellProps) {
   // The widths the translator dragged the panels to, kept across reloads: one layout with the scan, one without. A
   // hidden scan is not rendered, so the library keeps the two apart (panelIds).
   const layout = useDefaultLayout({
     id: "fitz-panels", panelIds: leftCollapsed ? ["main", "panel"] : ["scan", "main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
   })
   const label = mode === "glossary" ? "Glossary" : STAGES.find((m) => m.value === mode)!.label
+  // The panel is what is open or not (its edge can be dragged shut, its layout is remembered), and says so on resize;
+  // the header's button asks it to change. Only a change is acted on: a page opening keeps the panel as it was left.
+  const claudePanel = usePanelRef()
+  const askedOpen = useRef(claudeOpen)
+  // the button is the translator's hand on the layout as much as a drag is: what it changes is remembered as a drag's is
+  const byButton = useRef(false)
+  useEffect(() => {
+    if (askedOpen.current === claudeOpen) return
+    askedOpen.current = claudeOpen
+    const p = claudePanel.current
+    if (!p || p.isCollapsed() === !claudeOpen) return
+    byButton.current = true
+    if (claudeOpen) p.expand()
+    else p.collapse()
+  }, [claudeOpen, claudePanel])
   return (
     <SidebarProvider defaultOpen={sidebarDefaultOpen()} style={{ "--sidebar-width": "17rem" } as CSSProperties}>
       <Sidebar collapsible="icon">
@@ -123,9 +151,27 @@ export function AppShell({ mode, onModeChange, book, find, stageProgress, pendin
               )}
             </BreadcrumbList>
           </Breadcrumb>
+          {!main && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button size="icon-sm" variant={claudeOpen ? "secondary" : "ghost"} aria-label="Claude" aria-pressed={claudeOpen} className="relative ml-auto"
+                    onClick={() => onClaudeOpenChange(!claudeOpen)} />
+                }
+              >
+                <IconSparkles />
+                {!claudeOpen && claudeWaiting && <span data-attention aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />}
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{!claudeOpen && claudeWaiting ? claudeWaiting : "Claude"} <Kbd>⌘L</Kbd></TooltipContent>
+            </Tooltip>
+          )}
         </header>
         {main ? <div className="min-h-0 flex-1 overflow-auto">{main}</div> : (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout}
+          onLayoutChanged={(next, meta) => {
+            layout.onLayoutChanged(next, byButton.current ? { ...meta, isUserInteraction: true } : meta)
+            byButton.current = false
+          }}>
           {!leftCollapsed && (
             <>
               <ResizablePanel id="scan" defaultSize="42" minSize={240} collapsible collapsedSize={0}>
@@ -138,8 +184,10 @@ export function AppShell({ mode, onModeChange, book, find, stageProgress, pendin
             {right}
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel id="panel" defaultSize="20" minSize={200} collapsible collapsedSize={0}>
-            {panel}
+          <ResizablePanel id="panel" defaultSize="20" minSize={200} collapsible collapsedSize={0} panelRef={claudePanel}
+            onResize={(size) => { if (size.inPixels > 0 !== claudeOpen) onClaudeOpenChange(size.inPixels > 0) }}>
+            {/* closed, its content is gone too, not only out of sight: out of the tab order and what is read aloud */}
+            <div hidden={!claudeOpen} className="h-full">{panel}</div>
           </ResizablePanel>
         </ResizablePanelGroup>
         )}

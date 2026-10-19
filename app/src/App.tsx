@@ -10,7 +10,7 @@ import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
 import { FindInput, FindResults } from "@/features/review/Find"
 import { ExportView } from "@/features/export/ExportView"
 import { GlossaryPage } from "@/features/review/GlossaryPage"
-import { ReviewPanel } from "@/features/review/ReviewPanel"
+import { ClaudeTab } from "@/features/agent/ClaudeTab"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
 import { FloatingToolbar } from "@/features/selection/FloatingToolbar"
@@ -48,7 +48,7 @@ const SAVE_LABEL: Record<SaveState, { text: string; className: string }> = {
 
 export function App() {
   const [mode, setMode] = useState<Mode>("review")
-  const [panelTab, setPanelTab] = useState("claude")
+  const [claudeOpen, setClaudeOpen] = useState(true)
   const [findQuery, setFindQuery] = useState("")
   const [findFocusToken, setFindFocusToken] = useState(0)
   const book = useBook()
@@ -88,16 +88,16 @@ export function App() {
     [book.annotations, annSelected, book.annotate, translate.markers],
   )
   // Claude's suggestions: the review's while translating, the OCR hunt's while reviewing the source. Selecting one in the
-  // text opens its card, as selecting a comment opens Notes.
+  // text opens its card in Claude's panel (opening the panel if it is closed).
   const task: TaskName = translating ? "review" : "typos"
   const [suggestionSelected, setSuggestionSelected] = useState<number | null>(null)
-  const selectSuggestion = useCallback((id: number | null) => { setSuggestionSelected(id); if (id !== null) setPanelTab("claude") }, [])
+  const selectSuggestion = useCallback((id: number | null) => { setSuggestionSelected(id); if (id !== null) setClaudeOpen(true) }, [])
   const claude = useClaude()
   const [claudeFocusToken, setClaudeFocusToken] = useState(0)
-  /** Ask Claude (the toolbar, ⌘L): the selected words wait in Claude's box, which takes the cursor. */
+  /** Ask Claude (the toolbar, ⌘L): the panel opens, the selected words wait in Claude's box, which takes the cursor. */
   const askClaude = useCallback((pointed: Pointed | null) => {
     if (pointed) claude.point(pointed)
-    setPanelTab("claude")
+    setClaudeOpen(true)
     setClaudeFocusToken((n) => n + 1)
   }, [claude])
   const suggestionState = useMemo(
@@ -159,16 +159,20 @@ export function App() {
       left={review.left}
       right={translating ? translate.view : review.right}
       panel={
-        <ReviewPanel
-          segments={book.segments}
-          tab={panelTab} onTabChange={setPanelTab}
+        <ClaudeTab
+          claude={claude} focusToken={claudeFocusToken} segments={book.segments}
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,
             onRun: () => { if (book.chapterId !== null) book.suggest.run(task, book.chapterId) },
             onDecide: book.suggest.decide,
           }}
-          claude={claude} claudeFocusToken={claudeFocusToken}
         />
+      }
+      claudeOpen={claudeOpen}
+      onClaudeOpenChange={setClaudeOpen}
+      claudeWaiting={
+        claude.view.asks.length ? "Claude is waiting for your answer"
+          : suggestionState.suggestions.length ? `${suggestionState.suggestions.length} open suggestion${suggestionState.suggestions.length > 1 ? "s" : ""}` : null
       }
       status={
         <>

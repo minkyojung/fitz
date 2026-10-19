@@ -37,7 +37,6 @@ async function openClaude(page: Page) {
   await page.goto("/")
   await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
   await page.getByRole("button", { name: "Translate", exact: true }).click()
-  await page.getByRole("tab", { name: /Claude/ }).click()
   return page.getByRole("textbox", { name: "Message to Claude" })
 }
 const thread = (page: Page) => page.getByLabel("Conversation with Claude")
@@ -119,7 +118,13 @@ test("a write Claude asks for waits on a card; Allow goes to the server and the 
   const card = page.locator(`[data-ask="${ask.requestId}"]`)
   await expect(card).toContainText("Write the translation of ¶3?")
   await expect(thread(page)).toContainText("Waiting for your answer")
-  await expect(page.getByRole("tab", { name: /Claude/ }).locator("[data-slot=badge]")).toHaveText("1")
+  // the panel closed, its button in the header says Claude waits; opened again, the card is there
+  const claudeButton = page.getByRole("button", { name: "Claude", exact: true })
+  await claudeButton.click()
+  await expect(claudeButton).toHaveAttribute("aria-pressed", "false")
+  await expect(claudeButton.locator("[data-attention]")).toBeVisible()
+  await claudeButton.click()
+  await expect(claudeButton).toHaveAttribute("aria-pressed", "true")
   await expect(card).toContainText("누군가를 비판하고 싶어질 때면")
   await card.getByRole("button", { name: "Allow" }).click()
   expect(await fake.last("answer")).toEqual({ type: "answer", convId, requestId: ask.requestId, decision: "allow" })
@@ -205,10 +210,13 @@ test("Ask Claude on selected words: they wait in Claude's box, and go before the
   await page.getByRole("button", { name: "Translate", exact: true }).click()
   const pair = page.locator("[data-pair]").nth(2)
   const id = Number(await pair.getAttribute("data-pair"))
+  const claudeButton = page.getByRole("button", { name: "Claude", exact: true })
+  await claudeButton.click()  // the panel closed: Ask Claude opens it
+  await expect(claudeButton).toHaveAttribute("aria-pressed", "false")
   await selectWords(pair.locator("p[lang=en]"), "The isthmus had changed")
   await page.locator("[data-floating-toolbar]").getByRole("button", { name: /Ask Claude/ }).click()
 
-  await expect(page.getByRole("tab", { name: /Claude/ })).toHaveAttribute("aria-selected", "true")
+  await expect(claudeButton).toHaveAttribute("aria-pressed", "true")
   const box = page.getByRole("textbox", { name: "Message to Claude" })
   await expect(box).toBeFocused()
   await expect(page.locator("form [data-pointed]")).toContainText(`¶${id}`)
@@ -282,7 +290,6 @@ async function claudeWrote(page: Page) {
   return { pair, id }
 }
 async function playTranslate(page: Page, fake: Awaited<ReturnType<typeof fakeServer>>) {
-  await page.getByRole("tab", { name: /Claude/ }).click()
   const box = page.getByRole("textbox", { name: "Message to Claude" })
   await box.fill("¶3을 번역해서 넣어줘")
   await box.press("Enter")
