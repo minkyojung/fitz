@@ -18,7 +18,7 @@ const time = (iso: string) => {
 export function HistoryButton({ segment }: { segment: Segment }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="ghost" size="icon-xs" aria-label="History" title="History" />} onClick={(e) => e.stopPropagation()}>
+      <PopoverTrigger render={<Button variant="ghost" size="icon-sm" aria-label="History" title="History" />} onClick={(e) => e.stopPropagation()}>
         <IconHistory />
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="max-h-[min(28rem,var(--available-height))] w-96 gap-0 overflow-y-auto p-0"

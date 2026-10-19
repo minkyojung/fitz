@@ -163,8 +163,8 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
           <div data-unsaved className="mb-1 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
             {changedSince && <span className="text-muted-foreground">the paragraph changed since</span>}
-            <Button size="xs" variant="outline" onClick={() => { setEditDoc(draft.doc); selectHere(); onEditingChange(true) }}>Recover</Button>
-            <Button size="xs" variant="ghost" onClick={() => { drafts?.clear(s.id, "target"); bump((n) => n + 1) }}>Discard</Button>
+            <Button size="sm" variant="outline" onClick={() => { setEditDoc(draft.doc); selectHere(); onEditingChange(true) }}>Recover</Button>
+            <Button size="sm" variant="ghost" onClick={() => { drafts?.clear(s.id, "target"); bump((n) => n + 1) }}>Discard</Button>
           </div>
         )}
         {editing ? (

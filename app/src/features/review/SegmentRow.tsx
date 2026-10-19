@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Editor } from "@tiptap/react"
-import { IconArrowsSplit2, IconPencil, IconRowInsertBottom } from "@tabler/icons-react"
+import { IconArrowsSplit2, IconChevronDown, IconPencil, IconRowInsertBottom } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { SourceText } from "./SourceText"
 import { EditedDot } from "./EditedDot"
 import { HistoryButton } from "./History"
@@ -190,6 +190,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     <ContextMenuTrigger
       ref={ref}
       data-segment={s.id}
+      data-selected={selected || undefined}
       onClick={selectHere}
       className={cn(
         "group mb-2 scroll-mt-8 rounded-md border border-transparent px-2 py-1.5", // scroll-mt clears the sticky page header
@@ -204,21 +205,18 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           <span className="text-muted-foreground">Verify</span>
         </label>
         {selected ? (
-          <ToggleGroup
-            value={[s.kind]}
-            onValueChange={(v) => v[0] && v[0] !== s.kind && void onPatch({ kind: v[0] as SegmentKind })}
-            size="sm"
-            variant="outline"
-            spacing={0}
-            className="ml-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {KINDS.map((k) => (
-              <ToggleGroupItem key={k} value={k} aria-label={KIND_LABEL[k]}>
-                {KIND_LABEL[k]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          // one menu, as a word processor's paragraph style: five buttons side by side did not fit the header
+          <DropdownMenu>
+            <DropdownMenuTrigger data-kind={s.kind} onClick={(e) => e.stopPropagation()} render={<Button size="sm" variant="outline" className="ml-1" />}>
+              {KIND_LABEL[s.kind]}
+              <IconChevronDown data-icon="inline-end" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-36" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuRadioGroup value={s.kind} onValueChange={(v) => v !== s.kind && void onPatch({ kind: v as SegmentKind })}>
+                {KINDS.map((k) => <DropdownMenuRadioItem key={k} value={k} closeOnClick>{KIND_LABEL[k]}</DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <Badge variant={s.kind === "paragraph" ? "outline" : "secondary"}>{KIND_LABEL[s.kind]}</Badge>
         )}
@@ -230,24 +228,24 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
           <span data-unsaved className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
             {changedSince && <span className="text-muted-foreground">the paragraph changed since</span>}
-            <Button size="xs" variant="outline" onClick={recover}>Recover</Button>
-            <Button size="xs" variant="ghost" onClick={discard}>Discard</Button>
+            <Button size="sm" variant="outline" onClick={recover}>Recover</Button>
+            <Button size="sm" variant="ghost" onClick={discard}>Discard</Button>
           </span>
         )}
         {selected && (
           <span className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
             <HistoryButton segment={s} />
             {editing ? (
-              <Button variant="ghost" size="xs" aria-label="Split at caret" onMouseDown={(e) => e.preventDefault()}
+              <Button variant="ghost" size="sm" aria-label="Split at caret" onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void splitAtCaret()}>
                 <IconArrowsSplit2 data-icon="inline-start" /> Split
               </Button>
             ) : (
-              <Button variant="ghost" size="icon-xs" aria-label="Edit text" onClick={() => setEditing(true)}>
+              <Button variant="ghost" size="icon-sm" aria-label="Edit text" onClick={() => setEditing(true)}>
                 <IconPencil />
               </Button>
             )}
-            <Button variant="ghost" size="icon-xs" aria-label="Merge with next" disabled={!hasNext}
+            <Button variant="ghost" size="icon-sm" aria-label="Merge with next" disabled={!hasNext}
               onClick={() => void onMerge()}>
               <IconRowInsertBottom />
             </Button>

@@ -103,5 +103,5 @@ test("the glossary is a page: untranslated first, set in place, its badges count
   await page.getByRole("button", { name: /Without translation/ }).click()
   await page.getByRole("button", { name: "Zemurray", exact: true }).click()
   await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveAttribute("aria-current", "page")
-  await expect(page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })).toContainText("Zemurray")
+  await expect(page.locator("[data-segment][data-selected]")).toContainText("Zemurray")
 })

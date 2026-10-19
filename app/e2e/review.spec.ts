@@ -8,8 +8,9 @@ const rowText = (row: Locator) =>
     return (clone.textContent ?? "").replace(/\s+/g, " ").trim()
   })
 
-/** Select a row without starting to edit: click its header strip (the kind badge), not the text. */
-const selectRow = (row: Locator) => row.locator("[data-slot=badge], [data-slot=toggle-group]").first().click()
+/** Select a row without starting to edit: click its header strip (the kind badge), not the text. A selected row has the
+ *  kind's menu there instead, and is selected already. */
+const selectRow = async (row: Locator) => { if ((await row.getAttribute("data-selected")) === null) await row.locator("[data-slot=badge]").first().click() }
 
 /** Put the caret at a text offset inside a contenteditable paragraph (ProseMirror reads the DOM selection). */
 async function setCaret(editable: Locator, offset: number) {
@@ -39,8 +40,11 @@ test("review edits persist across reload", async ({ page }) => {
   await expect(row.getByRole("checkbox", { name: "Verified" })).toBeChecked()
   await expect(page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /1: Selma/ })).toContainText("1/15")
 
-  // kind
-  await row.getByRole("button", { name: "Quote" }).click()
+  // kind: the header's menu
+  await row.locator("[data-kind]").click()
+  await page.getByRole("menuitemradio", { name: "Quote" }).click()
+  await expect(page.getByRole("menu")).toHaveCount(0)  // a kind picked closes the menu
+  await expect(row.locator("[data-kind]")).toHaveAttribute("data-kind", "blockquote")
 
   // text edit
   await row.getByRole("button", { name: "Edit text" }).click()
@@ -55,7 +59,7 @@ test("review edits persist across reload", async ({ page }) => {
   await expect(again).toContainText("Edited paragraph text.")
   await expect(again.getByRole("checkbox", { name: "Verified" })).toBeChecked()
   await again.click()
-  await expect(again.getByRole("button", { name: "Quote" })).toHaveAttribute("aria-pressed", "true")
+  await expect(again.locator("[data-kind]")).toHaveAttribute("data-kind", "blockquote")
 })
 
 test("page navigation follows the selected segment", async ({ page }) => {
@@ -492,7 +496,7 @@ test("a caption can be added on an empty page, edited, and undone", async ({ pag
   await page.keyboard.type("Zemurray on the docks, 1910")
   await page.keyboard.press("Enter")
   await expect(row.locator("p")).toHaveText("Zemurray on the docks, 1910")
-  await expect(row.getByRole("button", { name: "Caption" })).toHaveAttribute("aria-pressed", "true")
+  await expect(row.locator("[data-kind]")).toHaveAttribute("data-kind", "caption")
   // the new row sits under a header for the formerly empty page
   await expect(row.locator("xpath=preceding-sibling::div[1]")).toHaveText(pageText)
   await expect(notice).toHaveCount(0)
@@ -523,7 +527,7 @@ test("find lists hits across the book, jumps to one, and replace-all is a single
   const hit = results.getByRole("button", { name: /13: King Fish/ }).first()
   await hit.click()
   await expect(page.locator("footer")).toContainText("13: King Fish")
-  await expect(page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })).toContainText("Zemurray")
+  await expect(page.locator("[data-segment][data-selected]")).toContainText("Zemurray")
 
   // replace all, then undo in one step
   await page.getByRole("textbox", { name: "Replace with" }).fill("ZEMURRAY")
@@ -547,7 +551,7 @@ test("spelling: suspects are marked, a confident fix is accepted inline, a name 
   const find = page.getByRole("textbox", { name: "Find in book" })
   await find.fill("It was a brisk night")
   await page.getByRole("region", { name: "Find results" }).getByRole("button", { name: /Prologue/ }).first().click()
-  const row = page.locator("[data-segment]").filter({ has: page.locator("[data-slot=toggle-group]") })
+  const row = page.locator("[data-segment][data-selected]")
   await expect(row).toContainText("It was a brisk night")
   const original = await rowText(row)
   await row.locator("p").click()
