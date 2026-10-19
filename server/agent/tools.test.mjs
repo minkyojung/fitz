@@ -172,19 +172,19 @@ test("MCP: the server is in-process, named fitz, and keeps its tools loaded", ()
   assert.ok(server.instance)
 })
 
-// --- writes: every one goes through execute(), so ⌘Z takes it back
+// --- writes: every one goes through execute(), so it can be taken back (as Claude's: ⌘Z is the translator's own)
 
 const seg = (db, id) => db.prepare("SELECT target_text, target_doc, status, version FROM segment WHERE id = ?").get(id)
 const versionOf = (db, id) => read(db, { ids: [id] }).segments[0].version
 
-test("set_translation writes the paragraph as draft, one block per line, and ⌘Z takes it back", () => {
+test("set_translation writes the paragraph as draft, one block per line, and undoing it takes it back", () => {
   const db = fixture()
   const before = versionOf(db, 2)
   const out = setTranslation(db, { segmentId: 2, text: "제무레이의 배.\n\n  두 번째 블록  ", expectVersion: before })
   assert.deepEqual(out, { segmentId: 2, status: "draft", version: seg(db, 2).version, targetText: "제무레이의 배.\n두 번째 블록" })
   assert.ok(out.version > before)
   assert.equal(JSON.parse(seg(db, 2).target_doc).content.length, 2)
-  assert.deepEqual(plain(undo(db)), { id: 1, name: "updateSegment", segmentIds: [2], actor: "agent" })
+  assert.deepEqual(plain(undo(db, { actor: "agent" })), { id: 1, name: "updateSegment", segmentIds: [2], actor: "agent" })
   assert.deepEqual({ ...seg(db, 2), version: null }, { target_text: null, target_doc: null, status: "untranslated", version: null })
 })
 
@@ -204,15 +204,15 @@ test("set_translation is refused when the paragraph changed since it was read, o
   assert.throws(() => setTranslation(db, { segmentId: 99, text: "x", expectVersion: 0 }), { status: 404 })
 })
 
-test("set_glossary_term adds a term, changes one keeping what was not given, and ⌘Z takes it back", () => {
+test("set_glossary_term adds a term, changes one keeping what was not given, and undoing it takes it back", () => {
   const db = fixture()
   setGlossaryTerm(db, { term: "Selma", translation: "셀마", kind: "place" })
   setGlossaryTerm(db, { term: "Zemurray", translation: "제머리" })
   const terms = Object.fromEntries(glossary(db).terms.map((t) => [t.term, t]))
   assert.deepEqual([terms.Selma.translation, terms.Selma.kind], ["셀마", "place"])
   assert.deepEqual([terms.Zemurray.translation, terms.Zemurray.aliases, terms.Zemurray.kind], ["제머리", "샘 제무레이", "person"])
-  undo(db)
-  undo(db)
+  undo(db, { actor: "agent" })
+  undo(db, { actor: "agent" })
   assert.deepEqual(glossary(db).terms.map((t) => `${t.term}=${t.translation}`), ["boat=", "Zemurray=제무레이"])
 })
 

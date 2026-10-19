@@ -417,11 +417,15 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 
 | # | 무엇 | 파일 | 확인 |
 |---|---|---|---|
-| 0 | 갤러리: Claude의 변경을 되돌리는 자리(Trace의 "Wrote the translation of ¶3" 줄 / 턴 끝 / 둘 다), ⌘Z가 Claude의 변경을 건너뛸 때의 알림 | `app/src/gallery/` | 번역자 확인 |
-| 1 | 기록: op마다 적용 직후의 단락 버전, 되돌린 직후의 버전(redo가 같은 확인을 하도록) | `db/schema.sql`, `pipeline/migrate.py`(작업 DB 먼저 백업), `server/commands.mjs` | pytest + 순수 테스트 |
-| 2 | 번역자의 ⌘Z·⌘⇧Z는 번역자의 op만. 되돌릴 op 뒤에 Claude가 같은 단락을 고쳤으면 되돌리지 않고 그렇다고 답한다. 새 쓰기는 같은 쪽의 다시 하기만 지운다 | `commands.mjs`, `index.mjs`, `app/src/data/useBook.ts` | 서버 테스트(두 쪽이 섞인 스택), e2e |
+| 0 ✓ | 갤러리: Claude의 변경을 되돌리는 자리(Trace의 "Wrote the translation of ¶3" 줄 / 턴 끝 / 둘 다), ⌘Z가 Claude의 변경을 건너뛸 때의 알림 | `app/src/gallery/` | 번역자 확인 |
+| 1 ✓ | 변경이 건드린 것(`touches`)과 뒤의 겹침 판정 — 마이그레이션 없음(위 "판정을 바꿨다") | `server/commands.mjs` | 모든 명령이 앞뒤로 빠짐없이 |
+| 2 ✓ | 번역자의 ⌘Z·⌘⇧Z는 번역자의 op만. 되돌릴 op 뒤에 Claude가 같은 단락을 고쳤으면 되돌리지 않고 그렇다고 답한다. 새 쓰기는 같은 쪽의 다시 하기만 지운다 | `commands.mjs`, `index.mjs`, `app/src/data/useBook.ts` | 서버 테스트(두 쪽이 섞인 스택), e2e |
 | 3 | Claude의 변경 되돌리기: 고른 쓰기부터 그 뒤 Claude의 op를 최근 것부터(충돌에서 멈추고 말한다) | `commands.mjs`, `index.mjs`, `features/agent/Thread.tsx` | 서버 테스트 + e2e(녹화 프레임) |
 | 4 | README·이 문서 | | |
+
+**정한 것**(2026-10-19, 갤러리 `?gallery&undo`): Claude의 변경은 **턴 끝의 Undo from here**(B안)로, 그 턴부터 이 대화의 끝까지. ⌘Z가 Claude의 변경을 건너뛸 때 알리지 않는다. 되돌린 Claude의 변경은 다시 하지 않는다(Claude Code의 rewind처럼).
+
+**판정을 바꿨다**: 단락 버전 대신 "**무엇을 건드렸나**"(`touches`: 단락의 글, 용어, 댓글 스레드, 역주, 제안)로 본다. 댓글·용어집·역주는 바뀌어도 단락 버전이 그대로라 버전으로는 못 잡는다. 건드린 것은 기록(`ops`)의 정방향 인자에서 읽으므로 마이그레이션이 없고 지난 기록에도 맞다. 규칙: 되돌리거나 다시 하려는 변경 **뒤에 기록된, 아직 서 있는 변경**(누구 것이든, 함께 되돌리는 것은 빼고)이 같은 것을 건드렸으면 거절하고 누가 무엇을 바꿨는지 말한다. 단락의 댓글은 그 단락의 글이 아니다.
 
 ### 18.2 정할 것 (번역자)
 | 작업 | 질문 |

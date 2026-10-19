@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, undo, watchChanges } from "./commands.mjs"
+import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, touches, undo, watchChanges } from "./commands.mjs"
 
+const CLAUDE = { actor: "agent" }
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
 // node:sqlite returns null-prototype rows; plain objects compare cleanly
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -395,8 +396,8 @@ test("a change is the translator's unless it says otherwise; the agent's carries
 test("undo and redo keep who made the change, and say so", () => {
   const db = fixture()
   execute(db, "updateSegment", { id: 4, status: "draft" }, { actor: "agent", toolUseId: "toolu_X" })
-  assert.equal(undo(db).actor, "agent")
-  assert.equal(redo(db).actor, "agent")
+  assert.equal(undo(db, CLAUDE).actor, "agent")
+  assert.equal(redo(db, CLAUDE).actor, "agent")
   assert.deepEqual(db.prepare("SELECT actor, tool_use_id FROM ops").all().map((r) => [r.actor, r.tool_use_id]), [["agent", "toolu_X"]])
 })
 
@@ -582,4 +583,109 @@ test("listSuggestions: a chapter's open suggestions, in book order", () => {
   execute(db, "decideSuggestion", { id: decided, decision: "dismiss" })
   assert.deepEqual(listSuggestions(db, { chapterId: 1 }).map((s) => s.id), [early, late])
   assert.deepEqual(listSuggestions(db, { chapterId: 2 }), [])
+})
+
+// --- two writers, two ways back: what each change touched (docs/agent.md §18)
+
+test("every command says what it touched, read back from the log, both ways: paragraphs, terms, comments, notes, suggestions", () => {
+  const db = fixture()
+  const doc = (text) => JSON.parse(pmDoc(text))
+  execute(db, "updateSegment", { id: 2, text: "alpha beta gamma" })
+  execute(db, "splitSegment", { id: 2, offset: 6 })
+  execute(db, "mergeWithNext", { id: 2 })  // the halves back together
+  const added = execute(db, "insertSegment", { chapterId: 1, afterIdx: 0, kind: "paragraph", text: "new", pageNo: 3 })
+  execute(db, "deleteSegment", { id: added.id })
+  execute(db, "setDocs", { items: [{ id: 4, doc: doc("last two") }] })
+  execute(db, "addGlossaryWord", { bookId: 1, term: "Zeta" })
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "Zeta", translation: "제타" })
+  execute(db, "removeGlossaryWord", { bookId: 1, term: "Zeta" })
+  const c = execute(db, "addComment", { segmentId: 4, side: "source", anchor: null, body: "c" })
+  execute(db, "addComment", { segmentId: 4, side: "source", anchor: null, body: "r", parentId: c.id })
+  execute(db, "setComment", { id: c.id, body: "c2" })
+  execute(db, "deleteComment", { id: c.id })
+  const n = execute(db, "addNote", { segmentId: 4, anchor: null, body: "n" })
+  execute(db, "setNote", { id: n.id, body: "n2" })
+  execute(db, "deleteNote", { id: n.id })
+  execute(db, "setNoteAnchor", { noteId: 3, segmentId: 4, anchored: true })
+  const sid = Number(db.prepare(`INSERT INTO agent_suggestion(conversation_id, task, segment_id, side, quote, replacement, why, base_version)
+    VALUES ('c', 'typos', 4, 'source', 'last', 'least', '-', 1)`).run().lastInsertRowid)
+  execute(db, "decideSuggestion", { id: sid, decision: "accept" })
+
+  const named = new Set()
+  for (const row of db.prepare("SELECT * FROM ops ORDER BY id").all()) {
+    const segmentIds = JSON.parse(row.segment_ids)
+    for (const [name, params] of [[row.name, row.params], [row.inverse_name, row.inverse_params]]) {
+      const keys = touches({ name, params: JSON.parse(params), segmentIds })
+      assert.ok(keys.length > 0, `${name} touched nothing`)
+      named.add(name)
+    }
+  }
+  assert.deepEqual([...named].sort(), Object.keys(COMMANDS).sort(), "every command, forward or inverse, is covered")
+
+  const forward = (name) => { const r = db.prepare("SELECT * FROM ops WHERE name = ? ORDER BY id LIMIT 1").get(name); return touches({ name, params: JSON.parse(r.params), segmentIds: JSON.parse(r.segment_ids) }) }
+  assert.deepEqual(forward("updateSegment"), ["seg:2"])
+  assert.deepEqual(forward("setGlossaryTerm"), ["term:Zeta"])
+  assert.deepEqual(forward("addComment"), [`comment:${c.id}`])
+  assert.deepEqual(touches({ name: "addComment", params: { id: 9, parentId: c.id }, segmentIds: [4] }), ["comment:9", `comment:${c.id}`], "a reply touches its thread")
+  assert.deepEqual(forward("setNoteAnchor"), ["note:3"], "linking a note does not touch the paragraph's text")
+  assert.deepEqual(forward("decideSuggestion"), [`suggestion:${sid}`, "seg:4"])
+  assert.throws(() => touches({ name: "somethingNew", params: {}, segmentIds: [] }), /not known/)
+})
+
+const sourceOf = (db, id) => db.prepare("SELECT source_text FROM segment WHERE id = ?").get(id).source_text
+
+test("⌘Z takes back only the translator's own changes, passing over Claude's", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, text: "mine" })
+  execute(db, "updateSegment", { id: 3, text: "Claude's" }, CLAUDE)
+  execute(db, "addComment", { segmentId: 4, side: "source", anchor: null, body: "mine too" })
+  assert.equal(undo(db).name, "addComment")
+  assert.equal(undo(db).name, "updateSegment")
+  assert.equal(undo(db), null, "nothing of the translator's is left")
+  assert.deepEqual([sourceOf(db, 2), sourceOf(db, 3)], ["alpha beta gamma delta", "Claude's"])
+})
+
+test("undo is refused when a later change, still standing, touched the same thing; nothing is written", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, text: "mine" })
+  execute(db, "updateSegment", { id: 2, text: "Claude's over mine" }, CLAUDE)
+  const before = snapshot(db)
+  assert.throws(() => undo(db), (e) => e.status === 409 && e.message === "Claude changed ¶2 after this" && e.blockedBy.actor === "agent")
+  assert.deepEqual(snapshot(db), before)
+  assert.equal(db.prepare("SELECT count(*) n FROM ops WHERE undone = 1").get().n, 0)
+
+  // once Claude's change is taken back, the translator's goes too
+  assert.equal(undo(db, CLAUDE).actor, "agent")
+  assert.equal(undo(db).actor, "translator")
+  assert.equal(sourceOf(db, 2), "alpha beta gamma delta")
+})
+
+test("the same thing is the same paragraph's text, glossary term, comment thread or note — not anything on the paragraph", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 3, text: "mine" })
+  execute(db, "addComment", { segmentId: 3, side: "source", anchor: null, body: "Claude's remark" }, CLAUDE)
+  assert.equal(undo(db).name, "updateSegment", "a comment on ¶3 does not stand in the way of ¶3's text")
+
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "Zeta", translation: "제타" })
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "Zeta", translation: "지타" }, CLAUDE)
+  assert.throws(() => undo(db), { status: 409, message: "Claude changed the glossary term “Zeta” after this" })
+
+  const c = execute(db, "addComment", { segmentId: 4, side: "source", anchor: null, body: "Claude's" }, CLAUDE)
+  execute(db, "addComment", { segmentId: 4, side: "source", anchor: null, body: "my reply", parentId: c.id })
+  assert.throws(() => undo(db, CLAUDE), { status: 409, message: "You changed the comment after this" }, "a reply is in the thread")
+})
+
+test("redo: each writer's own, not over a later change to the same thing; a new change ends only its writer's redo", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, text: "mine" })
+  undo(db)
+  execute(db, "updateSegment", { id: 2, text: "Claude's" }, CLAUDE)
+  assert.throws(() => redo(db), { status: 409, message: "Claude changed ¶2 after this" })
+
+  execute(db, "updateSegment", { id: 3, text: "Claude's ¶3" }, CLAUDE)
+  undo(db, CLAUDE)
+  execute(db, "updateSegment", { id: 4, text: "mine, new" })
+  assert.equal(redo(db), null, "the translator's new change ended the translator's redo")
+  assert.equal(redo(db, CLAUDE).segmentIds[0], 3, "but not Claude's")
+  assert.equal(sourceOf(db, 3), "Claude's ¶3")
 })

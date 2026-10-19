@@ -594,6 +594,64 @@ const run = (db, name, params) => {
 
 const summary = (row) => ({ id: row.id, name: row.name, segmentIds: JSON.parse(row.segment_ids), actor: row.actor })
 
+// ---- two writers, two ways back (docs/agent.md §14, §18): a change is undone only if nothing logged after it, and
+// still standing, touched the same thing — else undoing it would overwrite that later change.
+
+/** What a logged change touched, as keys two changes can share: a paragraph (its text), a glossary term, a comment, a
+ *  note, a suggestion. Read from what the log keeps (forward params, paragraphs), so it holds for every change ever
+ *  logged. Paragraph keys are the text only: a comment on ¶3 does not touch ¶3's text. */
+export function touches({ name, params: p, segmentIds }) {
+  const paragraphs = segmentIds.map((id) => `seg:${id}`)
+  switch (name) {
+    case "updateSegment": case "splitSegment": case "unsplit": case "mergeWithNext": case "unmerge":
+    case "insertSegment": case "deleteSegment": case "setDocs":
+      return paragraphs
+    case "addGlossaryWord": case "setGlossaryTerm": case "removeGlossaryWord":
+      return [`term:${p.term}`]
+    case "addComment":
+      return [`comment:${p.id}`, ...(p.parentId != null ? [`comment:${p.parentId}`] : [])]
+    case "setComment": case "deleteComment":
+      return [`comment:${p.id}`]
+    case "restoreComments":
+      return p.rows.map((r) => `comment:${r.id}`)
+    case "addNote": case "setNote": case "deleteNote":
+      return [`note:${p.id}`]
+    case "setNoteAnchor":
+      return [`note:${p.noteId}`]
+    case "decideSuggestion":
+      return [`suggestion:${p.id}`, ...(p.decision === "accept" ? paragraphs : p.decision === "comment" ? [`comment:${p.commentId}`] : [])]
+    case "reopenSuggestion":
+      return [`suggestion:${p.id}`, ...(p.undo ? touches({ name: p.undo.name, params: p.undo.params, segmentIds }) : [])]
+    default:
+      throw new Error(`what ${name} touches is not known`)
+  }
+}
+const touchesOf = (row) => touches({ name: row.name, params: JSON.parse(row.params), segmentIds: JSON.parse(row.segment_ids) })
+
+/** The first change logged after `row`, still standing and not among `besides` (being undone with it), that touched
+ *  something `row` touched; null if there is none. */
+function laterOverlap(db, row, besides = new Set()) {
+  const mine = new Set(touchesOf(row))
+  for (const later of db.prepare("SELECT * FROM ops WHERE id > ? AND undone = 0 ORDER BY id").iterate(row.id)) {
+    if (!besides.has(later.id) && touchesOf(later).some((k) => mine.has(k))) return later
+  }
+  return null
+}
+
+const refuseOverLater = (db, row, besides) => {
+  const later = laterOverlap(db, row, besides)
+  if (later) throw Object.assign(httpError(409, overlapMessage(row, later)), { blockedBy: summary(later) })
+}
+
+/** Why a change cannot be taken back, in the translator's words: who changed what afterwards. */
+function overlapMessage(row, later) {
+  const mine = new Set(touchesOf(row))
+  const key = touchesOf(later).find((k) => mine.has(k))
+  const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)]
+  const what = kind === "seg" ? `¶${id}` : kind === "term" ? `the glossary term “${id}”` : `the ${kind}`
+  return `${later.actor === "agent" ? "Claude" : "You"} changed ${what} after this`
+}
+
 /** Run a command as a new user action: log it, discard the redo stack, mark the db edited. */
 // The book has more than one writer (the editor's routes, the agent's tools): whoever wrote, everyone following the
 // book hears about it once the write is committed. Every write goes through execute/undo/redo, so none is missed.
@@ -618,7 +676,7 @@ export const execute = (db, name, params, by = TRANSLATOR) => {
   let change
   const result = inTransaction(db, () => {
     const { result, forward, inverse, segmentIds } = run(db, name, params)
-    db.prepare("DELETE FROM ops WHERE undone = 1").run()
+    db.prepare("DELETE FROM ops WHERE undone = 1 AND actor = ?").run(by.actor)  // a new change ends only its own writer's redo
     const { lastInsertRowid } = db.prepare("INSERT INTO ops(name, params, inverse_name, inverse_params, segment_ids, actor, tool_use_id) VALUES (?,?,?,?,?,?,?)")
       .run(name, JSON.stringify(forward), inverse.name, JSON.stringify(inverse.params), JSON.stringify(segmentIds), by.actor, by.toolUseId ?? null)
     touch(db)
@@ -629,10 +687,14 @@ export const execute = (db, name, params, by = TRANSLATOR) => {
   return result
 }
 
-export const undo = (db) => {
+/** Take back `by`'s last change still standing: the translator's ⌘Z never takes back Claude's, nor the other way round
+ *  (docs/agent.md §18). Refused (409, saying who changed what) if a change logged after it, still standing, touched
+ *  the same thing — undoing it would overwrite that. null when `by` has nothing left to undo. */
+export const undo = (db, by = TRANSLATOR) => {
   const op = inTransaction(db, () => {
-    const row = db.prepare("SELECT * FROM ops WHERE undone = 0 ORDER BY id DESC LIMIT 1").get()
+    const row = db.prepare("SELECT * FROM ops WHERE undone = 0 AND actor = ? ORDER BY id DESC LIMIT 1").get(by.actor)
     if (!row) return null
+    refuseOverLater(db, row)
     run(db, row.inverse_name, JSON.parse(row.inverse_params))
     db.prepare("UPDATE ops SET undone = 1 WHERE id = ?").run(row.id)
     touch(db)
@@ -642,10 +704,12 @@ export const undo = (db) => {
   return op
 }
 
-export const redo = (db) => {
+/** Do again `by`'s change undone last, on the same terms: not over a later change to the same thing. */
+export const redo = (db, by = TRANSLATOR) => {
   const op = inTransaction(db, () => {
-    const row = db.prepare("SELECT * FROM ops WHERE undone = 1 ORDER BY id ASC LIMIT 1").get()
+    const row = db.prepare("SELECT * FROM ops WHERE undone = 1 AND actor = ? ORDER BY id ASC LIMIT 1").get(by.actor)
     if (!row) return null
+    refuseOverLater(db, row)
     run(db, row.name, JSON.parse(row.params))
     db.prepare("UPDATE ops SET undone = 0 WHERE id = ?").run(row.id)
     touch(db)
