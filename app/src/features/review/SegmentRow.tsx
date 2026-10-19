@@ -75,7 +75,11 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const ref = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
   const closing = useRef(false)
-  const clickOffset = useRef<number | null>(null)
+  // Where a click put the caret: for the edit it starts, forgotten when that edit ends, however it ends (here or from
+  // the list). State, not a ref, since the editor is rendered with it.
+  const [clickOffset, setClickOffset] = useState<number | null>(null)
+  const [wasEditing, setWasEditing] = useState(editing)
+  if (wasEditing !== editing) { setWasEditing(editing); if (!editing) setClickOffset(null) }
   const drafts = useDrafts()
   const selectionState = useSelectionState()
   const spell = useSpell()
@@ -118,7 +122,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     selectedHere.current = false
   }, [selected])
   useEffect(() => {
-    if (!editing) { closing.current = false; clickOffset.current = null; base.current = null }
+    if (!editing) { closing.current = false; base.current = null }
     else base.current ??= { version: s.version, text: s.sourceText, doc: shownDoc() }
   }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps -- the base is what was shown when editing began
 
@@ -127,7 +131,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const startEditAt = (e: React.MouseEvent<HTMLParagraphElement>) => {
     if (editing) return
     if (!window.getSelection()?.isCollapsed) return // a drag-selection, not a click: leave it for the toolbar
-    clickOffset.current = textOffsetAtPoint(e.currentTarget, e.clientX, e.clientY)
+    setClickOffset(textOffsetAtPoint(e.currentTarget, e.clientX, e.clientY))
     selectHere()
     setEditing(true)
   }
@@ -255,7 +259,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       {editing ? (
         <SegmentEditor
           doc={editDoc ?? shownDoc()}
-          caretOffset={clickOffset.current}
+          caretOffset={clickOffset}
           selectAll={s.sourceText === CAPTION_PLACEHOLDER}
           className={cn("reading text-[15px] outline-none", s.kind === "heading" && "font-semibold")}
           onCommit={(doc) => void commit(doc)}

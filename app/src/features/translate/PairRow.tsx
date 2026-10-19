@@ -49,7 +49,11 @@ interface Props {
 export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers, onSelect, onEditingChange, onPatch, onConfirm, onStep, onFlow }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const closing = useRef(false)
-  const clickPos = useRef<number | null>(null)
+  // Where a click put the caret: for the edit it starts, forgotten when that edit ends, however it ends (here or from
+  // the list). State, not a ref, since the editor is rendered with it.
+  const [clickPos, setClickPos] = useState<number | null>(null)
+  const [wasEditing, setWasEditing] = useState(editing)
+  if (wasEditing !== editing) { setWasEditing(editing); if (!editing) setClickPos(null) }
   const drafts = useDrafts()
   const selectionState = useSelectionState()
   const [, bump] = useState(0)
@@ -76,7 +80,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
   // another window) did meanwhile; "unchanged" means unchanged from it, not from whatever the screen shows now.
   const base = useRef<{ version: number; text: string; doc: DocJSON } | null>(null)
   useEffect(() => {
-    if (!editing) { closing.current = false; clickPos.current = null; base.current = null }
+    if (!editing) { closing.current = false; base.current = null }
     else base.current ??= { version: s.version, text: s.targetText, doc: s.targetDoc ?? emptyDoc() }
   }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps -- the base is what was shown when editing began
 
@@ -125,7 +129,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
   const startEdit = (e: React.MouseEvent<HTMLElement>) => {
     if (editing) return
     if (!window.getSelection()?.isCollapsed) return // a drag-selection, not a click: leave it for the toolbar
-    clickPos.current = docPosAtPoint(e.currentTarget, e.clientX, e.clientY)
+    setClickPos(docPosAtPoint(e.currentTarget, e.clientX, e.clientY))
     selectHere()
     onEditingChange(true)
   }
@@ -170,7 +174,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
             doc={editDoc ?? currentDoc}
             multiParagraph
             lang="ko"
-            caretOffset={clickPos.current ?? (caretEdge === "start" ? 0 : null)}
+            caretOffset={clickPos ?? (caretEdge === "start" ? 0 : null)}
             className={cn("reading text-[15px] outline-none [&_p+p]:mt-3", s.kind === "heading" && "font-semibold")}
             onCommit={(doc) => void commit(doc)}
             onCancel={cancel}
