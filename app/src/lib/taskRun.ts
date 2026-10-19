@@ -25,6 +25,7 @@ export function nextRun(run: TaskRun, e: LiveEvent): TaskRun {
   if (run.state !== "running") return run
   if (e.type === "error") return { state: "failed", message: String(e.message) }
   const turn = turnIn(e)
-  if (!turn) return run
+  // no longer at work with no turn ended: its Claude Code went before answering (the server restarted, say)
+  if (!turn) return e.type === "snapshot" && e.working === false ? { state: "failed", message: "Claude Code stopped before answering" } : run
   return turn.isError ? { state: "failed", message: `Claude stopped before answering (${turn.reason})` } : { state: "done" }
 }

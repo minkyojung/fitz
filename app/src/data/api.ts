@@ -253,6 +253,8 @@ export interface ConversationSummary {
   chapterId: number | null
   createdAt: string
   usedAt: string
+  /** A turn is going on in a live Claude Code (docs/agent.md §23). */
+  working: boolean
 }
 /** What the checks found wrong in a translation Claude wrote (docs/agent.md §19). */
 export type CheckFailure =
@@ -336,8 +338,9 @@ export interface Api {
   /** Claude's open suggestions on a chapter, in book order. */
   listSuggestions(chapterId: number): Promise<Suggestion[]>
   decideSuggestion(id: number, decision: SuggestionDecision): Promise<Suggestion>
-  /** Start Claude on a chapter; `onRun` hears how it goes until it ends. Returns the function that stops following. */
-  runTask(task: TaskName, chapterId: number, onRun: (run: TaskRun) => void): () => void
+  /** Hear how Claude's task on a chapter goes until it ends: one at work already (the page opened again), or with
+   *  `start` one begun now under this new id. Returns the function that stops following. */
+  followTask(convId: string, onRun: (run: TaskRun) => void, start?: { task: TaskName; chapterId: number }): () => void
   /** Claude's conversations, most recently used first. */
   listConversations(): Promise<ConversationSummary[]>
   /** Hear a conversation: its snapshot, then its messages, asks and errors; after a reconnect it is followed again. With

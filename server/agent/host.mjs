@@ -68,7 +68,10 @@ export function createAgentHost({
     return conv
   }
   const tell = (conv, event) => { for (const follower of conv.followers) follower(event) }
-  const snapshot = (convId, conv) => ({ type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort })
+  /** At work: a turn going on, and the Claude Code it goes on in alive (docs/agent.md §23). Not the fold's status, which
+   *  is idle until Claude Code's first message. */
+  const working = (conv) => conv.turn !== null && conv.session !== null
+  const snapshot = (convId, conv) => ({ type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort, working: working(conv) })
   const pending = (conv) => [...conv.asks.values()].map((a) => a.ask)
 
   /** A write put to the translator. Resolves when they answer, or when the turn stops (signal). */
@@ -183,10 +186,12 @@ export function createAgentHost({
         tell(conv, { type: "error", convId, message: `Claude Code stopped: ${e.message}` })
       } finally {
         if (conv.session === session) {
+          const cut = working(conv)
           conv.session = null
           for (const a of [...conv.asks.values()]) a.settle("cancelled")
-          // a turn cut off with the process is over; what was half written is not kept
-          if (conv.state.status !== "idle" || conv.state.live) {
+          // a turn cut off with the process is over, even one Claude Code said nothing in; what was half written is
+          // not kept
+          if (cut || conv.state.status !== "idle" || conv.state.live) {
             conv.state = { ...conv.state, status: "idle", live: null }
             tell(conv, snapshot(convId, conv))
           }
@@ -219,7 +224,8 @@ export function createAgentHost({
       conversations.set(convId, conversation({ model, effort, task, sessionId: null }))
       if (task) send(convId, TASKS[task].prompt(chapter))
     },
-    list: () => listConversations(db),
+    /** The conversations, newest first, each saying whether it is at work: one known only from book.db is not. */
+    list: () => listConversations(db).map((c) => ({ ...c, working: conversations.has(c.id) && working(conversations.get(c.id)) })),
     /** A snapshot (with the writes waiting for an answer) — now, or once a reopened conversation is read back — then
      *  every event. Returns the function that stops following. */
     open(convId, follower) {

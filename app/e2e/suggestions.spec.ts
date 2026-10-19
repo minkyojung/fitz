@@ -170,3 +170,50 @@ test("starting a review shows Claude at work, then what it found", async ({ page
   await expect(page.locator("[data-run]")).toContainText("1 suggestion")
   await post(request, "undo")
 })
+
+test("a review at work goes on showing after a reload, then what it found (docs/agent.md §23)", async ({ page, request }) => {
+  // the server's part is played here: the review started is in its list at work, and following it gives a snapshot
+  // that says so
+  let live: WebSocketRoute | null = null
+  const started: { convId: string; task: string; chapterId: number }[] = []
+  const followed: string[] = []
+  await page.routeWebSocket("**/live", (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      const msg = JSON.parse(String(m))
+      if (msg.type === "start") started.push(msg)
+      else if (msg.type === "list") {
+        ws.send(JSON.stringify({ type: "conversations", items: started.map((s) => ({
+          id: s.convId, sessionId: null, title: null, model: "claude-sonnet-5-5", effort: "medium", task: s.task, chapterId: s.chapterId,
+          createdAt: "2026-10-19 00:00:00", usedAt: "2026-10-19 00:00:00", working: true,
+        })) }))
+      } else if (msg.type === "open" && started.some((s) => s.convId === msg.convId)) {
+        followed.push(msg.convId)
+        ws.send(JSON.stringify({ type: "snapshot", convId: msg.convId, state: { status: "running", items: [{ kind: "user", text: "Review" }] },
+          asks: [], model: "claude-sonnet-5-5", effort: "medium", working: true }))
+      } else server.send(m)
+    })
+    live = ws
+  })
+  const { id } = await open(page, "Translate")
+  await translate(request, id, "Claude가 읽을 번역입니다.")
+  await open(page, "Translate")
+  await showSuggestions(page)
+  await page.getByRole("button", { name: "Review this chapter with Claude" }).click()
+  await expect(page.locator("[data-run]")).toContainText("Claude is reading the chapter…")
+  await expect.poll(() => started.length).toBe(1)
+
+  const { row } = await open(page, "Translate")
+  await showSuggestions(page)
+  await expect(page.locator("[data-run]")).toContainText("Claude is reading the chapter…")
+  await expect.poll(() => followed).toEqual([started[0].convId])
+  expect(started).toHaveLength(1)
+
+  const [sid] = seed({ segmentId: id, side: "target", quote: "읽을", replacement: "검토할" })
+  live!.send(JSON.stringify({ type: "suggested", segmentIds: [id] }))
+  live!.send(JSON.stringify({ type: "message", convId: started[0].convId, message: { type: "result", subtype: "success", terminal_reason: "completed", is_error: false } }))
+  await expect(page.locator("[data-run]")).toHaveAttribute("data-run", "done")
+  await expect(row.locator(`[data-suggestion="${sid}"] ins`)).toHaveText("검토할")
+  await expect(page.locator("[data-run]")).toContainText("1 suggestion")
+  await post(request, "undo")
+})

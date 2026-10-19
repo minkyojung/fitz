@@ -61,6 +61,23 @@ export function useBook() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   /** Claude's runs on chapters, by task and chapter ("review:3"). */
   const [runs, setRuns] = useState<Record<string, TaskRun>>({})
+  // the task conversations heard here, so none is heard twice: one begun here is in the server's list too
+  const heard = useRef(new Set<string>())
+  /** Hear a run until it ends; begun now when `begin`. */
+  const followTask = useCallback((convId: string, task: TaskName, chapterId: number, begin = false) => {
+    if (heard.current.has(convId)) return
+    heard.current.add(convId)
+    api.followTask(convId, (run) => setRuns((r) => ({ ...r, [`${task}:${chapterId}`]: run })), begin ? { task, chapterId } : undefined)
+  }, [])
+  // Claude's tasks still at work go on showing on a page opened again, or back after a reconnect (docs/agent.md §23)
+  useEffect(() => {
+    const resume = () =>
+      api.listConversations()
+        .then((items) => { for (const c of items) if (c.working && c.task !== null && c.chapterId !== null) followTask(c.id, c.task, c.chapterId) })
+        .catch(() => undefined)
+    void resume()
+    return api.watchChanges((c) => { if (c.kind === "resync") void resume() })
+  }, [followTask])
   const pending = useRef(0)
 
   /** Every write goes through here: one place owns the save indicator and the error toast. */
@@ -318,15 +335,13 @@ export function useBook() {
    *  New suggestions arrive by themselves: the server announces them and the screen reloads. */
   const suggest = useMemo(() => ({
     runs,
-    run: (task: TaskName, id: number) => {
-      api.runTask(task, id, (run) => setRuns((r) => ({ ...r, [`${task}:${id}`]: run })))
-    },
+    run: (task: TaskName, id: number) => followTask(crypto.randomUUID(), task, id, true),
     decide: (s: Suggestion, decision: SuggestionDecision) =>
       mutate(DECISION_LABEL[decision], async () => {
         await api.decideSuggestion(s.id, decision)
         await Promise.all([reloadShown(), s.side === "source" && decision === "accept" ? refreshCorpus() : null])
       }),
-  }), [runs, mutate, reloadShown, refreshCorpus])
+  }), [runs, followTask, mutate, reloadShown, refreshCorpus])
 
   const chapter = chapters.find((c) => c.id === chapterId) ?? null
   // stable identity: every row subscribes to this, so it must only change when its parts do

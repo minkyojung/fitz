@@ -18,10 +18,13 @@ type Said = { type: string; convId?: string; [k: string]: unknown }
 async function fakeServer(page: Page) {
   const said: Said[] = []
   let live: WebSocketRoute | null = null
+  // the conversations a list is answered with, at once as the server does (the page lists them on load too)
+  let conversations: object[] = []
   await page.routeWebSocket("**/live", (ws) => {
     const server = ws.connectToServer()
     ws.onMessage((m) => {
       const msg = JSON.parse(String(m)) as Said
+      if (msg.type === "list") ws.send(JSON.stringify({ type: "conversations", items: conversations }))
       if (CONVERSATION.includes(msg.type)) said.push(msg)
       else server.send(m)
     })
@@ -30,7 +33,7 @@ async function fakeServer(page: Page) {
   const tell = (event: object) => live!.send(JSON.stringify(event))
   const play = (convId: string, frames: SdkMessage[]) => { for (const message of frames) tell({ type: "message", convId, message }) }
   const last = async (type: string) => { await expect.poll(() => said.some((m) => m.type === type)).toBe(true); return said.filter((m) => m.type === type).at(-1)! }
-  return { said, tell, play, last }
+  return { said, tell, play, last, list: (items: object[]) => { conversations = items } }
 }
 
 async function openClaude(page: Page) {
@@ -168,11 +171,10 @@ test("past conversations are listed (not the review's), and one opens as it was,
   const fake = await fakeServer(page)
   await openClaude(page)
   const item = (id: string, title: string, task: string | null) =>
-    ({ id, sessionId: "s", title, model: "claude-sonnet-5-5", effort: "low", task, chapterId: task ? 19 : null, createdAt: "2026-10-18 10:00:00", usedAt: "2026-10-18 10:00:00" })
+    ({ id, sessionId: "s", title, model: "claude-sonnet-5-5", effort: "low", task, chapterId: task ? 19 : null, createdAt: "2026-10-18 10:00:00", usedAt: "2026-10-18 10:00:00", working: false })
   const past = "4c9d7a1b-3e5f-4a2b-9c8d-7e6f5a4b3c2d"
+  fake.list([item(past, "Reserved 뉘앙스", null), item("5c9d7a1b-3e5f-4a2b-9c8d-7e6f5a4b3c2d", "Chapter review", "review")])
   await page.locator("[data-conversation-title]").click()
-  await fake.last("list")
-  fake.tell({ type: "conversations", items: [item(past, "Reserved 뉘앙스", null), item("5c9d7a1b-3e5f-4a2b-9c8d-7e6f5a4b3c2d", "Chapter review", "review")] })
   await expect(page.getByRole("menuitem", { name: /Reserved 뉘앙스/ })).toBeVisible()
   await expect(page.getByRole("menuitem", { name: /Chapter review/ })).toHaveCount(0)
   await page.getByRole("menuitem", { name: /Reserved 뉘앙스/ }).click()

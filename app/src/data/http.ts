@@ -84,8 +84,7 @@ export const api: Api = {
   watchSession: (onChange) => live().subscribe((e) => { if (e.type === "session" || e.type === "resync") onChange() }),
   listSuggestions: (chapterId) => call("listSuggestions", { chapterId }),
   decideSuggestion: (id, decision) => call("decideSuggestion", { id, decision }),
-  runTask: (task, chapterId, onRun) => {
-    const convId = crypto.randomUUID()
+  followTask: (convId, onRun, start) => {
     const connection = live()
     let run: TaskRun = { state: "running" }
     const stop = connection.subscribe((e) => {
@@ -98,7 +97,7 @@ export const api: Api = {
       onRun(run)
       if (run.state !== "running") stop()
     })
-    connection.send({ type: "start", convId, task, chapterId })
+    connection.send(start ? { type: "start", convId, ...start } : { type: "open", convId })
     onRun(run)
     return stop
   },

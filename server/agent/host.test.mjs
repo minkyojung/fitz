@@ -567,3 +567,49 @@ test("a conversation whose Claude Code died mid-turn can be changed, and resumes
   host.send(ID, "q2")
   assert.equal(opened[1].options.model, "claude-haiku-5-5")
 })
+
+// --- what a page opened again needs to know (docs/agent.md §23)
+
+test("a task at work says so in the list and its snapshot, until its result, or until its Claude Code dies", async () => {
+  const { host, opened, events, follow } = setup()
+  const working = (id) => host.list().find((c) => c.id === id)?.working
+  host.start(ID, { task: "review", chapterId: 1 })
+  assert.equal(working(ID), true, "at work from its start, before Claude Code has said anything")
+  follow()
+  assert.deepEqual([events[0].type, events[0].working], ["snapshot", true])
+  opened[0].feed(...nuance.slice(0, 50))
+  await settle()
+  assert.equal(working(ID), true)
+  opened[0].feed(...nuance.slice(50))
+  await settle()
+  assert.equal(working(ID), false, "its result ends it")
+
+  host.start(ID2, { task: "typos", chapterId: 1 })
+  opened[1].feed(...nuance.slice(0, 50))
+  await settle()
+  opened[1].crash(new Error("exit code 1"))
+  await settle()
+  assert.equal(working(ID2), false, "a Claude Code that died ends it")
+
+  const free = "2b6f3f2e-6a3c-4d0e-9d55-6a1c2f0e9b11"
+  host.start(free)
+  assert.equal(working(free), false, "a free conversation waits for its first message")
+})
+
+test("after a restart a conversation known only from book.db is not at work, and its snapshot says so", async () => {
+  const { host } = await afterRestart()
+  assert.equal(host.list().find((c) => c.id === ID).working, false)
+  const events = []
+  host.open(ID, (e) => events.push(e))
+  await settle()
+  assert.deepEqual([events[0].type, events[0].working], ["snapshot", false])
+})
+
+test("a task whose Claude Code ends before saying anything tells its followers it is no longer at work", async () => {
+  const { host, opened, events, follow } = setup()
+  host.start(ID, { task: "review", chapterId: 1 })
+  follow()
+  opened[0].end()
+  await settle()
+  assert.deepEqual([events.at(-1).type, events.at(-1).working, events.at(-1).state.items.length], ["snapshot", false, 0])
+})
