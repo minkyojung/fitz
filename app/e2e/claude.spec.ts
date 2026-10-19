@@ -63,7 +63,7 @@ test("a question begins a conversation; what Claude read, thought and answered c
   await expect(thread(page)).toContainText("Read ¶4 and 3 around")
   await expect(thread(page).getByRole("button", { name: "Thought" })).toBeVisible()
   await expect(thread(page).getByRole("heading", { name: "뜻과 뉘앙스" })).toBeVisible()  // Claude's markdown, rendered
-  await expect(thread(page)).toContainText("21s · $0.039")
+  await expect(thread(page).locator("[data-turn-end]")).toHaveText("21s")  // how long; not the cost, an estimate on a subscription
   // the turn's end sits under the answer, at its left edge, not squeezed beside it
   const end = (await thread(page).locator("[data-turn-end]").boundingBox())!
   const answer = (await thread(page).getByRole("heading", { name: "뜻과 뉘앙스" }).boundingBox())!
@@ -86,7 +86,7 @@ test("between turns the model and effort can change; the menu shows what the ser
   await expect(menu).toBeDisabled()  // until Claude Code echoes the message, and while it answers
   fake.tell({ type: "snapshot", convId: start.convId, state: foldMessages([]), asks: [], model: "claude-opus-5-5", effort: "medium" })
   fake.play(start.convId!, nuance)
-  await expect(thread(page)).toContainText("21s · $0.039")
+  await expect(thread(page).locator("[data-turn-end]")).toHaveText("21s")
   await expect(menu).toBeEnabled()
 
   await menu.click()
@@ -136,7 +136,7 @@ test("a write Claude asks for waits on a card; Allow goes to the server and the 
   fake.play(convId!, translate.slice(asking + 1))
   await expect(card).toHaveCount(0)
   await expect(thread(page)).toContainText("Wrote the translation of ¶3")
-  await expect(thread(page)).toContainText("14s · $0.062")
+  await expect(thread(page).locator("[data-turn-end]")).toContainText("14s")
 })
 
 test("Stop goes to the server while Claude works", async ({ page }) => {
@@ -164,7 +164,7 @@ test("each web search is a line with what Claude searched for, and the answer na
   expect(queries).toHaveLength(3)
   for (const q of queries) await expect(thread(page)).toContainText(`Searched the web for “${q}”`)
   await expect(thread(page)).toContainText("NYCultureBeat")
-  await expect(thread(page)).toContainText("63s · $0.16")
+  await expect(thread(page).locator("[data-turn-end]")).toHaveText("63s")
 })
 
 test("past conversations are listed (not the review's), and one opens as it was, with its own model", async ({ page }) => {

@@ -51,12 +51,12 @@ const DOING: Record<string, string> = {
 }
 export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? "Working"
 
-/** A turn's end: how long and how much, or why it ended early. */
+/** A turn's end: how long, or why it ended early. Not what it cost: on the translator's subscription that is Claude
+ *  Code's estimate, not a bill (docs/agent.md §17). The record keeps it. */
 export function turnLine(t: Turn): { text: string; stopped: boolean } {
   if (t.reason === "aborted_streaming" || t.reason === "aborted_tools") return { text: "Stopped", stopped: true }
   if (t.isError) return { text: `Claude stopped: ${t.reason}`, stopped: true }
-  const parts = [t.ms != null ? `${Math.max(1, Math.round(t.ms / 1000))}s` : null, t.cost != null ? `$${t.cost < 0.1 ? t.cost.toFixed(3) : t.cost.toFixed(2)}` : null]
-  return { text: parts.filter(Boolean).join(" · "), stopped: false }
+  return { text: t.ms != null ? `${Math.max(1, Math.round(t.ms / 1000))}s` : "", stopped: false }
 }
 
 type Checks = { checked: number[]; rounds: ({ segmentId: number; kind: "term"; term: string; forms: string[] } | { segmentId: number; kind: "note"; quote: string })[][]; error?: string }
