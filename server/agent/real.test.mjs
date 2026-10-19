@@ -34,7 +34,7 @@ function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "l
   const projectDir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", realpathSync(cwd).replace(/[^A-Za-z0-9]/g, "-"))
   const host = createAgentHost({ db, openSession: (o) => openSession({ ...o, cwd }), sessionInfo: async () => null, keep: { save: () => false, restore: () => false } })
   const id = randomUUID()
-  const seen = { sessionId: null, init: null, toolUses: [] }
+  const seen = { sessionId: null, init: null, toolUses: [], asks: [] }
   t.after(async () => {
     await host.close()  // Claude Code writes to the session file on its way out: delete it only after
     if (seen.sessionId) await deleteSession(seen.sessionId, { dir: cwd })
@@ -45,7 +45,7 @@ function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "l
   /** Allow every write Claude asks for, and resolve with the turn's result. */
   const result = () => new Promise((resolve) => {
     const stop = host.open(id, (e) => {
-      if (e.type === "ask") host.answer(id, e.ask.requestId, "allow")
+      if (e.type === "ask") { seen.asks.push(e.ask.tool); host.answer(id, e.ask.requestId, "allow") }
       if (e.type !== "message") return
       const m = e.message
       seen.sessionId ??= m.session_id ?? null
@@ -71,6 +71,16 @@ test("Claude's write is recorded as the agent's, with the id of the very tool ca
   const comment = { ...db.prepare("SELECT author, body FROM comment WHERE segment_id = 4 ORDER BY id DESC LIMIT 1").get() }
   assert.equal(comment.author, "agent")
   assert.match(comment.body, /말장난 확인/)
+})
+
+test("Claude searches the web without asking the translator", { skip, timeout: 240_000 }, async (t) => {
+  const { ask, seen } = realConversation(t, gatsby())
+  const result = await ask("Use WebSearch exactly once to find the year The Great Gatsby was first published, then answer with the year only. Do not read the book.")
+  assert.equal(result.subtype, "success", JSON.stringify(result))
+  assert.ok(seen.init.tools.includes("WebSearch"), seen.init.tools.join(", "))
+  assert.ok(seen.toolUses.some((b) => b.name === "WebSearch"), `Claude called: ${seen.toolUses.map((b) => b.name).join(", ") || "nothing"}`)
+  assert.deepEqual(seen.asks, [])
+  assert.match(result.result, /1925/)
 })
 
 test("an OCR-error hunt answers in the agreed shape, offered only the read tools, and what it found is kept", { skip, timeout: 240_000 }, async (t) => {

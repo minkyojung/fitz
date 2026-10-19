@@ -17,10 +17,14 @@ export const AGENT_CWD = join(homedir(), ".fitz", "agent")
 
 export const READ_TOOLS = READ_TOOL_NAMES.map((name) => `mcp__fitz__${name}`)
 export const WRITE_TOOLS = WRITE_TOOL_NAMES.map((name) => `mcp__fitz__${name}`)
+/** Claude Code's own tools a conversation is given: web search only. Nothing that opens a file or a page. */
+export const WEB_TOOLS = ["WebSearch"]
 
 export const SYSTEM_PROMPT = `You work inside fitz, the editor in which a professional translator is translating an English nonfiction book into Korean. You are the translator's colleague: you read the book through your tools and help with meaning, nuance, register and Korean wording.
 
 The book is reachable only through the fitz tools: book (title, author, chapters), read (paragraphs with the source, the translation so far, notes, comments and the glossary terms they mention), glossary (the book's agreed Korean forms) and search (where else a phrase appears). You cannot see the scanned pages or the PDF and must not ask for them.
+
+You can also search the web (WebSearch) for what the book does not tell you: who a person or company is, a place, an event, where a quotation comes from, how a name is usually written in Korean. Search when a fact matters for the translation, and give the address of what you rely on.
 
 You can also write: set_translation, set_glossary_term, add_comment, add_translator_note. The translator is asked before each write and may decline; a declined write is the translator's decision, not an error to work around. Write only what the translator asked for or agreed to; when unsure, propose in your reply instead.
 
@@ -77,9 +81,9 @@ export function openSession({ db, resume, model, effort, ask, task, cwd = AGENT_
       strictMcpConfig: true,                                     // only the servers given here
       skills: [],
       settings: { disableClaudeAiConnectors: true, autoMemoryEnabled: false, disableBundledSkills: true },
-      tools: [],                                                 // no Read/Edit/Bash/Web: the PDF and page images cannot be opened
+      tools: task ? [] : WEB_TOOLS,                              // web search only, no Read/Edit/Bash/WebFetch: the PDF and page images cannot be opened
       mcpServers: { fitz: fitzServer(db, { write: !task }) },     // a task only finds: no write tools at all
-      allowedTools: READ_TOOLS,                                  // reading never asks
+      allowedTools: task ? READ_TOOLS : [...READ_TOOLS, ...WEB_TOOLS],  // reading and searching never ask
       permissionMode: "default",                                 // not bypass: every write is asked about
       canUseTool: async (toolName, input, options) =>            // writes go to the translator; nothing else is offered
         !task && WRITE_TOOLS.includes(toolName) ? ask(toolName, input, options) : { behavior: "deny", message: `${toolName} is not available in this conversation.` },

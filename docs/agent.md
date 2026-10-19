@@ -9,7 +9,7 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 ## 0. 원칙
 
 1. **모든 쓰기는 `server/commands.mjs`의 `execute()`를 지난다.** 에이전트의 수정도 ops 로그에 남고 ⌘Z로 돌아가며 `segment_version`에 스냅샷된다. 새 쓰기 경로를 만들지 않는다.
-2. **텍스트만 나간다.** `tools: []`로 내장 도구(Read·Edit·Bash·Web)를 전부 떼므로 PDF와 쪽 이미지를 읽을 손이 모델에게 없다. 규칙이 아니라 구조로 지킨다. 도구 결과에 `image_path`·`source_pdf`·`boxes`가 없음을 테스트가 단언한다.
+2. **텍스트만 나간다.** `tools: ["WebSearch"]`로 내장 도구를 웹 검색 하나로 좁혀 파일·페이지를 여는 것(Read·Edit·Bash·WebFetch)을 전부 떼므로 PDF와 쪽 이미지를 읽을 손이 모델에게 없다. 웹 검색으로 나가는 것은 검색어뿐이다(번역자 확인, 2026-10-19). 규칙이 아니라 구조로 지킨다. 도구 결과에 `image_path`·`source_pdf`·`boxes`가 없음을 테스트가 단언한다.
 3. **모델의 말은 증거가 아니다.** 번역이 끝났다는 판단은 앱의 검증(`checks`)이 한다. 결과는 앱이 기록한다.
 4. **상태 승격은 사람만.** 에이전트는 `draft`까지만 쓴다. `reviewed`·`final`은 사람이 ⌘Enter로.
 5. **제안과 결정을 가른다.** 리뷰·오탈자 작업에는 쓰기 도구를 주지 않는다. 결과는 카드이고 수락은 클릭이다.
@@ -18,9 +18,9 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 
 | 옵션 | 값 | 왜 |
 |---|---|---|
-| `tools` | `[]` | 내장 도구 제거. 원칙 2 |
+| `tools` | `["WebSearch"]`, 작업 대화는 `[]` | 내장 도구는 웹 검색만. 원칙 2. 리뷰·오탈자는 책 안에서 찾는 일이라 웹이 없다 |
 | `mcpServers` | `{ fitz: createSdkMcpServer({ name: "fitz", tools }) }` | 앱 프로세스 안에서 도는 MCP. 도구 이름은 `mcp__fitz__<name>` |
-| `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search` | 읽기는 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
+| `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search`, `WebSearch`(대화만) | 읽기와 웹 검색은 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
 | `canUseTool` | 쓰기 도구 → host의 `ask`(번역자에게 묻는다), 그 밖 → 거절 | 답: 허락 / 이 세션 동안 항상(`addRules` + `destination: "session"`) / 거절. Claude Code가 제안하는 "항상" 규칙은 `localSettings` 파일에 적혀 대화가 끝나도 남으므로 쓰지 않는다 |
 | `permissionMode` | `"default"` | bypass가 아니다. 쓰기는 물어야 한다 |
 | `systemPrompt` | 문자열 | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체 |
@@ -210,7 +210,7 @@ claude-code-harness 스킬에서 (Claude Code 2.1.287–2.1.296):
 - 이어 갈 때 지난 메시지는 흐름으로 다시 오지 않는다. `getSessionMessages`로 읽는다.
 - `includePartialMessages`의 `stream_event` 순서: `message_start` → 블록 시작 → 조각 → 그 블록의 `assistant` → … → `message_stop`.
 - 환경에 `ANTHROPIC_API_KEY`가 있으면 묻지 않고 쓴다.
-- MCP 도구 결과가 25,000토큰(`MAX_MCP_OUTPUT_TOKENS`) 또는 50,000자를 넘으면 Claude Code는 결과를 파일로 옮기고 경로만 준다(문서 `[mcp]`). 이 에이전트에는 파일을 여는 도구가 없으므로(`tools: []`) 그 결과는 사라진 것과 같다 → 도구가 스스로 나눠서 돌려준다. 10,000토큰 넘으면 경고.
+- MCP 도구 결과가 25,000토큰(`MAX_MCP_OUTPUT_TOKENS`) 또는 50,000자를 넘으면 Claude Code는 결과를 파일로 옮기고 경로만 준다(문서 `[mcp]`). 이 에이전트에는 파일을 여는 도구가 없으므로(내장 도구는 `WebSearch`뿐) 그 결과는 사라진 것과 같다 → 도구가 스스로 나눠서 돌려준다. 10,000토큰 넘으면 경고.
 
 fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 
@@ -230,6 +230,8 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 - **닫기는 `close()`가 아니라 `return()`**(SDK 코드, 0.3.302): `close()`는 메시지 흐름을 바로 끝내고 기다리지 않는다. 프로세스는 입력이 끝난 뒤에도 세션 파일에 쓴다(대화 제목 `ai-title`) — 실제 테스트가 세션을 지운 뒤 그 줄이 파일을 되살렸다. `return()`은 같은 정리를 하되 프로세스가 끝날 때까지(최대 2초, 그 뒤 SIGTERM) 기다린다 → `session.close()`가 그것을 돌려주고, 서버 종료·테스트·녹화는 그걸 기다린 뒤에 지운다.
 - 작업 대화의 init `tools`는 읽기 도구 넷과 `StructuredOutput`뿐(녹화 `review.jsonl`·`typos.jsonl`). 쓰기 도구는 서버에 없으니 Claude에게 보이지도 않는다.
 - 읽기 도구를 `allowedTools`에 두면 SDK가 세션마다 `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` 경고를 낸다("canUseTool이 읽기 도구에는 불리지 않는다"). 의도한 그대로다(읽기는 묻지 않는다, §1).
+- **웹 검색**(`tools: ["WebSearch"]` + `allowedTools`에 `WebSearch`, Opus 5.5, 2026-10-19, 녹화 `websearch.jsonl`): init의 tools = `WebSearch` + fitz 8, 번역자에게 묻지 않고 돌았다(`requires_action` 없음). 검색 하나가 `tool_use` 하나다. 입력은 `query`와, d.ts(0.3.302)에 없는 `mode: "standard" | "extended"`. 모델이 읽는 결과는 `Web search results for query: "…"` 로 시작하는 글(링크 목록과 요약)이고, 흐름의 `tool_use_result`는 `{ query, results, durationSeconds, searchCount }`라 `structuredContent`가 없다 → fold는 그 글을 결과로 쥐고, 세션 파일에서 다시 읽어도 같다. "¶2의 국내 번역본들을 웹에서" 질문: `read` 1 + 검색 3, 63초, $0.159, 요청 4,180 → 9,520토큰(검색 결과만큼 자란다). Claude는 확인하지 못한 것을 확인하지 못했다고 말하고 출처 주소를 달았다. Haiku 실제 테스트: 검색 1회, 8.7초. 같은 코드로 오탈자 작업(Sonnet)의 tools는 여전히 읽기 넷 + `StructuredOutput`.
+- 검색이 도는 중에 사람이 메시지를 보내면 그 호출은 결과 자리에 `{ detachedToolCall: true }`를 싣고 비켜나며 진짜 결과는 다음 턴에 온다(SDK d.ts). fitz의 입력칸은 턴 중에 막혀 있어 이 길은 열리지 않는다.
 
 ## 9. 지금 하지 않는 것
 
@@ -239,7 +241,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 서브에이전트(`agents`), Workflow | 장 하나가 한 대화에 들어간다(825 세그먼트/26장). 커지면 단락 묶음 분배 |
 | 바이너리 fetch·sha512·codesign | SDK 동봉분으로 충분. 배포 시 재검토 |
 | 번역 스레드 영속화 | 댓글로 저장할 수 있다. 필요가 드러나면 |
-| `web_search` | 인물·지명 확인에 가치 있으나 검색어에 원문이 나간다. 계약 확인 뒤 |
+| `WebFetch`(페이지 열기) | 작은 모델이 요약한 페이지 글이 대화에 들어온다 — 웹페이지 속 지시문이 들어올 길이 하나 더 생긴다. 인물·지명 확인은 검색 결과로 된다. 필요가 드러나면 |
 | 자동 reviewed/final | 절대 |
 
 ## 10. 빌드 순서 (행 = 커밋)
@@ -256,6 +258,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | 2026-10-18 완료(§4.2, 커밋 일곱). 서버 테스트 178(+실제 2), 화면 단위 47, e2e 37. 실측: 오탈자 6.0초 $0.022 심은 오류 넷 다, 리뷰 7.3초 $0.025 뜻이 뒤집힌 번역 high |
 | 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | 2026-10-18 완료(§13: 대화 목록·턴 기록은 book.db, 세션 파일 사본은 `~/.fitz/sessions`) |
 | 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), 에이전트가 쓴 것을 에디터가 다시 읽기, README | 에디터 안에서 전부 | e2e(녹화 프레임) | 2026-10-18 완료(§17, 패널의 **Claude** 탭). 화면 단위 62, e2e 44. 실제 1회(아래 §17.1 5행) |
+| 10 | 웹 검색: `tools: ["WebSearch"]`(대화만), 지시문 한 문단, Claude 탭의 줄 | Claude 탭에 "Searched the web for “…”" 줄, 답에 출처 주소 | 녹화 `websearch.jsonl`, 실제 테스트, e2e(녹화 프레임) | 2026-10-19. 서버 테스트 190(+실제 3), 화면 단위 62, e2e `claude.spec` 9. 실측은 §8 |
 
 9단계에서 꼭 할 것: 지금 에디터 화면은 에이전트가 DB에 쓴 것을 모른다. 열어 둔 채 Claude가 쓰면 화면은 옛 글을 보이고, 그 단락을 편집해 저장하면 Claude가 쓴 것을 덮는다(에이전트 쪽은 `expectUpdatedAt`으로 막지만 화면 쪽은 막는 것이 없다). 서버가 쓰기마다 "바뀐 단락"을 소켓으로 알리고 화면이 그 단락을 다시 읽는다.
 

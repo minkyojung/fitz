@@ -11,6 +11,7 @@ const recording = (name: string): SdkMessage[] =>
   readFileSync(new URL(`../../server/agent/fixtures/${name}.jsonl`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
 const nuance = recording("nuance")
 const translate = recording("translate")
+const websearch = recording("websearch")
 const CONVERSATION = ["start", "send", "stop", "answer", "list", "open"]
 
 type Said = { type: string; convId?: string; [k: string]: unknown }
@@ -113,6 +114,21 @@ test("Stop goes to the server while Claude works", async ({ page }) => {
   await expect(thread(page)).toContainText("Read ¶4 and 3 around")
   await page.getByRole("button", { name: "Stop" }).click()
   expect(await fake.last("stop")).toEqual({ type: "stop", convId })
+})
+
+test("each web search is a line with what Claude searched for, and the answer names its sources", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("¶2의 국내 번역본들?")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  fake.play(convId!, websearch)
+  const queries = foldMessages(websearch).items.flatMap((i) => (i.kind === "tool" && i.name === "WebSearch" ? [String(i.input.query)] : []))
+  expect(queries).toHaveLength(3)
+  for (const q of queries) await expect(thread(page)).toContainText(`Searched the web for “${q}”`)
+  await expect(thread(page)).toContainText("NYCultureBeat")
+  await expect(thread(page)).toContainText("63s · $0.16")
 })
 
 test("past conversations are listed (not the review's), and one opens as it was, with its own model", async ({ page }) => {

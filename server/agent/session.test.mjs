@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
-import { READ_TOOLS, WRITE_TOOLS, ownEnv } from "./session.mjs"
+import { READ_TOOLS, WEB_TOOLS, WRITE_TOOLS, ownEnv } from "./session.mjs"
 
 test("ownEnv drops what a parent Claude Code session hands its children, and keeps the rest", () => {
   const env = ownEnv({
@@ -27,6 +27,14 @@ for (const name of ["nuance", "translate"]) {
     for (const n of prompts) assert.ok(n < 8000, `a request carried ${n} prompt tokens`)
   })
 }
+
+test("the recorded websearch session offered the fitz tools and web search, and searching never asked", () => {
+  const frames = readFileSync(new URL("./fixtures/websearch.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const init = frames.find((m) => m.type === "system" && m.subtype === "init")
+  assert.deepEqual([...init.tools].sort(), [...READ_TOOLS, ...WRITE_TOOLS, ...WEB_TOOLS].sort())
+  assert.ok(frames.some((m) => m.type === "assistant" && m.message.content.some((b) => b.type === "tool_use" && b.name === "WebSearch")))
+  assert.ok(!frames.some((m) => m.type === "system" && m.subtype === "session_state_changed" && m.state === "requires_action"))
+})
 
 for (const name of ["review", "typos"]) {
   test(`the recorded ${name} session was offered the read tools and the tool its answer goes in, nothing that writes`, () => {

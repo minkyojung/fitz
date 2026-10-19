@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { IconArrowBackUp, IconBook, IconMessage, IconNote, IconPencil, IconSearch } from "@tabler/icons-react"
+import { IconArrowBackUp, IconBook, IconMessage, IconNote, IconPencil, IconSearch, IconWorldSearch } from "@tabler/icons-react"
 import { Streamdown } from "streamdown"
 import { cjk } from "@streamdown/cjk"
 
@@ -43,7 +43,7 @@ const writesOf = (b: Block) =>
   b.kind === "claude" ? b.parts.flatMap((p) => (p.kind === "tool" && WRITE_TOOLS.has(p.name) && p.status === "done" ? [p.id] : [])) : []
 
 const ICON: Record<string, React.ReactNode> = {
-  read: <IconBook />, book: <IconBook />, glossary: <IconBook />, search: <IconSearch />,
+  read: <IconBook />, book: <IconBook />, glossary: <IconBook />, search: <IconSearch />, WebSearch: <IconWorldSearch />,
   set_translation: <IconPencil />, set_glossary_term: <IconPencil />, add_comment: <IconMessage />, add_translator_note: <IconNote />,
 }
 

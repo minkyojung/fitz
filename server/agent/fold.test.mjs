@@ -110,6 +110,21 @@ test("a recorded write: the call, the wait for the translator, and the draft it 
   assert.equal(s.status, "idle")
 })
 
+// A real turn with web searches (Opus 5.5, Claude Code 2.1.302): "¶2는 『위대한 개츠비』의 유명한 첫 문장이야. 국내에
+// 나온 번역본들이 이 문장을 어떻게 옮겼는지 웹에서 찾아서 두세 가지만 알려줘." Claude read ¶2 and searched three times.
+const websearch = recording("websearch")
+
+test("a recorded web search: each search is a tool call with its query, done, holding the results the model read", () => {
+  const s = foldMessages(websearch)
+  const searches = s.items.filter((i) => i.kind === "tool" && i.name === "WebSearch")
+  assert.equal(searches.length, 3)
+  for (const w of searches) {
+    assert.equal(w.status, "done")
+    assert.ok(w.result.startsWith(`Web search results for query: "${w.input.query}"`), w.result.slice(0, 120))
+  }
+  assert.equal(s.items.at(-1).kind, "turn")
+})
+
 // --- read back from disk: getSessionMessages (recorded beside each recording as *.stored.json) and the kept turn
 // make the same conversation the live fold made (docs/agent.md §13). A test to keep.
 
@@ -122,7 +137,7 @@ const keptTurn = (frames) => {
 const shape = (state) => state.items.map(({ id: _, ...item }) => item)
 
 // the review and the OCR-error hunt (Sonnet 5.5, fixtures/gatsby-tasks.sql): the answer is a StructuredOutput tool call
-for (const [name, frames] of [["nuance", nuance], ["translate", translate], ["review", recording("review")], ["typos", recording("typos")]]) {
+for (const [name, frames] of [["nuance", nuance], ["translate", translate], ["websearch", websearch], ["review", recording("review")], ["typos", recording("typos")]]) {
   test(`${name}: the conversation read back from disk is the conversation seen live`, () => {
     const live = foldMessages(frames)
     const back = foldStored(stored(name), keptTurn(frames), live.sessionId)

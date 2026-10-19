@@ -13,6 +13,7 @@ test("what Claude read, in a line", () => {
   assert.deepEqual(toolLine(tool("read", { chapterId: 1 })), { title: "Read the chapter" })
   assert.deepEqual(toolLine(tool("read", { chapterId: 1, from: 40 })), { title: "Read on in the chapter" })
   assert.deepEqual(toolLine(tool("search", { query: "reserve" })), { title: "Searched “reserve”" })
+  assert.deepEqual(toolLine(tool("WebSearch", { query: "위대한 개츠비 첫 문장 번역" })), { title: "Searched the web for “위대한 개츠비 첫 문장 번역”" })
   assert.deepEqual(toolLine(tool("glossary", {})), { title: "Read the glossary" })
 })
 
@@ -27,6 +28,7 @@ test("a write: while it goes, once done, and when it did not go through and why"
 
 test("the block being written, and a turn's end", () => {
   assert.equal(doingLine("read"), "Reading")
+  assert.equal(doingLine("WebSearch"), "Searching the web")
   assert.equal(doingLine(undefined), "Working")
   assert.deepEqual(turnLine({ kind: "turn", reason: "completed", isError: false, ms: 6800, cost: 0.0312 }), { text: "7s · $0.031", stopped: false })
   assert.deepEqual(turnLine({ kind: "turn", reason: "completed", isError: false, ms: 300, cost: 0.25 }), { text: "1s · $0.25", stopped: false })
