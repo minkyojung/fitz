@@ -331,7 +331,9 @@ agent_turn(session_id TEXT, user_uuid TEXT, reason TEXT, origin TEXT, ms INTEGER
 
 ## 14. 되돌리기 — 쓰는 쪽이 둘일 때 (설계)
 
-지금 ⌘Z는 `ops`의 마지막 행을 되돌린다: Claude가 방금 쓴 것을 번역자의 ⌘Z가 되돌릴 수 있다.
+**2026-10-19 만듦**(§18): ⌘Z·⌘⇧Z는 번역자의 것만, Claude의 것은 대화의 턴 끝 **Undo from here**로. 판정은 단락 버전이 아니라 "무엇을 건드렸나"(§18). 아래는 설계 당시의 글이다.
+
+그때 ⌘Z는 `ops`의 마지막 행을 되돌렸다: Claude가 방금 쓴 것을 번역자의 ⌘Z가 되돌릴 수 있었다.
 
 **Claude Code가 하는 것**(`[checkpointing]`): 편집기의 ⌘Z와 따로, Claude의 파일 편집만 **보낸 메시지(턴)마다 한 줄로** 체크포인트를 쌓는다(세션당 최근 100개). `/rewind`는 고른 메시지 **직전 시점으로** 되돌린다 — 그 뒤 턴들의 Claude 편집이 한꺼번에 돌아간다(diff 하나를 골라 빼는 방식이 아니다). Bash로 바꾼 것, 사람이 손으로 고친 것은 추적하지 않는다. 사람의 타이핑 되돌리기는 편집기 몫이다. 공동 편집기(구글 독스, Yjs `trackedOrigins`, ProseMirror의 `addToHistory: false`)도 ⌘Z는 "내 것만"이다.
 
@@ -422,8 +424,10 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 | 2 ✓ | 번역자의 ⌘Z·⌘⇧Z는 번역자의 op만. 되돌릴 op 뒤에 Claude가 같은 단락을 고쳤으면 되돌리지 않고 그렇다고 답한다. 새 쓰기는 같은 쪽의 다시 하기만 지운다 | `commands.mjs`, `index.mjs`, `app/src/data/useBook.ts` | 서버 테스트(두 쪽이 섞인 스택), e2e |
 | 3 ✓ | Claude의 변경 되돌리기: 고른 쓰기부터 그 뒤 Claude의 op를 최근 것부터(충돌에서 멈추고 말한다) | `commands.mjs`, `index.mjs`, `features/agent/Thread.tsx` | 서버 테스트 + e2e(녹화 프레임) |
 | 3.5 ✓ | 화면: ⌘Z·⌘⇧Z가 거절되면 오류가 아니라 경고 알림(누가 무엇을 바꿨는지 + Claude 탭에서 먼저 되돌리라고) | `app/src/data/useBook.ts` | e2e `undo.spec`(Claude의 쓰기는 e2e 사본에 도구처럼 직접) |
-| 3.6 | 화면: Claude 탭 턴 끝의 Undo from here(B안) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
-| 4 | README·이 문서 | | |
+| 3.6 ✓ | 화면: Claude 탭 턴 끝의 Undo from here(B안) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
+| 4 ✓ | README·이 문서 | | |
+
+**결과**(2026-10-19): 서버 테스트 187, 화면 단위 62, e2e 48(새 4: ⌘Z가 Claude 것을 건너뜀·거절, Undo from here·거절). 진짜 책의 Claude 변경은 하나였고 도구 호출 id가 붙어 있었다(되돌리기 가능).
 
 **정한 것**(2026-10-19, 갤러리 `?gallery&undo`): Claude의 변경은 **턴 끝의 Undo from here**(B안)로, 그 턴부터 이 대화의 끝까지. ⌘Z가 Claude의 변경을 건너뛸 때 알리지 않는다. 되돌린 Claude의 변경은 다시 하지 않는다(Claude Code의 rewind처럼).
 
