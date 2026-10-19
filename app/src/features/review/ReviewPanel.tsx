@@ -2,18 +2,16 @@ import { IconSparkles } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { Note, Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
+import type { Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
 import { NotesTab } from "@/features/notes/NotesTab"
 import { ClaudeTab } from "@/features/agent/ClaudeTab"
 import type { Claude } from "@/data/useClaude"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 
 interface Props {
-  notes: Note[]
   segments: Segment[]
   selected: Segment | null
-  onAnchor: (noteId: number, segmentId: number) => Promise<unknown>
-  /** Controlled tab, so a comment picked in the text opens Notes and Ask Claude opens Claude. */
+  /** Controlled tab, so a note picked in the text opens Notes and Ask Claude opens Claude. */
   tab: string
   onTabChange: (tab: string) => void
   markers: Map<number, string>
@@ -24,16 +22,13 @@ interface Props {
   claudeFocusToken: number
 }
 
-export function ReviewPanel({ notes, segments, selected, onAnchor, tab, onTabChange, markers, suggest, claude, claudeFocusToken }: Props) {
+export function ReviewPanel({ segments, selected, tab, onTabChange, markers, suggest, claude, claudeFocusToken }: Props) {
   const suggestions = useSuggestions()?.suggestions ?? []
   return (
     <Tabs value={tab} onValueChange={(v) => onTabChange(v as string)} className="flex h-full flex-col gap-0">
       {/* the tabs do not fit a narrow panel on one row: they wrap to a second */}
       <TabsList className="m-2 shrink-0 flex-wrap self-start group-data-horizontal/tabs:h-auto [&>[data-slot=tabs-trigger]]:h-[26px]">
-        <TabsTrigger value="notes">
-          Notes
-          {notes.length > 0 && <Badge variant="destructive" className="ml-1" title="Unlinked author notes">{notes.length}</Badge>}
-        </TabsTrigger>
+        <TabsTrigger value="notes">Notes</TabsTrigger>
         <TabsTrigger value="claude">
           <IconSparkles />Claude
           {claude.view.asks.length > 0 ? (
@@ -42,7 +37,7 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, tab, onTabCha
         </TabsTrigger>
       </TabsList>
       <TabsContent value="notes" className="min-h-0 flex-1">
-        <NotesTab segment={selected} segments={segments} markers={markers} unlinked={notes} onAnchorUnlinked={onAnchor} />
+        <NotesTab segment={selected} segments={segments} markers={markers} />
       </TabsContent>
       {/* kept mounted: a conversation goes on while another tab is open */}
       <TabsContent value="claude" keepMounted className="min-h-0 flex-1">

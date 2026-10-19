@@ -83,11 +83,12 @@ test("a comment Claude left says so in the notes panel; the translator's does no
     await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /18: / }).click()
     await page.getByRole("button", { name: "Translate", exact: true }).click()
     await page.locator(`[data-pair="${id}"]`).click()
-    await page.getByRole("tab", { name: /Notes/ }).click()
-    const claude = page.locator(`[data-panel-comment="${claudes}"]`)
+    // comments on a whole paragraph have no words to mark: the chapter's comments are in the status bar's Notes
+    await page.locator("footer").getByRole("button", { name: /^Notes/ }).click()
+    const claude = page.locator(`[data-thread="${claudes}"]`)
     await expect(claude).toContainText("Claude가 남긴 메모")
     await expect(claude.locator("[data-author=agent]")).toHaveText("Claude")
-    const translator = page.locator(`[data-panel-comment="${mine}"]`)
+    const translator = page.locator(`[data-thread="${mine}"]`)
     await expect(translator).toContainText("번역자의 메모")
     await expect(translator.locator("[data-author]")).toHaveCount(0)
   } finally {

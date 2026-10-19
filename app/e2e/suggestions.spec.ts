@@ -97,7 +97,7 @@ test("Dismiss lets a suggestion go; Keep as comment leaves it as Claude's commen
   await expect(card(page, kept)).toHaveCount(0)
   await expect(page.locator("[data-open-suggestions]")).toHaveText("0")
   await row.locator("[data-target] mark[data-comment]").click()
-  const comment = page.locator("[data-panel-comment]").filter({ hasText: "더 자연스럽습니다" })
+  const comment = page.locator("[data-thread]").filter({ hasText: "더 자연스럽습니다" })
   await expect(comment.locator("[data-author=agent]")).toHaveText("Claude")
   await expect(comment).toContainText("둘째 구절 → 다음 구절")
 

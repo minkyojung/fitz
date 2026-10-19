@@ -1,19 +1,36 @@
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import type { Comment } from "@/data/api"
 import { cn } from "cn"
+import { CommentThread } from "./CommentThread"
 
-/** A commented span: yellow wash with a matching bottom border; darker while hovered or selected. */
-export function CommentMark({ id, selected, onSelect, children }: { id: number; selected: boolean; onSelect: () => void; children: React.ReactNode }) {
+/** A commented span: yellow wash with a matching bottom border; darker while hovered or selected. Selected, its thread
+ *  opens beside it. */
+export function CommentMark({ comment, selected, onSelect, children }: {
+  comment: Comment; selected: boolean; onSelect: (selected: boolean) => void; children: React.ReactNode
+}) {
   return (
-    <mark
-      data-comment={id}
-      onClick={(e) => { e.stopPropagation(); onSelect() }}
-      className={cn(
-        "cursor-pointer border-b-2 border-mark-comment bg-mark-comment/40 text-inherit box-decoration-clone transition-colors hover:bg-mark-comment/70",
-        selected && "bg-mark-comment/70",
-      )}
-    >
-      {children}
-    </mark>
+    <Popover open={selected} onOpenChange={onSelect}>
+      <PopoverTrigger
+        nativeButton={false}
+        onClick={(e) => e.stopPropagation()}
+        render={
+          <mark
+            data-comment={comment.id}
+            className={cn(
+              "cursor-pointer border-b-2 border-mark-comment bg-mark-comment/40 text-inherit box-decoration-clone transition-colors hover:bg-mark-comment/70",
+              selected && "bg-mark-comment/70",
+            )}
+          />
+        }
+      >
+        {children}
+      </PopoverTrigger>
+      {/* clicks in the thread are not clicks on the paragraph (which would select it or start editing) */}
+      <PopoverContent side="bottom" align="start" className="w-80" onClick={(e) => e.stopPropagation()}>
+        <CommentThread root={comment} />
+      </PopoverContent>
+    </Popover>
   )
 }
 

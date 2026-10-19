@@ -29,9 +29,9 @@ test("comments: add on the source, see the mark, reply, resolve (mark disappears
   await expect(mark).toHaveText(word)
   await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
-  // mark → panel item selected; reply; resolve
+  // mark → its thread opens beside it; reply; resolve
   await mark.click()
-  const item = page.locator("[data-panel-comment]").first()
+  const item = page.locator("[data-thread]").first()
   await expect(item).toContainText("Check this wording")
   await item.getByRole("textbox", { name: "Reply" }).fill("Agreed, keep")
   await item.getByRole("textbox", { name: "Reply" }).press("Enter")
@@ -42,7 +42,7 @@ test("comments: add on the source, see the mark, reply, resolve (mark disappears
   await expect(page.locator("[data-open-comments]")).toHaveText("0 open")
   await expect(page.locator("footer [role=status]")).toHaveText("Saved")
 
-  await page.locator("footer").click({ position: { x: 300, y: 10 } }) // drop focus out of the panel
+  await page.locator("footer [role=status]").click() // drop focus out of the thread
   await page.keyboard.press("Meta+z")
   await expect(row.locator("mark[data-comment]")).toHaveText(word, { timeout: 10000 })
 })

@@ -97,22 +97,26 @@ test("split at caret and merge back restore the paragraph", async ({ page }) => 
 
 test("an unanchored note can be linked to a segment", async ({ page }) => {
   await page.goto("/")
-  const panel = page.locator("[data-slot=resizable-panel]").last()
-  await panel.getByRole("tab", { name: /^Notes/ }).click()
-  await expect(panel.getByRole("button", { name: "Link" }).first()).toBeVisible()
-  const before = await panel.getByRole("button", { name: "Link" }).count()
+  const notes = page.locator("footer").getByRole("button", { name: /^Notes/ })
+  const count = page.locator("footer [data-unlinked-notes]")
+  await notes.click()
+  const unplaced = page.getByRole("region", { name: "Author's notes not placed" })
+  await expect(unplaced.getByRole("button", { name: "Link" }).first()).toBeVisible()
+  const before = await unplaced.getByRole("button", { name: "Link" }).count()
   expect(before).toBeGreaterThan(0)
-  await expect(page.locator("footer")).toContainText(`Unlinked notes ${before}`)
+  await expect(count).toHaveText(`${before} unlinked`)
 
-  await panel.getByRole("button", { name: "Link" }).first().click()
+  // the picker is a dialog of its own: the list makes way for it
+  await unplaced.getByRole("button", { name: "Link" }).first().click()
   const dialog = page.getByRole("dialog")
   await dialog.getByPlaceholder(/[Pp]aragraph/).fill("Zemurray")
   await dialog.getByRole("option").first().click()
 
-  await expect(panel.getByRole("button", { name: "Link" })).toHaveCount(before - 1)
-  await expect(page.locator("footer")).toContainText(`Unlinked notes ${before - 1}`)
+  await expect(count).toHaveText(`${before - 1} unlinked`)
+  await notes.click()
+  await expect(unplaced.getByRole("button", { name: "Link" })).toHaveCount(before - 1)
   await page.reload()
-  await expect(page.locator("footer")).toContainText(`Unlinked notes ${before - 1}`)
+  await expect(count).toHaveText(`${before - 1} unlinked`)
 })
 
 test("undo restores a merge, redo reapplies it", async ({ page }) => {

@@ -42,7 +42,8 @@ export function AnnotatedText({ text, segmentId, side, markers, last = false, re
     if (e.span) {
       const c = e.span.comment
       out.push(
-        <CommentMark key={`c${c.id}`} id={c.id} selected={ann?.selected?.kind === "comment" && ann.selected.id === c.id} onSelect={() => ann?.select({ kind: "comment", id: c.id })}>
+        <CommentMark key={`c${c.id}`} comment={c} selected={ann?.selected?.kind === "comment" && ann.selected.id === c.id}
+          onSelect={(on) => ann?.select(on ? { kind: "comment", id: c.id } : null)}>
           {plain(e.at, e.end)}
         </CommentMark>,
       )

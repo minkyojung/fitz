@@ -17,6 +17,7 @@ import { FloatingToolbar } from "@/features/selection/FloatingToolbar"
 import { SelectionContext } from "@/features/selection/SelectionContext"
 import type { TextSelection } from "@/lib/selection"
 import { AnnotationsContext, type Selected } from "@/features/notes/AnnotationsContext"
+import { NotesButton } from "@/features/notes/NotesButton"
 import { SuggestionsContext } from "@/features/suggestions/SuggestionsContext"
 import type { Chapter, TaskName } from "@/data/api"
 import { findSuspects } from "@/lib/spell"
@@ -82,8 +83,8 @@ export function App() {
   const wholeBook = exporting || mode === "glossary"
   const commands = wholeBook ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
-  // a selected comment/note opens the Notes tab
-  const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel) setPanelTab("notes") }, [])
+  // a selected note opens the Notes tab (a comment opens beside its words)
+  const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel?.kind === "note") setPanelTab("notes") }, [])
   const annotationState = useMemo(
     () => ({ annotations: book.annotations, selected: annSelected, select: selectAnnotation, actions: book.annotate, markers: translate.markers }),
     [book.annotations, annSelected, selectAnnotation, book.annotate, translate.markers],
@@ -161,7 +162,7 @@ export function App() {
       right={translating ? translate.view : review.right}
       panel={
         <ReviewPanel
-          notes={book.unanchoredNotes} segments={book.segments} selected={panelSelected} onAnchor={book.anchorNote} markers={translate.markers}
+          segments={book.segments} selected={panelSelected} markers={translate.markers}
           tab={panelTab} onTabChange={setPanelTab}
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,
@@ -186,8 +187,8 @@ export function App() {
               Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
             </span>
           )}
-          {!wholeBook && <span>Unlinked notes {book.unanchoredNotes.length}</span>}
-          {!wholeBook && <span data-suspect-total>Suspects {suspectTotal}</span>}
+          {!wholeBook && <NotesButton segments={book.segments} unlinked={book.unanchoredNotes} onAnchor={book.anchorNote} translating={translating} />}
+          {mode === "review" && <span data-suspect-total>Suspects {suspectTotal}</span>}
           <span className={cn("hidden items-center gap-3 lg:flex", wholeBook && "lg:hidden")}>
             {HINTS.map((h) => (
               <span key={h.command} className="flex items-center gap-1">
