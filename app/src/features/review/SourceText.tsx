@@ -16,6 +16,8 @@ interface Props {
   onAcceptFix?: (suspect: Suspect, replacement: string) => void
   /** Glossary terms in `text` (absolute offsets). Never overlap suspects: glossary terms are known words. */
   terms?: TermHit[]
+  /** The text is read-only here: a click on a term opens it to set its translation. */
+  termsEditable?: boolean
   /** Claude's suggestions laid on `text` (absolute offsets). Where one meets a suspect on the same words, it is shown. */
   suggestions?: Placed<Suggestion>[]
   /** Render only this slice of `text` (offsets stay absolute), so a parent can lay other overlays around it. */
@@ -30,7 +32,7 @@ type Overlay =
 
 /** Paragraph text with overlays that call for action: Claude's suggestions, spelling suspects and glossary terms.
  *  Edits against the OCR original are not coloured here; the row shows an "edited" dot instead. */
-export function SourceText({ text, suspects = [], onAcceptFix, terms = [], suggestions = [], from = 0, to = text.length }: Props) {
+export function SourceText({ text, suspects = [], onAcceptFix, terms = [], termsEditable = false, suggestions = [], from = 0, to = text.length }: Props) {
   const inside = (a: { start: number; end: number }) => a.start >= from && a.end <= to
   // suggestions first: the sort is stable, so on the same words Claude's is the one kept
   const overlays: Overlay[] = [
@@ -50,7 +52,7 @@ export function SourceText({ text, suspects = [], onAcceptFix, terms = [], sugge
       ) : o.kind === "suspect" ? (
         <SpellMark key={o.start} suspect={o.suspect} context={neighbours(text, o.start, o.end)} onAccept={(r) => onAcceptFix?.(o.suspect, r)} />
       ) : (
-        <GlossaryMark key={o.start} entry={o.hit.entry}>{text.slice(o.start, o.end)}</GlossaryMark>
+        <GlossaryMark key={o.start} entry={o.hit.entry} editable={termsEditable}>{text.slice(o.start, o.end)}</GlossaryMark>
       ),
     )
     pos = o.end

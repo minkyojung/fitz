@@ -146,7 +146,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
         )}
       </div>
       <p className={cn("reading select-text text-[15px] text-muted-foreground", s.kind === "heading" && "font-semibold text-foreground")} lang="en">
-        <AnnotatedText text={s.sourceText} segmentId={s.id} side="source" renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} terms={terms} />} />
+        <AnnotatedText text={s.sourceText} segmentId={s.id} side="source" renderPlain={(t, a, b) => <SourceText text={t} from={a} to={b} terms={terms} termsEditable />} />
       </p>
       <div className="min-w-0">
         {draft && !editing && (

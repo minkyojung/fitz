@@ -9,6 +9,7 @@ import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
 import { FindInput, FindResults } from "@/features/review/Find"
 import { ExportView } from "@/features/export/ExportView"
+import { GlossaryPage } from "@/features/review/GlossaryPage"
 import { ReviewPanel } from "@/features/review/ReviewPanel"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
@@ -72,12 +73,14 @@ export function App() {
     [book.segments],
   )
   // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
-  const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false })
+  const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false, glossary: false })
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes, onSelectChapter: book.setChapterId })
   const translating = mode === "translate"
   const exporting = mode === "export"
-  const commands = exporting ? {} : translating ? translate.commands : review.commands
+  // Export and the glossary are pages of the whole book, in the panels' place: no chapter, no paragraph to act on
+  const wholeBook = exporting || mode === "glossary"
+  const commands = wholeBook ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
   // a selected comment/note opens the Notes tab
   const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel) setPanelTab("notes") }, [])
@@ -115,10 +118,11 @@ export function App() {
     [speller, userWords, book.segments],
   )
   const openFind = () => setFindFocusToken((n) => n + 1)
-  // a paragraph from Find or the glossary opens in the stage you are in; Find searches the source, so from Export, in Review
+  // a paragraph from Find or the glossary opens in the stage you are in; from a page of the whole book, in Review (both
+  // find it in the source)
   const jumpTo = (segmentId: number, chapterId: number) => {
     if (translating) return translate.jumpTo(segmentId, chapterId)
-    if (exporting) setMode("review")
+    if (wholeBook) setMode("review")
     review.jumpTo(segmentId, chapterId)
   }
   // ⌘L: the words selected (in the text or the open editor) go to Claude; with none, Claude's box takes the cursor
@@ -145,19 +149,19 @@ export function App() {
       book={book.book}
       find={<FindInput query={findQuery} onQuery={setFindQuery} focusToken={findFocusToken} />}
       stageProgress={stageProgress}
+      pendingTerms={book.spell.glossary.filter((t) => !t.translation).length}
       leftCollapsed={!scanShown[mode]}
-      // what Find found takes the chapters' place; Export picks its chapters itself
+      // what Find found takes the chapters' place; a page of the whole book has none (Export picks its own)
       sidebar={findQuery ? (
         <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpTo} onReplaceAll={book.replaceAll} />
-      ) : exporting ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
-      crumb={exporting ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
-      main={exporting ? <ExportView chapters={book.chapters} /> : undefined}
+      ) : wholeBook ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
+      crumb={wholeBook ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
+      main={exporting ? <ExportView chapters={book.chapters} /> : mode === "glossary" ? <GlossaryPage onJump={jumpTo} /> : undefined}
       left={review.left}
       right={translating ? translate.view : review.right}
       panel={
         <ReviewPanel
           notes={book.unanchoredNotes} segments={book.segments} selected={panelSelected} onAnchor={book.anchorNote} markers={translate.markers}
-          onJump={jumpTo}
           tab={panelTab} onTabChange={setPanelTab}
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,
@@ -169,8 +173,8 @@ export function App() {
       }
       status={
         <>
-          <span>{exporting ? "Export" : book.chapter?.title ?? "—"}</span>
-          {exporting ? null : translating ? (
+          <span>{exporting ? "Export" : mode === "glossary" ? "Glossary" : book.chapter?.title ?? "—"}</span>
+          {wholeBook ? null : translating ? (
             <>
               <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
               <span data-sheets>{formatSheets(chapterSheets)}</span>
@@ -182,9 +186,9 @@ export function App() {
               Verified {book.chapter?.verifiedCount ?? 0} / {book.chapter?.segmentCount ?? 0}
             </span>
           )}
-          {!exporting && <span>Unlinked notes {book.unanchoredNotes.length}</span>}
-          {!exporting && <span data-suspect-total>Suspects {suspectTotal}</span>}
-          <span className={cn("hidden items-center gap-3 lg:flex", exporting && "lg:hidden")}>
+          {!wholeBook && <span>Unlinked notes {book.unanchoredNotes.length}</span>}
+          {!wholeBook && <span data-suspect-total>Suspects {suspectTotal}</span>}
+          <span className={cn("hidden items-center gap-3 lg:flex", wholeBook && "lg:hidden")}>
             {HINTS.map((h) => (
               <span key={h.command} className="flex items-center gap-1">
                 <Kbd>{chordLabel(KEYMAP[h.command][0])}</Kbd>

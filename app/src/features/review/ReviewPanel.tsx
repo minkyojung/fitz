@@ -3,7 +3,6 @@ import { IconSparkles } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Note, Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
-import { GlossaryPanel } from "./GlossaryPanel"
 import { HistoryPanel } from "./HistoryPanel"
 import { NotesTab } from "@/features/notes/NotesTab"
 import { ClaudeTab } from "@/features/agent/ClaudeTab"
@@ -15,7 +14,6 @@ interface Props {
   segments: Segment[]
   selected: Segment | null
   onAnchor: (noteId: number, segmentId: number) => Promise<unknown>
-  onJump: (segmentId: number, chapterId: number) => void
   /** Controlled tab, so a comment picked in the text opens Notes and Ask Claude opens Claude. */
   tab: string
   onTabChange: (tab: string) => void
@@ -27,14 +25,13 @@ interface Props {
   claudeFocusToken: number
 }
 
-export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, tab, onTabChange, markers, suggest, claude, claudeFocusToken }: Props) {
+export function ReviewPanel({ notes, segments, selected, onAnchor, tab, onTabChange, markers, suggest, claude, claudeFocusToken }: Props) {
   const suggestions = useSuggestions()?.suggestions ?? []
   return (
     <Tabs value={tab} onValueChange={(v) => onTabChange(v as string)} className="flex h-full flex-col gap-0">
       {/* the tabs do not fit a narrow panel on one row: they wrap to a second */}
       <TabsList className="m-2 shrink-0 flex-wrap self-start group-data-horizontal/tabs:h-auto [&>[data-slot=tabs-trigger]]:h-[26px]">
         <TabsTrigger value="history">History</TabsTrigger>
-        <TabsTrigger value="glossary">Glossary</TabsTrigger>
         <TabsTrigger value="notes">
           Notes
           {notes.length > 0 && <Badge variant="destructive" className="ml-1" title="Unlinked author notes">{notes.length}</Badge>}
@@ -48,9 +45,6 @@ export function ReviewPanel({ notes, segments, selected, onAnchor, onJump, tab, 
       </TabsList>
       <TabsContent value="history" className="min-h-0 flex-1">
         <HistoryPanel segment={selected} refreshKey={segments} />
-      </TabsContent>
-      <TabsContent value="glossary" className="min-h-0 flex-1">
-        <GlossaryPanel onJump={onJump} />
       </TabsContent>
       <TabsContent value="notes" className="min-h-0 flex-1">
         <NotesTab segment={selected} segments={segments} markers={markers} unlinked={notes} onAnchorUnlinked={onAnchor} />

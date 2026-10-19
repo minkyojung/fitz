@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react"
 import { useDefaultLayout } from "react-resizable-panels"
-import { IconBook, IconFileExport, IconLanguage, IconScan, type Icon } from "@tabler/icons-react"
+import { IconBook, IconBook2, IconFileExport, IconLanguage, IconScan, type Icon } from "@tabler/icons-react"
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -10,9 +10,10 @@ import {
   SidebarProvider, SidebarRail, SidebarTrigger,
 } from "@/components/ui/sidebar"
 
-export type Mode = "review" | "translate" | "export"
+/** The stages of the work, and the glossary: a page of the whole book, at the sidebar's foot. */
+export type Mode = "review" | "translate" | "export" | "glossary"
 
-const MODES: { value: Mode; label: string; icon: Icon }[] = [
+const STAGES: { value: Mode; label: string; icon: Icon }[] = [
   { value: "review", label: "Review", icon: IconScan },
   { value: "translate", label: "Translate", icon: IconLanguage },
   { value: "export", label: "Export", icon: IconFileExport },
@@ -27,6 +28,8 @@ interface AppShellProps {
   find: ReactNode
   /** How far the book is in a stage, in percent: the stage's badge. */
   stageProgress: Partial<Record<Mode, number>>
+  /** Glossary terms without a translation: the glossary's badge. */
+  pendingTerms: number
   /** The chapters, under the stages (or what Find found); none in a stage of the whole book (Export). */
   sidebar: ReactNode
   /** The breadcrumb after the stage: the chapter, as a menu. None in a stage of the whole book. */
@@ -37,7 +40,7 @@ interface AppShellProps {
   status: ReactNode
   /** Hide the scan (left) panel, e.g. while translating. */
   leftCollapsed?: boolean
-  /** A full-width view that replaces the three panels (the Export tab). */
+  /** A full-width page that replaces the three panels (Export, Glossary). */
   main?: ReactNode
 }
 
@@ -46,13 +49,13 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 
 /** Fixed frame: sidebar (sidebar-07: the book, the stages, the chapters; folds to icons) | [breadcrumb /
  *  left+right+panel / status]. Content is injected per mode. */
-export function AppShell({ mode, onModeChange, book, find, stageProgress, sidebar, crumb, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
+export function AppShell({ mode, onModeChange, book, find, stageProgress, pendingTerms, sidebar, crumb, left, right, panel, status, leftCollapsed = false, main }: AppShellProps) {
   // The widths the translator dragged the panels to, kept across reloads: one layout with the scan, one without. A
   // hidden scan is not rendered, so the library keeps the two apart (panelIds).
   const layout = useDefaultLayout({
     id: "fitz-panels", panelIds: leftCollapsed ? ["main", "panel"] : ["scan", "main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
   })
-  const label = MODES.find((m) => m.value === mode)!.label
+  const label = mode === "glossary" ? "Glossary" : STAGES.find((m) => m.value === mode)!.label
   return (
     <SidebarProvider defaultOpen={sidebarDefaultOpen()} style={{ "--sidebar-width": "17rem" } as CSSProperties}>
       <Sidebar collapsible="icon">
@@ -75,7 +78,7 @@ export function AppShell({ mode, onModeChange, book, find, stageProgress, sideba
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu>
-              {MODES.map((m) => (
+              {STAGES.map((m) => (
                 <SidebarMenuItem key={m.value}>
                   <SidebarMenuButton isActive={mode === m.value} aria-current={mode === m.value ? "page" : undefined} tooltip={m.label}
                     onClick={() => onModeChange(m.value)}>
@@ -88,6 +91,18 @@ export function AppShell({ mode, onModeChange, book, find, stageProgress, sideba
             </SidebarMenu>
           </SidebarGroup>
           {sidebar}
+          <SidebarGroup className="mt-auto">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={mode === "glossary"} aria-current={mode === "glossary" ? "page" : undefined} tooltip="Glossary"
+                  onClick={() => onModeChange("glossary")}>
+                  <IconBook2 />
+                  <span>Glossary</span>
+                </SidebarMenuButton>
+                {pendingTerms > 0 && <SidebarMenuBadge title="Terms without a translation">{pendingTerms}</SidebarMenuBadge>}
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
         </SidebarContent>
         <SidebarRail />
       </Sidebar>
