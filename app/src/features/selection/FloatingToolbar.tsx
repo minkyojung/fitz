@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useEffectEvent, useMemo, useState } from "react"
 import { IconBook2, IconMessage, IconNote, IconPinned, IconSparkles } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -7,10 +7,14 @@ import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
 import { locateAnchor, makeAnchor } from "@/lib/anchor"
 import type { Pointed } from "@/lib/conversation"
+import type { TextSelection } from "@/lib/selection"
 import { useSpell } from "@/features/review/SpellContext"
 import { useAnnotations } from "@/features/notes/AnnotationsContext"
 import { useSelectionState } from "./SelectionContext"
 import { useDomSelection } from "./useDomSelection"
+
+/** Which words a selection covers, for telling whether a press changed it. */
+const rangeKey = (s: TextSelection | null) => (s ? `${s.origin} ${s.segmentId} ${s.side} ${s.start}-${s.end}` : "")
 
 /** One toolbar for every selection, wherever it was made (read-only block or the open editor).
  *  A shadcn Popover anchored to the selection rectangle; the popover handles placement and collisions. */
@@ -27,11 +31,24 @@ export function FloatingToolbar({ blockText, onAsk }: {
   useDomSelection(compose !== null)
 
   const sel = state?.selection ?? null
+  // Shown once the mouse button is let go, not while it drags over the words the toolbar would cover: a selection that
+  // changed since the button went down is still being made. A press that leaves it as it was (on the toolbar, inside it) keeps it.
+  const [pressedOn, setPressedOn] = useState<string | null>(null) // the selection when the button went down; null while none is
+  const onPress = useEffectEvent((e: PointerEvent) => { if (e.button === 0) setPressedOn(rangeKey(sel)) })
+  useEffect(() => {
+    const down = (e: PointerEvent) => onPress(e)
+    const up = () => setPressedOn(null)
+    const ends = ["pointerup", "pointercancel", "contextmenu"] // ⌃-click's menu swallows the release
+    window.addEventListener("pointerdown", down, true)
+    for (const t of ends) window.addEventListener(t, up, true)
+    return () => { window.removeEventListener("pointerdown", down, true); for (const t of ends) window.removeEventListener(t, up, true) }
+  }, [])
+  const selecting = pressedOn !== null && pressedOn !== rangeKey(sel) && !compose // a comment being written stays put
   useEffect(() => { if (!sel) { setCompose(null); setBody("") } }, [sel])
   // a virtual element: the popover positions itself against the selection rectangle
   const anchor = useMemo(() => (sel ? { getBoundingClientRect: () => DOMRect.fromRect(sel.rect) } : null), [sel])
 
-  if (!sel || !anchor || !spell || !ann) return null
+  if (!sel || !anchor || !spell || !ann || selecting) return null
   const known = spell.glossary.some((t) => t.term.toLowerCase() === sel.text.toLowerCase())
   // author's notes of this paragraph still waiting for a place in the translation (never placed, or placed in text since rewritten)
   const unplaced = sel.side === "target"

@@ -108,6 +108,57 @@ test("keyboard selection inside the editor shows the same toolbar; a comment mad
   expect(marked.length).toBeGreaterThan(0)
 })
 
+/** Press at the start of the words and drag to their end, as a hand does; the button stays down. */
+async function dragOver(block: Locator, words: string) {
+  const box = await block.evaluate((el, w: string) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.textContent!.indexOf(w)
+      if (i === -1) continue
+      const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length)
+      const b = r.getBoundingClientRect(); return { left: b.left, right: b.right, y: b.top + b.height / 2 }
+    }
+    throw new Error("words not found: " + w)
+  }, words)
+  const page = block.page()
+  await page.mouse.move(box.left + 1, box.y)
+  await page.mouse.down()
+  await page.mouse.move(box.right - 1, box.y, { steps: 8 })
+  try { await expect.poll(() => page.evaluate(() => window.getSelection()!.toString()), { timeout: 1000 }).toBe(words) }
+  catch (e) { await page.mouse.up(); throw e }
+  // give the app the frames it would need to put the toolbar up
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50)))))
+}
+
+test("a mouse selection shows the toolbar when the button is let go, not while dragging over the words; in the editor too", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /19: Backlash/ }).click()
+  const rows = page.locator("[data-segment]")
+  await expect(rows.first()).toHaveText(/Backlash/)
+  const toolbar = page.locator("[data-floating-toolbar]")
+  const block = rows.nth(1).locator("p").first()
+  const words = (await block.innerText()).trim().split(" ").slice(0, 2).join(" ")
+
+  await dragOver(block, words)
+  await expect(toolbar).toHaveCount(0)
+  await page.mouse.up()
+  await expect(toolbar).toBeVisible()
+  await expect(toolbar).toHaveAttribute("data-quote", words)
+  await expect(rows.nth(1).getByRole("textbox")).toHaveCount(0) // a drag, not a click: the editor did not open
+
+  await rows.nth(2).locator("p").first().click()
+  const editor = rows.nth(2).getByRole("textbox")
+  await expect(editor).toBeFocused()
+  const inEditor = (await editor.innerText()).trim().split(" ").slice(0, 2).join(" ")
+  // just after it gains focus, ProseMirror puts back its own selection (20 ms later): a drag begun sooner than any hand could is lost
+  await expect(async () => { await dragOver(editor, inEditor) }).toPass()
+  await expect(toolbar).toHaveCount(0)
+  await page.mouse.up()
+  await expect(toolbar).toBeVisible()
+  await expect(toolbar).toHaveAttribute("data-quote", inEditor)
+  await page.keyboard.press("Escape")
+})
+
 test("author's note: provisional number at the paragraph's end, placed after selected words, undo unplaces it", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /17: Israel is Real/ }).click()
