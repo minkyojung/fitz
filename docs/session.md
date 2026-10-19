@@ -118,6 +118,8 @@
 | 4 ✓ | 작업 `drill`(지시문·모양) + 재료 모으기(시간으로, §3) + 검사·섞기·저장 | `server/agent/tasks.mjs`, `server/drill/cards.mjs` | 서버 |
 | 5 ✓ | 저녁 실행: 1분 확인, 따라잡기, 재시도, 기록, 책 자체에만 켜짐 | `server/drill/evening.mjs`, `server/index.mjs` | 서버(가짜 시계, 가짜 세션) |
 | 6 ✓ | 오늘의 카드, 답, 이미 앎, 이의, 고르기, 챌린지 결정(명령), 더 풀기·더 만들기, 다시 시도. `/live`의 `session` 알림 | `server/drill/cards.mjs`, `server/commands.mjs`, `server/index.mjs` | 서버 + 실제 HTTP |
-| 7 | 진짜로 한 번(Haiku 테스트, 실제 책 사본으로 Opus 한 번) | `server/drill/real.test.mjs` | 실측 |
+| 7 ✓ | 진짜로 한 번(Haiku 테스트, 실제 책 사본으로 Opus 한 번) | `server/drill/real.test.mjs`, `server/package.json`(`test:real`) | 실측(아래) |
+
+**7행 실측**(2026-10-19). `pnpm test:real`의 Gatsby(Haiku 5.5 / low, ¶4 번역자·¶5 Claude): 끝남, 카드 3 저장·0 버림, 15.6초, $0.0026. 실제 책 사본에 서버와 똑같이 한 번(`runDrill`, Opus 5.5 / medium, `.context/measure/drill-evening.mjs`, 세션은 지움): 재료 4단락, 끝남, 11 저장(뜻 8, 뉘앙스 0, 챌린지 3)·1 버림(이유는 기록하지 못함), 54초, $0.147. 섞은 뒤 정답 자리 2·1·3·2. 그날의 화면: 카드 8, 챌린지 3. 이번엔 뉘앙스 카드가 없었다 — 지시문에서 볼 것.
 | 8 | 화면: Session, 배지, 카드, 챌린지, 끝 화면, 툴바 버튼, Ask의 자동 재료 | `app/src/features/session/`, `api.ts`, `http.ts`, … | e2e |
 | 9 | README · 이 문서에 결과 | | |
