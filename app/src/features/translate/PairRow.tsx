@@ -64,7 +64,14 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
     [allSuggestions, s.id, s.targetText],
   )
 
-  useEffect(() => { if (selected) ref.current?.scrollIntoView({ block: "nearest" }) }, [selected])
+  // A pair selected from inside itself (a click, words dragged over) is under the pointer already: the list stays where it
+  // is. One reached from elsewhere (the keys, Find, the notes) is brought into view.
+  const selectedHere = useRef(false)
+  const selectHere = () => { selectedHere.current = true; onSelect() }
+  useEffect(() => {
+    if (selected && !selectedHere.current) ref.current?.scrollIntoView({ block: "nearest" })
+    selectedHere.current = false
+  }, [selected])
   // What this edit started from. A save names its version, so it never overwrites what another writer (the agent,
   // another window) did meanwhile; "unchanged" means unchanged from it, not from whatever the screen shows now.
   const base = useRef<{ version: number; text: string; doc: DocJSON } | null>(null)
@@ -120,7 +127,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
     if (editing) return
     if (!window.getSelection()?.isCollapsed) return // a drag-selection, not a click: leave it for the toolbar
     clickPos.current = docPosAtPoint(e.currentTarget, e.clientX, e.clientY)
-    onSelect()
+    selectHere()
     onEditingChange(true)
   }
 
@@ -131,7 +138,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
       ref={ref}
       data-pair={s.id}
       data-selected={selected || undefined}
-      onClick={onSelect}
+      onClick={selectHere}
       className={cn("col-span-3 grid grid-cols-subgrid scroll-mt-8 py-3 transition-opacity", dim && "opacity-30")}
     >
       <div className="flex flex-col items-center gap-1.5 pt-2">
@@ -155,7 +162,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
           <div data-unsaved className="mb-1 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>
             {changedSince && <span className="text-muted-foreground">the paragraph changed since</span>}
-            <Button size="xs" variant="outline" onClick={() => { setEditDoc(draft.doc); onSelect(); onEditingChange(true) }}>Recover</Button>
+            <Button size="xs" variant="outline" onClick={() => { setEditDoc(draft.doc); selectHere(); onEditingChange(true) }}>Recover</Button>
             <Button size="xs" variant="ghost" onClick={() => { drafts?.clear(s.id, "target"); bump((n) => n + 1) }}>Discard</Button>
           </div>
         )}

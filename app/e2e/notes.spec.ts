@@ -180,6 +180,54 @@ const longParagraphLow = (rows: Locator) => rows.evaluateAll((els) => {
   }
   return -1
 })
+/** Where a plain word of the block is: not a marked one, which opens a popover of its own. */
+const plainWord = (block: Locator) => block.evaluate((el) => {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const i = n.textContent!.search(/\S/)
+    if (n.parentElement !== el || i === -1) continue
+    const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1)
+    const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }
+  }
+  throw new Error("no plain word")
+})
+const twoFrames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+
+test("a paragraph picked with the mouse is selected where it is, its words stay put; one reached by the keys is brought into view", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /19: Backlash/ }).click()
+  const rows = page.locator("[data-segment]")
+  await expect(rows.first()).toHaveText(/Backlash/)
+  const n = await longParagraphLow(rows)
+  expect(n).not.toBe(-1)
+  const block = rows.nth(n).locator("p").first()
+
+  // words dragged over. They stay where they were, but for the selected row's taller header (its controls, a line);
+  // brought into view, they would go up by most of the paragraph
+  await dragOver(block, (await block.innerText()).trim().split(" ").slice(0, 2).join(" "))
+  const was = await wordsTop(page)
+  await page.mouse.up()
+  await expect(page.locator("[data-floating-toolbar]")).toBeVisible()
+  await twoFrames(page)
+  expect(Math.abs((await wordsTop(page)) - was)).toBeLessThan(40)
+
+  // the keys: the next paragraph, below the list's edge, comes into view
+  await page.keyboard.press("ArrowDown")
+  await expect(rows.nth(n + 1)).toBeInViewport()
+
+  // a click on a word, which opens the editor there (once the words dragged over are let go: a click inside them only lets go)
+  await page.evaluate(() => window.getSelection()!.removeAllRanges())
+  expect(await longParagraphLow(rows)).toBe(n)
+  const top = (await block.boundingBox())!.y
+  const word = await plainWord(block)
+  await page.mouse.click(word.x, word.y)
+  const editor = rows.nth(n).getByRole("textbox")
+  await expect(editor).toBeFocused()
+  await twoFrames(page)
+  expect(Math.abs((await editor.boundingBox())!.y - top)).toBeLessThan(40) // the editor opened where the paragraph was
+  await page.keyboard.press("Escape")
+})
+
 test("the toolbar stays with its words when the list scrolls: under the wheel, out of sight and back; in the editor too", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /19: Backlash/ }).click()

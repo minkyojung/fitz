@@ -109,8 +109,13 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   // What this edit started from. A save names its version, so it never overwrites what another writer did meanwhile.
   const base = useRef<{ version: number; text: string; doc: DocJSON } | null>(null)
 
+  // A row selected from inside itself (a click, words dragged over) is under the pointer already: the list stays where it
+  // is. One reached from elsewhere (the keys, Find, the notes) is brought into view.
+  const selectedHere = useRef(false)
+  const selectHere = () => { selectedHere.current = true; onSelect() }
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: "nearest" })
+    if (selected && !selectedHere.current) ref.current?.scrollIntoView({ block: "nearest" })
+    selectedHere.current = false
   }, [selected])
   useEffect(() => {
     if (!editing) { closing.current = false; clickOffset.current = null; base.current = null }
@@ -118,12 +123,12 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps -- the base is what was shown when editing began
 
   /** Clicking the text starts editing right there. The offset is measured on the read view before
-   *  anything scrolls, so it survives the selection's scrollIntoView. */
+   *  selecting the row can move it (its header grows), so it survives the selection. */
   const startEditAt = (e: React.MouseEvent<HTMLParagraphElement>) => {
     if (editing) return
     if (!window.getSelection()?.isCollapsed) return // a drag-selection, not a click: leave it for the toolbar
     clickOffset.current = textOffsetAtPoint(e.currentTarget, e.clientX, e.clientY)
-    onSelect()
+    selectHere()
     setEditing(true)
   }
 
@@ -159,7 +164,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
   const recover = () => {
     if (!draft) return
     setEditDoc(draft.doc)
-    onSelect()
+    selectHere()
     setEditing(true)
   }
   /** Split at the caret. Unsaved edits are saved first so the offset refers to the stored text. */
@@ -185,7 +190,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
     <ContextMenuTrigger
       ref={ref}
       data-segment={s.id}
-      onClick={onSelect}
+      onClick={selectHere}
       className={cn(
         "group mb-2 scroll-mt-8 rounded-md border border-transparent px-2 py-1.5", // scroll-mt clears the sticky page header
         "hover:bg-muted/50",
@@ -274,7 +279,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
       )}
     </ContextMenuTrigger>
     <ContextMenuContent>
-      <ContextMenuItem onClick={() => { onSelect(); setEditing(true) }}>Edit text</ContextMenuItem>
+      <ContextMenuItem onClick={() => { selectHere(); setEditing(true) }}>Edit text</ContextMenuItem>
       <ContextMenuItem disabled={!hasNext} onClick={() => void onMerge()}>Merge with next</ContextMenuItem>
     </ContextMenuContent>
     </ContextMenu>
