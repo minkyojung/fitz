@@ -263,7 +263,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 | 4 | WS 라우트 + `protocol.mjs` + 서버의 대화 관리(start·send·stop·open) + 터미널 대화 스크립트 `agent/chat.mjs` | 터미널에서 질문하고 답이 흐름 | 스텁 세션으로 프로토콜 테스트, 실제 1회 | 2026-10-18. 서버 테스트 84. 스텁 세션(녹화 메시지를 흘려 넣음)으로: 중간에 붙은 두 번째 페이지도 서버와 같은 상태, 다른 사이트 Origin은 401, 프로세스가 죽으면 다음 메시지에서 같은 세션 id로 resume. 실제: 서버(책 사본)에 `chat.mjs`로 ¶36 질문(Haiku) → `read(ids:[36], around:2)` → 답, 4.2초, $0.001. 6초에 멈춤 → `aborted_streaming`, 같은 대화의 다음 질문에 정상 답. 확인이 만든 세션 2개는 `deleteSession`으로 지움 |
 | 5 | 쓰기 도구 4 + 승인 흐름(`canUseTool` → `ask` → `answer`) | 터미널에서 승인/거절, ⌘Z로 되돌림 | 스텁 세션 + 실제 1회 | 2026-10-18. 서버 테스트 102. 실제 책 사본(Haiku): "¶36을 번역해 넣어줘" → `read`·`glossary` → `set_translation` 미리보기 → 허락 → ¶36 draft, ops에 `updateSegment` 1행, `/api/undo`로 untranslated로 복귀. "Zemurray를 제머리로 등록" → 거절 → 등록 없음, Claude는 다른 길을 찾지 않고 현재 표기(샘 저머레이)와의 차이를 알림. 실제 책 쪽 두 턴: 9.7초 $0.002, 2.7초 $0.0004. Gatsby 녹화 `translate.jsonl`(Opus 5.5, 허락): `read` → `book` → `set_translation`, 13.7초, $0.062 |
 | 5.5 | 쓰는 쪽이 둘인 책(§12): 버전 + 확인 / 변경 알림(처음엔 SSE, §15에서 `/live`로) / 에디터가 듣고 충돌에서 글을 지킴 | Claude가 쓰면 에디터에 바로 보이고, 겹치면 덮지 않고 알림 | 서버 테스트 + e2e | 2026-10-18. 커밋 셋. 서버 테스트 114, pytest 31, 화면 단위 34, e2e 30(새 3: 다른 쪽의 쓰기가 새로고침 없이 보임 / ⌘Enter 충돌 → 덮지 않음, "changed since" 임시본, Recover 후 저장 / Tab 충돌도 같음) |
-| 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | |
+| 6 | `checks.mjs` + Stop hook + `agent_turn` | 검증 결과와 되돌림 횟수 | 순수 테스트 + 스텁 세션 | 2026-10-19 완료(§19, 커밋 여덟). 서버 테스트 204, 화면 단위 63, e2e 50, pytest 35. 실측 §19: Haiku 턴당 8~31초, $0.001~0.002 |
 | 7 | 리뷰·오탈자(`outputFormat`) | 정해진 모양의 목록 | 녹화 1회 | 2026-10-18 완료(§4.2, 커밋 일곱). 서버 테스트 178(+실제 2), 화면 단위 47, e2e 37. 실측: 오탈자 6.0초 $0.022 심은 오류 넷 다, 리뷰 7.3초 $0.025 뜻이 뒤집힌 번역 high |
 | 8 | resume·재시작 복구 | 서버를 껐다 켜도 이어짐 | 테스트 | 2026-10-18 완료(§13: 대화 목록·턴 기록은 book.db, 세션 파일 사본은 `~/.fitz/sessions`) |
 | 9 | 페이지 Agent 탭(스레드·스트리밍·Stop·비용·승인 카드·결과 카드), 에이전트가 쓴 것을 에디터가 다시 읽기, README | 에디터 안에서 전부 | e2e(녹화 프레임) | 2026-10-18 완료(§17, 패널의 **Claude** 탭). 화면 단위 62, e2e 44. 실제 1회(아래 §17.1 5행) |
@@ -419,8 +419,8 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 
 | # | 작업 | 지금 문제 | 정석 방식 | 크기 |
 |---|---|---|---|---|
-| **1** | **되돌리기 나누기**(§14) | ⌘Z가 누가 했든 마지막 변경을 되돌린다 → Claude가 쓴 것을 모르고 지우거나, 그 반대 | ⌘Z = 번역자의 것만(구글 독스·Yjs `trackedOrigins`). Claude의 것 = 대화에서 그 쓰기를 골라 "여기부터 되돌리기"(Claude Code `/rewind`처럼 선형, `ops.tool_use_id`로 이미 이어져 있다). 그 뒤 다른 쪽이 같은 단락을 고쳤으면 되돌리지 않고 이유를 말한다 | 큼 |
-| **2** | **번역 검사**(6단계, §5) | Claude가 쓴 번역이 용어집을 어겨도 아무도 모른다 | 앱이 검사(`checkSegments`: missingTerm·emptyTarget·ratio·unplacedNote)하고 기록. Stop hook이 실패를 돌려보내고 횟수는 앱이 센다(TRIES=3, hook은 fail-open이므로 진실은 `agent_turn`) | 중~큼 |
+| **1** ✓ | **되돌리기 나누기**(§14, §18.1) | ⌘Z가 누가 했든 마지막 변경을 되돌린다 → Claude가 쓴 것을 모르고 지우거나, 그 반대 | ⌘Z = 번역자의 것만(구글 독스·Yjs `trackedOrigins`). Claude의 것 = 대화에서 그 쓰기를 골라 "여기부터 되돌리기"(Claude Code `/rewind`처럼 선형, `ops.tool_use_id`로 이미 이어져 있다). 그 뒤 다른 쪽이 같은 단락을 고쳤으면 되돌리지 않고 이유를 말한다 | 큼 |
+| **2** ✓ | **번역 검사**(6단계, §5, §19) | Claude가 쓴 번역이 용어집을 어겨도 아무도 모른다 | 앱이 검사(`checkSegments`: missingTerm·emptyTarget·ratio·unplacedNote)하고 기록. Stop hook이 실패를 돌려보내고 횟수는 앱이 센다(TRIES=3, hook은 fail-open이므로 진실은 `agent_turn`) | 중~큼 |
 | 3a | 대화 도중 모델·강도 바꾸기 | 첫 메시지 전에만 | SDK `Query.setModel()` + 프로토콜 `configure` | 작음 |
 | 3b | 대화 제목 자동 갱신 | 메뉴를 열어야 Claude Code의 제목으로 바뀜 | 서버가 제목을 정하면 `/live`로 알림 | 작음 |
 | 3c | 실제 책 한 장으로 리뷰·OCR 실측 | Gatsby 5단락 값뿐 | 한 장 돌려 시간·비용·품질 기록, 상한(60턴·$5)·지시문 조정 | 작음 |
@@ -467,7 +467,7 @@ Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려
 | 3 ✓ | Stop hook: 그 턴에 Claude가 쓴 단락 → 검사 → 실패면 이유를 붙여 돌려보냄(앱이 횟수를 센다, `TRIES = 3`), 턴 끝에 기록, 멈춘 턴은 기록하지 않음, 검사가 못 돌면 "could not check"로(통과가 아니다). 쓴 단락은 스트림이 아니라 쓰기 도구가 쓰는 그 자리에서 알린다(`wrote`): hook은 스트림의 마지막 도구 결과보다 먼저 불릴 수 있다 | `agent/session.mjs`, `agent/host.mjs` | 스텁 세션 |
 | 4 ✓ | 화면: 턴 끝에 ✓/✗와 돌려보낸 횟수(기록을 묻는다 — 스트림의 돌려보냄 메시지는 세션 파일에 남지 않으므로 다시 열 때도 같도록) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
 | 5 ✓ | 진짜로 한 번(용어집을 어기게 해서 돌려보냄 → 고침) | `.context/real/checks-real.spec.ts` | 실측(아래) |
-| 6 | README·이 문서 | | |
+| 6 ✓ | README·이 문서 | | |
 
 **실측**(2026-10-19, 커밋한 코드를 따로 꺼내 돌림(A, B는 dc37a60, C, D는 53b548b + 고친 글), Haiku 5.5 · low, Gatsby 1장, 용어집 `advantages → 혜택`). 화면에서 ¶3을 번역하게 한 뒤, 번역자가 "advantages를 '유리한 조건'으로 바꿔서 다시 넣어줘"라고 한다. 같은 요청을 네 번 돌렸고 Claude는 두 길을 다 갔다:
 
