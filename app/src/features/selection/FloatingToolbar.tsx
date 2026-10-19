@@ -1,10 +1,12 @@
 import { useEffect, useEffectEvent, useState } from "react"
-import { IconBook2, IconMessage, IconNote, IconPinned, IconSparkles } from "@tabler/icons-react"
+import { IconBook2, IconCards, IconMessage, IconNote, IconPinned, IconSparkles } from "@tabler/icons-react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
+import { api } from "@/data/http"
 import { locateAnchor, makeAnchor } from "@/lib/anchor"
 import type { Pointed } from "@/lib/conversation"
 import type { TextSelection } from "@/lib/selection"
@@ -114,6 +116,18 @@ export function FloatingToolbar({ blockText, onAsk }: {
             <Button variant="ghost" onClick={() => { onAsk({ segmentId: sel.segmentId, side: sel.side, quote: sel.text }); close() }}>
               <IconSparkles data-icon="inline-start" /> Ask Claude <Kbd className="ml-0.5">⌘L</Kbd>
             </Button>
+            {sel.side === "source" && (
+              <Button variant="ghost" onClick={() => {
+                const quote = sel.text
+                api.pickWords({ segmentId: sel.segmentId, quote, origin: "picked" }).then(
+                  () => toast(`“${quote}” will be in Session`, { description: "Claude makes a card on it with the evening's." }),
+                  (e) => toast.error(`“${quote}” could not be added to Session`, { description: (e as Error).message }),
+                )
+                close()
+              }}>
+                <IconCards data-icon="inline-start" /> Add to Session
+              </Button>
+            )}
             {unplaced.map((n) => (
               <Button key={n.id} variant="ghost" title={n.bodySource ?? undefined}
                 onClick={() => { void ann.actions.setNote(n.id, { targetAnchor: anchorOf() }); close() }}>

@@ -56,6 +56,8 @@ export function useClaude() {
     setPending(message)
     setPointed(null)
     api.sendMessage(id, message)
+    // words of the source asked about are words not known yet: Session asks about them (docs/session.md §3)
+    if (pointed?.side === "source") api.pickWords({ segmentId: pointed.segmentId, quote: pointed.quote, origin: "asked" }).catch(() => undefined)
   }, [convId, follow, choice, pointed])
 
   // Claude's changes in this conversation, and whether each still stands: asked of the server for the writes that

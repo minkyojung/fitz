@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react"
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels"
-import { IconBook, IconBook2, IconFileExport, IconLanguage, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
+import { IconBook, IconBook2, IconCards, IconFileExport, IconLanguage, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
-/** The stages of the work, and the glossary: a page of the whole book, at the sidebar's foot. */
-export type Mode = "review" | "translate" | "export" | "glossary"
+/** The stages of the work; and, at the sidebar's foot, the pages of the whole book: Session (the day's quiz,
+ *  docs/session.md) and the glossary. */
+export type Mode = "review" | "translate" | "export" | "glossary" | "session"
 
 const STAGES: { value: Mode; label: string; icon: Icon }[] = [
   { value: "review", label: "Review", icon: IconScan },
@@ -33,6 +34,8 @@ interface AppShellProps {
   stageProgress: Partial<Record<Mode, number>>
   /** Glossary terms without a translation: the glossary's badge. */
   pendingTerms: number
+  /** Today's cards and challenges not yet done: Session's badge, and a dot when the sidebar is folded to icons. */
+  sessionLeft: number
   /** The chapters, under the stages (or what Find found); none in a stage of the whole book (Export). */
   sidebar: ReactNode
   /** The breadcrumb after the stage: the chapter, as a menu. None in a stage of the whole book. */
@@ -50,7 +53,7 @@ interface AppShellProps {
   status: ReactNode
   /** Hide the scan (left) panel, e.g. while translating. */
   leftCollapsed?: boolean
-  /** A full-width page that replaces the three panels (Export, Glossary). */
+  /** A full-width page that replaces the three panels (Export, Glossary, Session). */
   main?: ReactNode
 }
 
@@ -60,7 +63,7 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 /** Fixed frame: sidebar (sidebar-07: the book, the stages, the chapters; folds to icons) | [breadcrumb /
  *  left+right+panel / status]. Content is injected per mode. */
 export function AppShell({
-  mode, onModeChange, book, find, stageProgress, pendingTerms, sidebar, crumb, left, right, panel, claudeOpen, onClaudeOpenChange, claudeWaiting, status,
+  mode, onModeChange, book, find, stageProgress, pendingTerms, sessionLeft, sidebar, crumb, left, right, panel, claudeOpen, onClaudeOpenChange, claudeWaiting, status,
   leftCollapsed = false, main,
 }: AppShellProps) {
   // The widths the translator dragged the panels to, kept across reloads: one layout with the scan, one without. A
@@ -68,7 +71,7 @@ export function AppShell({
   const layout = useDefaultLayout({
     id: "fitz-panels", panelIds: leftCollapsed ? ["main", "panel"] : ["scan", "main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
   })
-  const label = mode === "glossary" ? "Glossary" : STAGES.find((m) => m.value === mode)!.label
+  const label = mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : STAGES.find((m) => m.value === mode)!.label
   // The panel is what is open or not (its edge can be dragged shut, its layout is remembered), and says so on resize;
   // the header's button asks it to change. Only a change is acted on: a page opening keeps the panel as it was left.
   const claudePanel = usePanelRef()
@@ -121,6 +124,16 @@ export function AppShell({
           {sidebar}
           <SidebarGroup className="mt-auto">
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={mode === "session"} aria-current={mode === "session" ? "page" : undefined} tooltip="Session"
+                  onClick={() => onModeChange("session")}>
+                  <IconCards />
+                  <span>Session</span>
+                </SidebarMenuButton>
+                {sessionLeft > 0 && <SidebarMenuBadge title="Cards and challenges left today" data-session-left>{sessionLeft}</SidebarMenuBadge>}
+                {/* folded to icons the badge is gone: a dot says something is waiting */}
+                {sessionLeft > 0 && <span aria-hidden className="pointer-events-none absolute top-1.5 left-6 hidden size-1.5 rounded-full bg-primary group-data-[collapsible=icon]:block" />}
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={mode === "glossary"} aria-current={mode === "glossary" ? "page" : undefined} tooltip="Glossary"
                   onClick={() => onModeChange("glossary")}>

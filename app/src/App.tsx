@@ -10,6 +10,8 @@ import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
 import { FindInput, FindResults } from "@/features/review/Find"
 import { ExportView } from "@/features/export/ExportView"
 import { GlossaryPage } from "@/features/review/GlossaryPage"
+import { SessionPage } from "@/features/session/SessionPage"
+import { useSession } from "@/features/session/useSession"
 import { ClaudeTab } from "@/features/agent/ClaudeTab"
 import { DraftContext } from "@/features/review/DraftContext"
 import { SpellContext } from "@/features/review/SpellContext"
@@ -74,13 +76,14 @@ export function App() {
     [book.segments],
   )
   // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
-  const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false, glossary: false })
+  const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false, glossary: false, session: false })
   const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes, onSelectChapter: book.setChapterId })
   const translating = mode === "translate"
   const exporting = mode === "export"
-  // Export and the glossary are pages of the whole book, in the panels' place: no chapter, no paragraph to act on
-  const wholeBook = exporting || mode === "glossary"
+  // Export, the glossary and Session are pages of the whole book, in the panels' place: no chapter, no paragraph to act on
+  const wholeBook = exporting || mode === "glossary" || mode === "session"
+  const session = useSession()
   const commands = wholeBook ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
   const annotationState = useMemo(
@@ -124,6 +127,9 @@ export function App() {
     if (wholeBook) setMode("review")
     review.jumpTo(segmentId, chapterId)
   }
+  // from Session, a paragraph opens in Translate, beside its translation; Discuss with Claude puts the words in Claude's box there
+  const openInTranslate = (segmentId: number, chapterId: number) => { setMode("translate"); translate.jumpTo(segmentId, chapterId) }
+  const discussInTranslate = (pointed: Pointed, chapterId: number) => { openInTranslate(pointed.segmentId, chapterId); askClaude(pointed) }
   // ⌘L: the words selected (in the text or the open editor) go to Claude; with none, Claude's box takes the cursor
   const askAboutSelection = () => {
     const sel = latestSelection.current
@@ -149,13 +155,16 @@ export function App() {
       find={<FindInput query={findQuery} onQuery={setFindQuery} focusToken={findFocusToken} />}
       stageProgress={stageProgress}
       pendingTerms={book.spell.glossary.filter((t) => !t.translation).length}
+      sessionLeft={session.left}
       leftCollapsed={!scanShown[mode]}
       // what Find found takes the chapters' place; a page of the whole book has none (Export picks its own)
       sidebar={findQuery ? (
         <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpTo} onReplaceAll={book.replaceAll} />
       ) : wholeBook ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       crumb={wholeBook ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
-      main={exporting ? <ExportView chapters={book.chapters} /> : mode === "glossary" ? <GlossaryPage onJump={jumpTo} /> : undefined}
+      main={exporting ? <ExportView chapters={book.chapters} /> : mode === "glossary" ? <GlossaryPage onJump={jumpTo} />
+        : mode === "session" ? <SessionPage day={session.day} error={session.error} chapters={book.chapters} reload={session.reload} onJump={openInTranslate} onDiscuss={discussInTranslate} />
+        : undefined}
       left={review.left}
       right={translating ? translate.view : review.right}
       panel={
@@ -176,7 +185,7 @@ export function App() {
       }
       status={
         <>
-          <span>{exporting ? "Export" : mode === "glossary" ? "Glossary" : book.chapter?.title ?? "—"}</span>
+          <span>{exporting ? "Export" : mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : book.chapter?.title ?? "—"}</span>
           {wholeBook ? null : translating ? (
             <>
               <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
