@@ -83,11 +83,9 @@ export function App() {
   const wholeBook = exporting || mode === "glossary"
   const commands = wholeBook ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
-  // a selected note opens the Notes tab (a comment opens beside its words)
-  const selectAnnotation = useCallback((sel: Selected) => { setAnnSelected(sel); if (sel?.kind === "note") setPanelTab("notes") }, [])
   const annotationState = useMemo(
-    () => ({ annotations: book.annotations, selected: annSelected, select: selectAnnotation, actions: book.annotate, markers: translate.markers }),
-    [book.annotations, annSelected, selectAnnotation, book.annotate, translate.markers],
+    () => ({ annotations: book.annotations, selected: annSelected, select: setAnnSelected, actions: book.annotate, markers: translate.markers }),
+    [book.annotations, annSelected, book.annotate, translate.markers],
   )
   // Claude's suggestions: the review's while translating, the OCR hunt's while reviewing the source. Selecting one in the
   // text opens its card, as selecting a comment opens Notes.
@@ -162,7 +160,7 @@ export function App() {
       right={translating ? translate.view : review.right}
       panel={
         <ReviewPanel
-          segments={book.segments} selected={panelSelected} markers={translate.markers}
+          segments={book.segments}
           tab={panelTab} onTabChange={setPanelTab}
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,

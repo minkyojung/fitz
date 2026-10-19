@@ -71,7 +71,7 @@ test("translator's note: add on the translation, asterisk marker with tooltip, e
   await expect(tooltip.filter({ hasText: "루이지애나주의 항구 도시." })).toBeVisible()
 
   await marker.click()
-  const item = page.locator("[data-panel-note]").first()
+  const item = pair.locator("[data-footnote]").first()  // under the translation, as a footnote
   await expect(item).toContainText("Translator's note")
   const body = item.getByRole("textbox", { name: "Note body" })
   await body.fill("루이지애나주의 항구 도시. 제무레이의 본거지.")
@@ -303,7 +303,7 @@ test("author's note: provisional number at the paragraph's end, placed after sel
   await expect(marker).toHaveAttribute("data-provisional", "true")
 })
 
-test("author's note: the panel shows the English and takes a translation; the badge counts the rest", async ({ page }) => {
+test("author's note: under the translation it shows the English and takes a translation; the status bar counts the rest", async ({ page }) => {
   await page.goto("/")
   await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /17: Israel is Real/ }).click()
   await page.getByRole("button", { name: "Translate", exact: true }).click()
@@ -311,7 +311,7 @@ test("author's note: the panel shows the English and takes a translation; the ba
   await expect(pair).toContainText("several hundred Jewish refugees")
   const marker = pair.locator("p[lang=en] sup[data-note]").first()
   await marker.click()
-  const item = page.locator("[data-panel-note]").first()
+  const item = pair.locator("[data-footnote]").filter({ hasText: "Author's note" }).first()  // under the translation
   await expect(item).toContainText("Author's note")
   await expect(item).toContainText("Most of these émigrés")
   const badge = page.locator("[data-untranslated-notes]")

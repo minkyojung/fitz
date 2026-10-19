@@ -7,6 +7,7 @@ import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
 import { HistoryButton } from "@/features/review/History"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
+import { Footnotes } from "@/features/notes/Footnotes"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 import { useSelectionState } from "@/features/selection/SelectionContext"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
@@ -202,6 +203,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
               : <p>Translate…</p>}
           </div>
         )}
+        <Footnotes segmentId={s.id} text={s.targetText} markers={markers} />
       </div>
     </div>
   )
