@@ -110,8 +110,8 @@
 |---|---|---|---|
 | 0 ✓ | 먼저 잰다(§8) | `.context/measure/drill-cards.mjs`(커밋하지 않음) | 기록 |
 | 1 ✓ | 갤러리와 이 문서 | `app/src/gallery/SessionGallery.tsx`, `Gallery.tsx`, `docs/session.md` | 번역자 확인 |
-| 2 | 테이블(§6) + 마이그레이션(작업 DB 백업 뒤) | `db/schema.sql`, `pipeline/migrate.py` | pytest |
-| 3 | 순수 규칙: 날짜, 상자, 저녁 실행의 판정 | `server/drill/schedule.mjs` | 단위 |
+| 2 ✓ | 테이블(§6) + 마이그레이션(작업 DB 백업 뒤: `out/book.db.bak-2026-10-19-before-session`) | `db/schema.sql`, `pipeline/migrate.py` | pytest |
+| 3 ✓ | 순수 규칙: 날짜, 상자, 저녁 실행의 판정(처음엔 다음 21:00부터 — 그 전엔 놓친 저녁이 없다) | `server/drill/schedule.mjs` | 단위 |
 | 4 | 작업 `drill`(지시문·모양) + 재료 모으기 + 검사·섞기·저장 | `server/agent/tasks.mjs`, `server/drill/cards.mjs` | 서버 |
 | 5 | 저녁 실행: 1분 확인, 따라잡기, 재시도, 기록 | `server/drill/evening.mjs`, `server/index.mjs` | 서버(가짜 시계, 가짜 세션) |
 | 6 | 오늘의 카드, 답, 이미 앎, 이의, 고르기, 챌린지 결정(명령), 더 풀기·더 만들기 | `server/drill/cards.mjs`, `server/commands.mjs`, `server/index.mjs` | 서버 + 실제 HTTP |
