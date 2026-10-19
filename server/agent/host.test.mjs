@@ -437,7 +437,11 @@ test(`sent back at most ${TRIES} times; then what is left wrong is the verdict`,
   write(db, 3, "유리한 처지")
   opened[0].options.wrote(3)
   const answers = []
-  for (let i = 0; i <= TRIES; i++) answers.push((await opened[0].options.stop({}, { signal: signal() })).decision ?? "pass")
+  for (let i = 0; i <= TRIES; i++) {
+    answers.push((await opened[0].options.stop({}, { signal: signal() })).decision ?? "pass")
+    write(db, 3, `유리한 처지 ${i}`)  // Claude rewrites each time it is sent back, still without the agreed form
+    opened[0].options.wrote(3)
+  }
   assert.deepEqual(answers, [...Array(TRIES).fill("block"), "pass"])
   opened[0].feed(...nuance)
   await settle()
@@ -487,4 +491,20 @@ test("a task conversation has no Stop hook: it writes nothing", () => {
   const { host, opened } = setup()
   host.start(ID, { task: "review", chapterId: 1 })
   assert.equal(opened[0].options.stop, undefined)
+})
+
+test("sent back, Claude may say the form is right as it is: if it writes nothing more, it is not sent back again", async () => {
+  const { host, opened, db } = setup()
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "advantages", translation: "혜택" })
+  host.start(ID)
+  host.send(ID, "advantages는 '유리한 조건'으로 옮겨서 ¶3을 넣어줘")
+  write(db, 3, "유리한 조건")
+  opened[0].options.wrote(3)
+  assert.equal((await opened[0].options.stop({}, { signal: signal() })).decision, "block")
+  assert.deepEqual(await opened[0].options.stop({}, { signal: signal() }), {}, "it answered why, writing nothing: the translator's call")
+  opened[0].feed(...nuance)
+  await settle()
+  const checks = turnOf(db)
+  assert.equal(checks.rounds.length, 2)
+  assert.equal(checks.rounds[1][0].term, "advantages", "and the verdict says what is left")
 })

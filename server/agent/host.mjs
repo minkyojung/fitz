@@ -48,7 +48,7 @@ export function createAgentHost({
     model: record.model, effort: record.effort, task: record.task, session: null, keptSession: record.sessionId,
     state: { ...emptyConversation(), sessionId: record.sessionId }, followers: new Set(), asks: new Map(),
     loaded: true, ready: Promise.resolve(),
-    turn: null,  // the turn going on: { wrote: paragraphs Claude translated, rounds: what each check found, stopped, error }
+    turn: null,  // the turn going on: { wrote: paragraphs Claude translated, rounds: what each check found, rewrote, stopped, error }
   })
   /** The conversation in memory, or brought back from book.db and Claude Code's session file (after a restart). While
    *  its history is being read it is not `loaded`; its followers get their snapshot when it is. */
@@ -89,15 +89,19 @@ export function createAgentHost({
   }
 
   /** Claude would end its turn: check the translations it wrote in it (docs/agent.md §19). Something wrong goes back to
-   *  Claude with what and where, the same turn going on, at most TRIES times; then what is left is the verdict. A turn
-   *  the translator stopped is not judged; a check that could not run says so rather than pass. */
+   *  Claude with what and where, the same turn going on, at most TRIES times; then what is left is the verdict. Sent
+   *  back, Claude may say a form is right as it is and write nothing more: then it is not sent back again — what is
+   *  left is the translator's to judge. A turn the translator stopped is not judged; a check that could not run says
+   *  so rather than pass. */
   function checkTurn(conv, { signal }) {
     const t = conv.turn
     if (!t || !t.wrote.size || t.stopped || signal.aborted) return {}
     try {
       const failures = checkSegments(db, [...t.wrote])
+      const declined = t.rounds.length > 0 && !t.rewrote
       t.rounds.push(failures)
-      return failures.length && t.rounds.length <= TRIES ? { decision: "block", reason: reasonFor(failures) } : {}
+      t.rewrote = false
+      return failures.length && t.rounds.length <= TRIES && !declined ? { decision: "block", reason: reasonFor(failures) } : {}
     } catch (e) {
       t.error = `could not check: ${e.message}`
       console.error("agent:", t.error)
@@ -161,7 +165,7 @@ export function createAgentHost({
     const session = openSession({
       db, resume: conv.state.sessionId ?? undefined, model: conv.model, effort: conv.effort, task: conv.task,
       ask: (toolName, input, options) => ask(convId, conv, toolName, input, options),
-      wrote: (segmentId) => conv.turn?.wrote.add(segmentId),
+      wrote: (segmentId) => { if (conv.turn) { conv.turn.wrote.add(segmentId); conv.turn.rewrote = true } },
       ...(!conv.task && { stop: (_input, options) => checkTurn(conv, options) }),
     })
     conv.session = session
@@ -196,7 +200,7 @@ export function createAgentHost({
     const conv = get(convId)
     const go = () => {
       touchConversation(db, convId)
-      conv.turn = { wrote: new Set(), rounds: [], stopped: false, error: null }
+      conv.turn = { wrote: new Set(), rounds: [], rewrote: false, stopped: false, error: null }
       return ensureSession(convId, conv).send(text)
     }
     return conv.loaded ? go() : conv.ready.then(go)
