@@ -21,6 +21,7 @@ export const listConversations = (db) =>
 
 export const setSession = (db, id, sessionId) => db.prepare("UPDATE agent_conversation SET session_id = ? WHERE id = ?").run(sessionId, id)
 export const setTitle = (db, id, title) => db.prepare("UPDATE agent_conversation SET title = ? WHERE id = ?").run(title, id)
+export const setConfig = (db, id, { model, effort }) => db.prepare("UPDATE agent_conversation SET model = ?, effort = ? WHERE id = ?").run(model, effort, id)
 export const touchConversation = (db, id) => db.prepare("UPDATE agent_conversation SET used_at = datetime('now') WHERE id = ?").run(id)
 
 /** A finished turn, keyed by its session and the translator's message that began it. `checks`: what the app found

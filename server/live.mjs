@@ -43,6 +43,7 @@ export function attachLive(server, { db, host, heartbeatMs = HEARTBEAT_MS }) {
         else if (m.type === "list") send({ type: "conversations", items: host.list() })
         else if (m.type === "send") await host.send(m.convId, m.text)
         else if (m.type === "stop") host.stop(m.convId)
+        else if (m.type === "configure") await host.configure(m.convId, m)
         else if (m.type === "answer") host.answer(m.convId, m.requestId, m.decision)
       } catch (e) {
         send({ type: "error", ...(m?.convId && { convId: m.convId }), message: e.message })

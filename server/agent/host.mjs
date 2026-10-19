@@ -9,7 +9,7 @@ import { getSessionInfo, getSessionMessages } from "@anthropic-ai/claude-agent-s
 import { listChapters } from "../commands.mjs"
 import { applyMessage, emptyConversation, foldStored } from "./fold.mjs"
 import { sessionKeeper } from "./keep.mjs"
-import { addConversation, getConversation, listConversations, recordTurn, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
+import { addConversation, getConversation, listConversations, recordTurn, setConfig, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
 import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
 import { checkSegments, reasonFor } from "./checks.mjs"
@@ -63,11 +63,12 @@ export function createAgentHost({
         .then(() => { restore(record.sessionId); return sessionMessages(record.sessionId) })
         .then((messages) => { conv.state = foldStored(messages ?? [], turnsOf(db, record.sessionId), record.sessionId) })
         .catch((e) => tell(conv, { type: "error", convId, message: `could not read the conversation back: ${e.message}` }))
-        .then(() => { conv.loaded = true; tell(conv, { type: "snapshot", convId, state: conv.state, asks: pending(conv) }) })
+        .then(() => { conv.loaded = true; tell(conv, snapshot(convId, conv)) })
     }
     return conv
   }
   const tell = (conv, event) => { for (const follower of conv.followers) follower(event) }
+  const snapshot = (convId, conv) => ({ type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort })
   const pending = (conv) => [...conv.asks.values()].map((a) => a.ask)
 
   /** A write put to the translator. Resolves when they answer, or when the turn stops (signal). */
@@ -124,8 +125,9 @@ export function createAgentHost({
       }
       if (message.type === "result") {
         const turn = conv.state.items.at(-1)
-        recordTurn(db, message.session_id, message.user_message_uuid ?? message.uuid, { ...turn, checks: checksOf(conv.turn) })
-        conv.turn = null
+        const going = conv.turn
+        conv.turn = null  // over, whether or not its record can be kept
+        recordTurn(db, message.session_id, message.user_message_uuid ?? message.uuid, { ...turn, checks: checksOf(going) })
         try { keep.save(message.session_id) } catch (e) { console.error("agent: could not copy session", message.session_id, e.message) }
         if (!getConversation(db, convId)?.title) {
           void Promise.resolve(sessionInfo(message.session_id)).then((info) => {
@@ -186,7 +188,7 @@ export function createAgentHost({
           // a turn cut off with the process is over; what was half written is not kept
           if (conv.state.status !== "idle" || conv.state.live) {
             conv.state = { ...conv.state, status: "idle", live: null }
-            tell(conv, { type: "snapshot", convId, state: conv.state, asks: pending(conv) })
+            tell(conv, snapshot(convId, conv))
           }
         }
       }
@@ -222,7 +224,7 @@ export function createAgentHost({
      *  every event. Returns the function that stops following. */
     open(convId, follower) {
       const conv = get(convId)
-      if (conv.loaded) follower({ type: "snapshot", convId, state: conv.state, asks: pending(conv) })
+      if (conv.loaded) follower(snapshot(convId, conv))
       conv.followers.add(follower)
       return () => conv.followers.delete(follower)
     },
@@ -231,6 +233,21 @@ export function createAgentHost({
       if (!DECISIONS.includes(decision)) fail(400, `decision must be one of ${DECISIONS.join(", ")}`)
       const waiting = get(convId).asks.get(requestId) ?? fail(404, `nothing is waiting for answer ${requestId}`)
       waiting.settle(decision)
+    },
+    /** A free conversation's model and effort from its next message on (docs/agent.md §21): a running Claude Code is
+     *  told, as /model and /effort tell it; the record too, so a resume after a restart opens with them; then whoever
+     *  follows the conversation. Not while Claude answers. What Claude Code could not be told is not recorded. */
+    async configure(convId, { model, effort }) {
+      const conv = get(convId)
+      await conv.ready
+      if (conv.task) fail(400, "a task works with its own model")
+      if (conv.turn && conv.session) fail(409, "Claude is answering: change the model or effort once it has finished")
+      const next = { model: model ?? conv.model, effort: effort ?? conv.effort }
+      const change = { ...(next.model !== conv.model && { model: next.model }), ...(next.effort !== conv.effort && { effort: next.effort }) }
+      if (conv.session && (change.model || change.effort)) await conv.session.configure(change)
+      setConfig(db, convId, next)
+      Object.assign(conv, next)
+      tell(conv, { type: "configured", convId, ...next })
     },
     stop(convId) {
       const conv = get(convId)

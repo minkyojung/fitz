@@ -125,6 +125,12 @@ export function openSession({ db, resume, model, effort, ask, task, wrote, stop,
       return uuid
     },
     interrupt: () => q.interrupt(),
+    /** What /model and /effort do (measured, docs/agent.md §8): from the next turn on; the effort set here outranks the
+     *  one the session began with, and the settings it began with stay. */
+    async configure({ model, effort }) {
+      if (model) await q.setModel(model)
+      if (effort) await q.applyFlagSettings({ effortLevel: effort })
+    },
     // return(), not close(): the same cleanup, but it resolves once Claude Code has exited (measured in the SDK, 0.3.302:
     // it ends the input, waits up to 2 s, then sends SIGTERM). On its way out Claude Code still writes to the session
     // file (the title it gave the conversation), so whatever follows a close must wait for this.

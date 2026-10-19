@@ -191,6 +191,8 @@ server → page  ask    { convId, ask }                   { requestId, tool, inp
 
 7단계: `start`의 `task`.
 
+§21: `configure { convId, model?, effort? }`(→, 답하는 중이면 409, 작업이면 400) · `configured { convId, model, effort }`(←, 따라가는 모든 페이지에) · `snapshot`에 `model`, `effort`(다음 메시지가 갈 곳).
+
 - **서버 전체가 이 컴퓨터 전용이다**(`origin.mjs`, 2026-10-18): HTTP와 `/live` 모두 처리 전에 Origin이 이 컴퓨터의 페이지(또는 없음)이고 Host가 localhost·127.0.0.1·[::1]인지 본다. CORS 헤더는 `*`가 아니라 그 Origin만. 이유: 브라우저는 어느 사이트에서든 localhost로 요청을 보낼 수 있고, CORS만 막으면 응답을 못 읽을 뿐 다른 사이트의 "단순" POST(text/plain)는 실행된다(쓰기). Host 검사는 남의 도메인을 127.0.0.1로 돌리는 DNS 리바인딩을 막는다(쪽 이미지 포함). 시험: `index.test.mjs`가 실제 서버를 띄워 다른 사이트의 단순 POST가 403이고 아무것도 지우지 않음, 리바인딩 403, 로컬 페이지 200 + 그 Origin의 CORS를 확인한다 — 검사를 끄면 셋이 실패한다.
 - 닫힌 union. 다른 모양은 이유와 함께 `error`로 거절하고 소켓은 열어 둔다. 서버는 페이지가 보낸 어떤 필드도 믿지 않는다(알려진 필드만 골라 검사한 뒤 쓴다).
 - **이 컴퓨터의 페이지만 붙는다**(`localOrigin`): Origin이 `localhost`·`127.0.0.1`·`[::1]`이거나 없을 때(터미널 `chat.mjs`, 테스트). 브라우저는 어느 사이트에서든 `ws://localhost`를 열 수 있어서, 막지 않으면 아무 웹사이트나 에이전트를 부려 책을 읽어 갈 수 있다. 메시지 하나는 256KB까지.
@@ -509,12 +511,12 @@ B는 번역자가 직접 요청한 표기를 검사 때문에 용어집 표기�
 
 ## 21. 대화 도중 모델·강도 바꾸기 (§18 3a, 2026-10-19 계획)
 
-지금은 새 대화의 첫 메시지 전에만 고른다. Claude Code의 `/model`·`/effort`처럼, 열린 세션에 SDK가 주는 대로 바꾼다: 모델은 `Query.setModel`, 강도는 `Query.applyFlagSettings({ effortLevel })`(측정 §8; `setMaxThinkingTokens`는 SDK가 폐기 예정으로 둔 것). 바꾼 값은 다음 메시지부터. 답하는 중에는 바꾸지 않는다(화면이 잠그고 서버도 거절). 책 DB의 대화 기록도 바꿔, 서버를 다시 켜면 `resume`이 그 값으로 연다. Claude Code가 떠 있지 않으면 기록만 바꾼다. 바꾸다 실패하면 그 프로세스를 닫는다 — 다음 메시지가 기록의 값으로 다시 연다(기록과 실제가 어긋나지 않게). 작업(리뷰·OCR)은 제 모델을 쓴다. 화면은 새 대화에서 쓰던 그 메뉴를 대화 중에도 연다 — 새 요소가 없어 갤러리는 두지 않는다.
+지금은 새 대화의 첫 메시지 전에만 고른다. Claude Code의 `/model`·`/effort`처럼, 열린 세션에 SDK가 주는 대로 바꾼다: 모델은 `Query.setModel`, 강도는 `Query.applyFlagSettings({ effortLevel })`(측정 §8; `setMaxThinkingTokens`는 SDK가 폐기 예정으로 둔 것). 바꾼 값은 다음 메시지부터. 답하는 중에는 바꾸지 않는다(화면이 잠그고 서버도 거절). 책 DB의 대화 기록도 바꿔, 서버를 다시 켜면 `resume`이 그 값으로 연다. Claude Code가 떠 있지 않으면 기록만 바꾼다(다음 메시지가 그 값으로 연다). Claude Code에 알리지 못하면 기록도 바꾸지 않고 이유를 알린다 — 기록과 실제가 어긋나지 않게. 작업(리뷰·OCR)은 제 모델을 쓴다. 화면은 새 대화에서 쓰던 그 메뉴를 대화 중에도 연다 — 새 요소가 없어 갤러리는 두지 않는다.
 
 | # | 무엇 | 파일 | 확인 |
 |---|---|---|---|
 | 0 ✓ | SDK로 잰다(§8) | `.context/measure/set-model.mjs`, `flag-merge.mjs` | §8에 기록 |
-| 1 | 서버: 세션의 `configure`, 기록 `setConfig`, 프로토콜 `configure`(→) · `configured`(←) · snapshot에 모델·강도, host의 `configure`(답하는 중 409, 작업 400, 실패면 프로세스를 닫음), `/live` 연결 | `agent/session.mjs`, `records.mjs`, `protocol.mjs`, `host.mjs`, `live.mjs` | 스텁 세션 |
+| 1 ✓ | 서버: 세션의 `configure`, 기록 `setConfig`, 프로토콜 `configure`(→) · `configured`(←) · snapshot에 모델·강도, host의 `configure`(답하는 중 409, 작업 400, 알리지 못하면 기록도 그대로), `/live` 연결. 턴이 끝났다는 표시(`conv.turn = null`)는 턴 기록을 남기다 실패해도 먼저 지운다 — 답하는 중인지를 그것으로 보므로 | `agent/session.mjs`, `records.mjs`, `protocol.mjs`, `host.mjs`, `live.mjs` | 스텁 세션: 서버 테스트 209 |
 | 2 | 화면: 대화 중에도 모델·강도 메뉴(답하는 중 잠김), 값은 서버가 알린 것 | `api.ts`, `http.ts`, `lib/conversation.ts`, `useClaude.ts`, `Composer.tsx` | 단위 + e2e(녹화 프레임) |
 | 3 | 진짜로 한 번(Haiku로 묻고 Sonnet으로 바꿔 다시 묻기), README·이 문서 | `.context/real` | 실측 |
 
