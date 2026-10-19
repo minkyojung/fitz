@@ -173,6 +173,75 @@ export interface Suggestion {
 /** accept: the words are replaced; comment: kept as Claude's comment on them; dismiss: let go. ⌘Z undoes each. */
 export type SuggestionDecision = "accept" | "dismiss" | "comment"
 
+/** Session (docs/session.md): a quiz Claude makes every evening from the day's changed paragraphs. A card is asked
+ *  without its answer; the server grades it. */
+export interface SessionCard {
+  id: number
+  segmentId: number
+  chapterId: number
+  /** meaning: what an expression means here; nuance: which Korean is closest to a word's shade. */
+  kind: "meaning" | "nuance"
+  /** Claude chose it, or the translator picked the words (Add to Session) or asked Claude about them. */
+  origin: "claude" | "picked" | "asked"
+  /** Never answered before today. */
+  isNew: boolean
+  /** 1–5: a right answer moves it up and further off (1, 2, 4, 8, 16 days). */
+  box: number
+  /** Answered wrong today and not yet right: asked again until it is. */
+  again: boolean
+  quote: string
+  /** The sentence of the source the quote is in. */
+  sentence: string
+  question: string
+  options: string[]
+}
+/** A choice in the translation Claude questions: keep it, use Claude's words instead, or discuss it. */
+export interface SessionChallenge {
+  id: number
+  segmentId: number
+  chapterId: number
+  /** Who last wrote the paragraph's translation when Claude questioned it. */
+  writtenBy: "translator" | "agent"
+  quote: string
+  proposal: string
+  question: string
+  why: string
+  /** The paragraph's source and translation now. */
+  source: string
+  translation: string
+  /** The words are no longer in the translation exactly once: Claude's words cannot be put in their place. */
+  stale: boolean
+}
+export interface SessionDay {
+  /** The server's local day, YYYY-MM-DD. */
+  today: string
+  /** In the order to ask: reviews due, new cards, then those answered wrong today. */
+  cards: SessionCard[]
+  challenges: SessionChallenge[]
+  /** New cards and challenges beyond today's, for More. */
+  waiting: { cards: number; challenges: number }
+  evening: {
+    /** Claude is making cards now (the evening's run, Try again or Make more). */
+    running: boolean
+    last: { slot: string; status: "running" | "done" | "failed" | "skipped"; made: number | null; error: string | null; finishedAt: string | null; tries: number } | null
+  }
+  stats: { learning: number; learned: number; setAside: number }
+}
+/** What answering a card did: right or not, the right option and why, the paragraph's translation now, and where the
+ *  card goes (only the day's first answer moves it). */
+export interface CardAnswer {
+  id: number
+  correct: boolean
+  answer: number
+  why: string
+  translation: string
+  first: boolean
+  again: boolean
+  box: number
+  dueOn: string
+  status: "active" | "learned"
+}
+
 /** A conversation with Claude as book.db lists it (docs/agent.md §13); a task's carries its task and chapter. */
 export interface ConversationSummary {
   id: string
@@ -285,4 +354,20 @@ export interface Api {
   claudeChanges(toolUseIds: string[]): Promise<{ toolUseId: string; opId: number; undone: boolean }[]>
   /** What the checks found in a conversation's turns, by the translator's message that began each. */
   turnChecks(sessionId: string): Promise<{ userUuid: string; checks: TurnChecks }[]>
+  /** Session's day: what to ask today, what waits, how the evening's run went. */
+  sessionToday(): Promise<SessionDay>
+  answerCard(id: number, choice: number): Promise<CardAnswer>
+  /** known: I know this (not asked again); disputed: Answer looks wrong. */
+  setCardAside(id: number, why: "known" | "disputed"): Promise<{ id: number; status: string }>
+  /** keep and discuss leave the book; change puts Claude's words in, the translator's write (⌘Z). */
+  decideChallenge(id: number, decision: "keep" | "discuss" | "change"): Promise<{ id: number; status: string }>
+  /** Ten more new cards, or three more challenges, today. */
+  moreToday(kind: "cards" | "challenges"): Promise<unknown>
+  /** Words of a paragraph's source to be asked about: picked (Add to Session) or asked Claude about. */
+  pickWords(input: { segmentId: number; quote: string; origin: "picked" | "asked" }): Promise<{ id: number }>
+  /** Claude makes more cards now from the last week, or tries tonight's run again; Session hears when it ends. */
+  makeMoreCards(): Promise<{ started: true }>
+  retryEvening(): Promise<{ started: true }>
+  /** Hear that Session's cards, answers or runs changed (and "resync" after a reconnect). */
+  watchSession(onChange: () => void): () => void
 }

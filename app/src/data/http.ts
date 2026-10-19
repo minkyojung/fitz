@@ -73,6 +73,15 @@ export const api: Api = {
       else if (e.type === "changed") onChange(e as unknown as BookChange)
       else if (e.type === "suggested") onChange({ kind: "suggested", segmentIds: e.segmentIds as number[] })
     }),
+  sessionToday: () => call("sessionToday"),
+  answerCard: (id, choice) => call("answerCard", { id, choice }),
+  setCardAside: (id, why) => call("setCardAside", { id, why }),
+  decideChallenge: (id, decision) => call("decideChallenge", { id, decision }),
+  moreToday: (kind) => call("moreToday", { kind }),
+  pickWords: (input) => call("pickWords", input),
+  makeMoreCards: () => call("makeMoreCards"),
+  retryEvening: () => call("retryEvening"),
+  watchSession: (onChange) => live().subscribe((e) => { if (e.type === "session" || e.type === "resync") onChange() }),
   listSuggestions: (chapterId) => call("listSuggestions", { chapterId }),
   decideSuggestion: (id, decision) => call("decideSuggestion", { id, decision }),
   runTask: (task, chapterId, onRun) => {
