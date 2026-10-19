@@ -242,6 +242,14 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
   - `includeHookEvents: true`여도 SDK 콜백 hook에는 `hook_started`·`hook_response`가 오지 않았다.
   - `last_assistant_message`(마지막 답의 글)와 `background_tasks`(빈 배열)가 입력에 온다.
 
+- **대화 도중 모델·강도 바꾸기**(2026-10-19, SDK 0.3.302, fitz의 세션 설정 그대로; 스크립트 `.context/measure/set-model.mjs`, `flag-merge.mjs`). 누가 답했는지는 assistant 메시지의 `model`, 강도는 Stop hook 입력의 `effort.level`로 읽었다:
+  - 턴 사이 `setModel("claude-sonnet-5-5")` → 다음 턴은 Sonnet이 답한다. `system/init`이 턴마다 다시 오며 그때의 모델을 싣는다.
+  - `applyFlagSettings({ effortLevel: "high" })`은 시작할 때 준 `effort: "low"`보다 앞선다(Stop에서 `high`). 그 뒤 `setModel`로 모델만 바꿔도 강도는 남는다.
+  - 같은 층에 시작할 때 준 `settings`(커넥터 끔·자동 메모리 끔·번들 스킬 끔)는 강도를 바꾼 뒤에도 그대로다(`get_settings`로 확인, 턴 없이).
+  - 프로세스를 닫고 다른 `model`·`effort`로 `resume`하면 그 값으로 답한다.
+  - `supportedModels()`: Opus 5.5·Sonnet 5.5·Haiku 5.5 모두 강도 low~max.
+  - `total_cost_usd`는 프로세스의 누계이고, `resume`한 프로세스는 세션 파일에 남은 누계에서 이어 센다(5번째 턴 $0.0476 = 앞 넷 $0.0446 + $0.003). fold는 턴 비용을 누계의 차이로 구하는데, 서버를 다시 켜면 `spent`가 0에서 시작하므로 **재시작 뒤 첫 턴의 비용이 그 대화의 누계로 보인다** — §18 6행.
+
 ## 9. 지금 하지 않는 것
 
 | 것 | 이유 |
@@ -426,6 +434,7 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 | 3c | 실제 책 한 장으로 리뷰·OCR 실측 | Gatsby 5단락 값뿐 | 한 장 돌려 시간·비용·품질 기록, 상한(60턴·$5)·지시문 조정 | 작음 |
 | 4 | 작업 진행 표시가 새로고침에 사라짐 | "Claude is reading the chapter…"가 없어짐(제안은 옴) | 서버가 진행 중인 작업 대화를 알려 주고 화면이 다시 따라감 | 작음~중 |
 | 5 | 예전부터 있던 lint 12개 | | 하나씩(effect 안 setState, render 중 ref 읽기) | 작음~중 |
+| 6 | 재시작 뒤 첫 턴의 비용이 누계로 보임(§8, 2026-10-19 측정) | 서버를 다시 켜고 이어 간 대화의 첫 턴이 그 대화 전체 비용을 보인다 | 다시 연 대화의 `spent`를 기록된 턴 비용의 합에서 시작(세션 파일의 누계와 맞는지 실측) | 작음 |
 
 ### 18.1 되돌리기 나누기 — 만드는 순서 (행 = 커밋)
 
@@ -497,3 +506,15 @@ B는 번역자가 직접 요청한 표기를 검사 때문에 용어집 표기�
 | 비용·시간 | $0.079·31초 / $0.084·32초 / $0.055·20초 | $0.099·33초 / $0.122·37초 / $0.076·25초 |
 
 첫 판의 "search for where else it appears"로는 `search`를 한 번도 부르지 않았다(0/3) → "call search with its English first … rather than guessing whether it comes up again"으로 고친 뒤 3/3. 작업 프롬프트: 실제 테스트 3 통과, 리뷰 녹화(Gatsby, Sonnet 5.5 / low)는 심어 둔 ¶4 오역을 찾고 하나(veteran 누락)를 더 찾았다.
+
+## 21. 대화 도중 모델·강도 바꾸기 (§18 3a, 2026-10-19 계획)
+
+지금은 새 대화의 첫 메시지 전에만 고른다. Claude Code의 `/model`·`/effort`처럼, 열린 세션에 SDK가 주는 대로 바꾼다: 모델은 `Query.setModel`, 강도는 `Query.applyFlagSettings({ effortLevel })`(측정 §8; `setMaxThinkingTokens`는 SDK가 폐기 예정으로 둔 것). 바꾼 값은 다음 메시지부터. 답하는 중에는 바꾸지 않는다(화면이 잠그고 서버도 거절). 책 DB의 대화 기록도 바꿔, 서버를 다시 켜면 `resume`이 그 값으로 연다. Claude Code가 떠 있지 않으면 기록만 바꾼다. 바꾸다 실패하면 그 프로세스를 닫는다 — 다음 메시지가 기록의 값으로 다시 연다(기록과 실제가 어긋나지 않게). 작업(리뷰·OCR)은 제 모델을 쓴다. 화면은 새 대화에서 쓰던 그 메뉴를 대화 중에도 연다 — 새 요소가 없어 갤러리는 두지 않는다.
+
+| # | 무엇 | 파일 | 확인 |
+|---|---|---|---|
+| 0 ✓ | SDK로 잰다(§8) | `.context/measure/set-model.mjs`, `flag-merge.mjs` | §8에 기록 |
+| 1 | 서버: 세션의 `configure`, 기록 `setConfig`, 프로토콜 `configure`(→) · `configured`(←) · snapshot에 모델·강도, host의 `configure`(답하는 중 409, 작업 400, 실패면 프로세스를 닫음), `/live` 연결 | `agent/session.mjs`, `records.mjs`, `protocol.mjs`, `host.mjs`, `live.mjs` | 스텁 세션 |
+| 2 | 화면: 대화 중에도 모델·강도 메뉴(답하는 중 잠김), 값은 서버가 알린 것 | `api.ts`, `http.ts`, `lib/conversation.ts`, `useClaude.ts`, `Composer.tsx` | 단위 + e2e(녹화 프레임) |
+| 3 | 진짜로 한 번(Haiku로 묻고 Sonnet으로 바꿔 다시 묻기), README·이 문서 | `.context/real` | 실측 |
+
