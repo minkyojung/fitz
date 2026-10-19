@@ -11,8 +11,8 @@ export default defineConfig({
       "@": resolve(import.meta.dirname, "./src"),
     },
   },
-  // the page folds a conversation with the server's own fold (docs/agent.md §17): the dev server may serve that file
+  // the page uses the server's own fold and glossary rule (docs/agent.md §17, §19): the dev server may serve those files
   server: {
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), resolve(import.meta.dirname, "../server/agent/fold.mjs")] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), ...["fold.mjs", "glossaryRule.mjs"].map((f) => resolve(import.meta.dirname, "../server/agent", f))] },
   },
 })

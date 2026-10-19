@@ -457,12 +457,12 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 
 ## 19. 번역 검사 (6단계, 2026-10-19 계획)
 
-Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려보낸다(같은 턴, 최대 3번). 결과는 턴 끝에 보이고 턴 기록에 남는다. 검사는 **그 턴에 Claude가 쓴 단락만**. 규칙: **용어집 표기**(화면의 `missingTerms`와 같은 규칙: 용어가 원문에 있으면 합의된 번역이나 대체 표기 중 하나가 번역문에 있어야), **역주 자리**(내보내기의 unplaced·lostAnchor와 같은 판정). 빈 번역은 도구가 이미 거절하므로 빼고, 길이는 기준을 세울 번역이 아직 없어(실제 책 번역 단락 2개) 이번엔 넣지 않는다.
+Claude가 번역을 넣으면 앱이 검사하고, 틀리면 Claude에게 돌려보낸다(같은 턴, 최대 3번). 결과는 턴 끝에 보이고 턴 기록에 남는다. 검사는 **그 턴에 Claude가 쓴 단락만**. 규칙: **용어집 표기**(화면의 `missingTerms`와 같은 규칙: 용어가 원문에 있으면 합의된 번역이나 대체 표기 중 하나가 번역문에 있어야), **역주 자리**: 번역 안에 자리가 있던 원주·역주의 그 구절이 사라진 것만(Claude가 번역을 통째로 다시 쓰면 생긴다). 아직 자리가 정해진 적 없는 원주는 넣지 않는다 — Claude에게 역주 자리를 놓는 도구가 없어, 돌려보내도 고칠 수 없다. 빈 번역은 도구가 이미 거절하므로 빼고, 길이는 기준을 세울 번역이 아직 없어(실제 책 번역 단락 2개) 이번엔 넣지 않는다.
 
 | # | 무엇 | 파일 | 확인 |
 |---|---|---|---|
 | 0 ✓ | Stop hook을 fitz의 설정으로 잰다 | `.context/measure/stop-hook.mjs` | §8에 기록 |
-| 1 | 검사 규칙(순수): `checkSegments(db, ids)` | `server/agent/checks.mjs` | 순수 테스트 |
+| 1 ✓ | 검사 규칙(순수): `checkSegments(db, ids)`, 돌려보낼 글 `reasonFor`. 용어집 규칙은 한 곳(`glossaryRule.mjs`)에 두고 화면의 노란 경고·서버의 읽기 도구·검사가 함께 쓴다(화면은 `fold.mjs`처럼 그 파일을 가져온다) | `server/agent/checks.mjs`, `glossaryRule.mjs`(+`.d.mts`), `app/src/lib/glossary.ts`, `agent/tools.mjs`, `app/vite.config.ts` | 순수 테스트 5, 화면의 용어집 테스트가 그대로 통과 |
 | 2 | 기록: 턴마다 검사 결과(검사한 단락, 남은 실패, 돌려보낸 횟수와 이유) | `db/schema.sql`·`pipeline/migrate.py`(작업 DB 백업), `agent/records.mjs`, `index.mjs` | pytest + 서버 테스트 |
 | 3 | Stop hook: 그 턴에 Claude가 쓴 단락 → 검사 → 실패면 이유를 붙여 돌려보냄(앱이 횟수를 센다), 턴 끝에 기록, 멈춘 턴은 기록하지 않음 | `agent/session.mjs`, `agent/host.mjs` | 스텁 세션 |
 | 4 | 화면: 턴 끝에 ✓/✗와 돌려보낸 횟수(기록을 묻는다 — 스트림의 돌려보냄 메시지는 세션 파일에 남지 않으므로 다시 열 때도 같도록) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |

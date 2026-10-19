@@ -7,16 +7,15 @@ import { z } from "zod"
 
 import { makeAnchor } from "../anchor.mjs"
 import { anchorOf, execute, getBook, httpError, listChapters, listGlossary, search } from "../commands.mjs"
+import { termPattern } from "./glossaryRule.mjs"
 
 /** Characters of text one `read` returns before it stops and hands back `next`. Claude Code moves an MCP
  *  result over 25,000 tokens or 50,000 characters into a file, which this agent has no tool to open. */
 export const READ_BUDGET = 20000
 
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-/** Glossary terms a source paragraph mentions — the rule of app/src/lib/glossary.ts findTerms:
- *  whole word, case-insensitive, possessive or plural tail allowed. */
+/** Glossary terms a source paragraph mentions, by the glossary rule the editor uses too (glossaryRule.mjs). */
 const termsIn = (text, entries) =>
-  entries.filter((e) => e.term.trim() && new RegExp(`(?<![A-Za-z])${escape(e.term)}(?:[’']s|s)?(?![A-Za-z])`, "i").test(text))
+  entries.filter((e) => e.term.trim() && termPattern(e.term).test(text))
     .map(({ term, translation, aliases, kind }) => ({ term, translation, aliases, kind }))
 
 export function book(db) {
