@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { IconBook, IconMessage, IconNote, IconPencil, IconSearch } from "@tabler/icons-react"
+import { IconArrowBackUp, IconBook, IconMessage, IconNote, IconPencil, IconSearch } from "@tabler/icons-react"
 import { Streamdown } from "streamdown"
 import { cjk } from "@streamdown/cjk"
 
@@ -17,7 +17,7 @@ import type { AskDecision } from "@/data/api"
 import type { Claude } from "@/data/useClaude"
 import { DiffView } from "@/features/review/DiffView"
 import { readPointed, type Ask, type Item } from "@/lib/conversation"
-import { doingLine, toolLine, turnLine } from "@/lib/trace"
+import { WRITE_TOOLS, doingLine, toolLine, turnLine } from "@/lib/trace"
 import { Pointed } from "./Pointed"
 
 // Korean emphasis next to quotes ("**"말"**과") needs the CJK rules; Claude's words are sanitized by Streamdown
@@ -37,6 +37,10 @@ function blocksOf(items: Item[]): Block[] {
   }
   return blocks
 }
+
+/** The tool calls of a turn that changed the book. */
+const writesOf = (b: Block) =>
+  b.kind === "claude" ? b.parts.flatMap((p) => (p.kind === "tool" && WRITE_TOOLS.has(p.name) && p.status === "done" ? [p.id] : [])) : []
 
 const ICON: Record<string, React.ReactNode> = {
   read: <IconBook />, book: <IconBook />, glossary: <IconBook />, search: <IconSearch />,
@@ -68,7 +72,9 @@ export function Thread({ claude }: { claude: Claude }) {
               ) : (
                 <MessageScrollerItem key={`c${i}`}>
                   <ClaudeMessage parts={b.parts} turn={b.turn} live={i === blocks.length - 1 && !pending ? view.state.live : null}
-                    working={i === blocks.length - 1 && !pending && view.state.status !== "idle"} waiting={view.asks.length > 0} />
+                    working={i === blocks.length - 1 && !pending && view.state.status !== "idle"} waiting={view.asks.length > 0}
+                    stands={claude.stands} onUndo={claude.undoFrom}
+                    undoable={working ? [] : blocks.slice(i).flatMap(writesOf).filter((id) => claude.stands(id) === true)} />
                 </MessageScrollerItem>
               ),
             )}
@@ -112,10 +118,19 @@ function UserMessage({ text }: { text: string }) {
   )
 }
 
-/** Claude's side of a turn: runs of reading and thinking as one Trace each, its words between them, the turn's end. */
-function ClaudeMessage({ parts, turn, live, working, waiting }: {
+/** Claude's side of a turn: runs of reading and thinking as one Trace each, its words between them, the turn's end —
+ *  and there, Undo from here: Claude's changes from this turn to the end of the conversation, taken back together
+ *  (Claude Code's rewind), or not at all, saying why (docs/agent.md §18). */
+function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, onUndo }: {
   parts: Item[]; turn: Extract<Item, { kind: "turn" }> | null; live: Claude["view"]["state"]["live"]; working: boolean; waiting: boolean
+  stands: Claude["stands"]; undoable: string[]; onUndo: Claude["undoFrom"]
 }) {
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const undo = async () => {
+    setBusy(true)
+    try { setRefusal(await onUndo(undoable)) } catch (e) { setRefusal((e as Error).message) } finally { setBusy(false) }
+  }
   const runs: (Item[] | Extract<Item, { kind: "text" }>)[] = []
   for (const p of parts) {
     if (p.kind === "text") runs.push(p)
@@ -127,7 +142,7 @@ function ClaudeMessage({ parts, turn, live, working, waiting }: {
     <Message>
       <MessageContent className="gap-3">
         {runs.map((r, i) =>
-          Array.isArray(r) ? <Steps key={i} steps={r} /> : <Words key={r.id} text={r.text} />,
+          Array.isArray(r) ? <Steps key={i} steps={r} stands={stands} /> : <Words key={r.id} text={r.text} />,
         )}
         {live?.kind === "text" && <Words text={live.text} streaming />}
         {working && live?.kind !== "text" && (
@@ -141,7 +156,21 @@ function ClaudeMessage({ parts, turn, live, working, waiting }: {
           </Trace>
         )}
         {/* inside the content: Message lays its children in a row, and the turn's end goes under the answer */}
-        {end && <MessageFooter data-turn-end className={end.stopped ? "px-0 text-destructive" : "px-0"}>{end.text}</MessageFooter>}
+        {end && (
+          <MessageFooter data-turn-end className={end.stopped ? "gap-1 px-0 text-destructive" : "gap-1 px-0"}>
+            {end.text}
+            {undoable.length > 0 && (
+              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-muted-foreground" disabled={busy} onClick={() => void undo()}>
+                <IconArrowBackUp data-icon="inline-start" />Undo from here ({undoable.length})
+              </Button>
+            )}
+          </MessageFooter>
+        )}
+        {refusal && (
+          <p data-refusal className="text-xs text-destructive">
+            Not undone: {refusal}. {refusal.startsWith("You") ? "Undo yours first (⌘Z), or keep it." : "Take that back first, or keep it."}
+          </p>
+        )}
       </MessageContent>
     </Message>
   )
@@ -158,8 +187,8 @@ function Words({ text, streaming = false }: { text: string; streaming?: boolean 
   )
 }
 
-/** What Claude read and thought, one line each; a thought opens to its summary. */
-function Steps({ steps }: { steps: Item[] }) {
+/** What Claude read and thought, one line each; a thought opens to its summary. A change taken back stays, struck. */
+function Steps({ steps, stands }: { steps: Item[]; stands: Claude["stands"] }) {
   return (
     <Trace>
       {steps.map((s) => {
@@ -167,11 +196,13 @@ function Steps({ steps }: { steps: Item[] }) {
         if (s.kind !== "tool") return null
         const line = toolLine(s)
         if (!line) return null
+        const undone = WRITE_TOOLS.has(s.name) && s.status === "done" && stands(s.id) === false
         return (
-          <TraceLine key={s.id} status={s.status === "running" ? "running" : s.status === "error" ? "error" : undefined}>
+          <TraceLine key={s.id} data-undone={undone || undefined} className={undone ? "line-through opacity-60" : undefined}
+            status={s.status === "running" ? "running" : s.status === "error" ? "error" : undefined}>
             <TraceIcon>{ICON[s.name] ?? <IconBook />}</TraceIcon>
             <TraceTitle>{line.title}</TraceTitle>
-            {line.note && <TraceDescription>{line.note}</TraceDescription>}
+            {(line.note || undone) && <TraceDescription className="no-underline">{undone ? "undone" : line.note}</TraceDescription>}
           </TraceLine>
         )
       })}

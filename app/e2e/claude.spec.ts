@@ -217,3 +217,67 @@ test("⌘L does the same, from the text and from inside the open editor", async 
     }
   }
 })
+
+// --- Claude's changes, taken back from the conversation (docs/agent.md §18): the conversation is the recording; the
+// change its tool call made is written into the e2e copy under the same tool call id, as the fitz tool would
+
+const writeCall = translate.flatMap((m) => (m.type === "assistant" ? (m.message as { content: { type: string; id?: string; name?: string }[] }).content : []))
+  .find((b) => b.type === "tool_use" && b.name?.endsWith("set_translation"))!.id!
+async function claudeWrote(page: Page) {
+  const { DatabaseSync } = await import("node:sqlite")
+  const { execute } = await import("../../server/commands.mjs")
+  await page.goto("/")
+  await page.getByRole("button", { name: /18: / }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  const pair = page.locator("[data-pair]").nth(2)
+  const id = Number(await pair.getAttribute("data-pair"))
+  const db = new DatabaseSync("/tmp/fitz-e2e.db", { timeout: 5000 })
+  try {
+    execute(db, "updateSegment", { id, targetDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Claude가 넣은 번역" }] }] }, status: "draft" }, { actor: "agent", toolUseId: writeCall })
+  } finally { db.close() }
+  return { pair, id }
+}
+async function playTranslate(page: Page, fake: Awaited<ReturnType<typeof fakeServer>>) {
+  await page.getByRole("tab", { name: /Claude/ }).click()
+  const box = page.getByRole("textbox", { name: "Message to Claude" })
+  await box.fill("¶3을 번역해서 넣어줘")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  fake.play(convId!, translate)
+}
+
+test("Undo from here takes back Claude's changes from that turn; the line stays, struck", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const { pair } = await claudeWrote(page)
+  await page.reload()
+  await page.getByRole("button", { name: /18: / }).click()
+  await page.getByRole("tab", { name: "Translate" }).click()
+  await expect(pair.locator("[data-target]")).toHaveText("Claude가 넣은 번역")
+  await playTranslate(page, fake)
+  const undo = thread(page).getByRole("button", { name: "Undo from here (1)" })
+  await expect(undo).toBeVisible()
+  await undo.click()
+  await expect(pair.locator("[data-target]")).not.toContainText("Claude가 넣은 번역")
+  await expect(thread(page).locator("[data-undone]")).toContainText("Wrote the translation of ¶3")
+  await expect(thread(page).getByRole("button", { name: /Undo from here/ })).toHaveCount(0)
+})
+
+test("Undo from here is refused, and says why, when you changed the same paragraph afterwards", async ({ page, request }) => {
+  const fake = await fakeServer(page)
+  const { pair, id } = await claudeWrote(page)
+  const api = (name: string, data: unknown = {}) => request.post(`http://localhost:4801/api/${name}`, { data })
+  expect((await api("updateSegment", { id, patch: { targetDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "내가 그 위에 고친 번역" }] }] } } })).ok()).toBe(true)
+  try {
+    await page.reload()
+    await page.getByRole("button", { name: /18: / }).click()
+    await page.getByRole("tab", { name: "Translate" }).click()
+    await playTranslate(page, fake)
+    await thread(page).getByRole("button", { name: "Undo from here (1)" }).click()
+    await expect(thread(page).locator("[data-refusal]")).toHaveText(`Not undone: You changed ¶${id} after this. Undo yours first (⌘Z), or keep it.`)
+    await expect(pair.locator("[data-target]")).toHaveText("내가 그 위에 고친 번역")
+  } finally {
+    expect((await api("undo")).ok()).toBe(true)
+    expect((await api("undoClaude", { toolUseIds: [writeCall] })).ok()).toBe(true)
+  }
+})

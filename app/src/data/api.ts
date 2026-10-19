@@ -269,4 +269,8 @@ export interface Api {
   sendMessage(convId: string, text: string): void
   stopTurn(convId: string): void
   answerAsk(convId: string, requestId: string, decision: AskDecision): void
+  /** Take back Claude's changes made by these tool calls, together, newest first — or none (409, saying why). */
+  undoClaude(toolUseIds: string[]): Promise<OpSummary[]>
+  /** The change each tool call made, and whether it was taken back. */
+  claudeChanges(toolUseIds: string[]): Promise<{ toolUseId: string; opId: number; undone: boolean }[]>
 }

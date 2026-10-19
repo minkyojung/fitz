@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "./http"
 import type { AskDecision, ConversationSummary } from "./api"
 import { applyEvent, emptyView, withPointed, type ConversationView, type Pointed } from "@/lib/conversation"
+import { WRITE_TOOLS } from "@/lib/trace"
 
 /** The models and efforts offered for a new conversation; the server's defaults first. */
 export const MODELS = [
@@ -57,15 +58,45 @@ export function useClaude() {
     api.sendMessage(id, message)
   }, [convId, follow, choice, pointed])
 
+  // Claude's changes in this conversation, and whether each still stands: asked of the server for the writes that
+  // went through, and again when anyone takes a change back
+  const writes = view.state.items.flatMap((i) => (i.kind === "tool" && WRITE_TOOLS.has(i.name) && i.status === "done" ? [i.id] : []))
+  const writesKey = writes.join(",")
+  const [changes, setChanges] = useState<{ key: string; undone: Map<string, boolean> } | null>(null)
+  const refreshChanges = useCallback(() => {
+    const ids = writesKey ? writesKey.split(",") : []
+    if (!ids.length) return
+    api.claudeChanges(ids).then((rows) => setChanges({ key: writesKey, undone: new Map(rows.map((r) => [r.toolUseId, r.undone])) })).catch(() => undefined)
+  }, [writesKey])
+  useEffect(() => { refreshChanges() }, [refreshChanges])
+  useEffect(() => api.watchChanges((c) => { if (c.kind !== "do" && c.kind !== "suggested") refreshChanges() }), [refreshChanges])
+  /** Whether a write of this conversation still stands: true, false, or null while not yet known. A write that went
+   *  through and has no change logged any more was taken back (Claude's next change ended its redo). */
+  const stands = useCallback(
+    (toolUseId: string) => (changes?.key !== writesKey ? null : changes.undone.has(toolUseId) ? !changes.undone.get(toolUseId) : false),
+    [changes, writesKey],
+  )
+  /** Take back these changes of Claude's; the reason when they cannot be. */
+  const undoFrom = useCallback(async (toolUseIds: string[]) => {
+    try {
+      await api.undoClaude(toolUseIds)
+      refreshChanges()
+      return null
+    } catch (e) {
+      if ((e as { status?: number }).status === 409) return (e as Error).message
+      throw e
+    }
+  }, [refreshChanges])
+
   const summary = list.find((c) => c.id === convId) ?? null
   return useMemo(() => ({
     convId, view, list, summary, choice, setChoice, pointed, point: setPointed, pending,
-    refreshList, send,
+    refreshList, send, stands, undoFrom,
     open: (id: string) => follow(id),
     newConversation: () => { unfollow.current?.(); unfollow.current = null; setConvId(null); setView(emptyView()); setPending(null) },
     stop: () => { if (convId) api.stopTurn(convId) },
     answer: (requestId: string, decision: AskDecision) => { if (convId) api.answerAsk(convId, requestId, decision) },
-  }), [convId, view, list, summary, choice, pointed, pending, refreshList, send, follow])
+  }), [convId, view, list, summary, choice, pointed, pending, refreshList, send, stands, undoFrom, follow])
 }
 
 export type Claude = ReturnType<typeof useClaude>

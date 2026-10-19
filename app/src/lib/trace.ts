@@ -5,6 +5,9 @@ import type { Item } from "./conversation.ts"
 type Tool = Extract<Item, { kind: "tool" }>
 type Turn = Extract<Item, { kind: "turn" }>
 
+/** The fitz tools that change the book: what Claude did with them can be taken back from the conversation. */
+export const WRITE_TOOLS = new Set(["set_translation", "set_glossary_term", "add_comment", "add_translator_note"])
+
 const paras = (ids: number[]) => (ids.length > 4 ? `${ids.length} paragraphs` : ids.map((id) => `¶${id}`).join(", "))
 
 /** The call's line: what it was, and for one that did not go through, why. null: not shown (a task's answer). */
