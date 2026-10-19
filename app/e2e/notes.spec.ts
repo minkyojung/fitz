@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 
 async function selectWord(block: Locator, word: string) {
   await block.evaluate((el, w: string) => {
@@ -156,6 +156,68 @@ test("a mouse selection shows the toolbar when the button is let go, not while d
   await page.mouse.up()
   await expect(toolbar).toBeVisible()
   await expect(toolbar).toHaveAttribute("data-quote", inEditor)
+  await page.keyboard.press("Escape")
+})
+
+/** Whether the toolbar sits just under the selected words, or how far off it is. */
+const toolbarPlace = (page: Page) => page.evaluate(() => {
+  const w = window.getSelection()!.getRangeAt(0).getBoundingClientRect()
+  const t = document.querySelector("[data-floating-toolbar]")!.getBoundingClientRect()
+  const gap = t.top - w.bottom
+  return gap >= 0 && gap <= 12 && t.left < w.right && w.left < t.right ? "under the words" : `${Math.round(gap)}px off`
+})
+const wordsTop = (page: Page) => page.evaluate(() => window.getSelection()!.getRangeAt(0).getBoundingClientRect().top)
+/** Scroll the list the block is in, as its scrollbar would. */
+const scrollList = (block: Locator, dy: number) => block.evaluate((el, dy) => el.closest('[data-slot="scroll-area-viewport"]')!.scrollBy(0, dy), dy)
+/** The first long paragraph that can be scrolled to show its first line low in the list, its end running below the list's
+ *  edge; scrolls it there. By the list's own edges, not the window's, so the shell around it may change. */
+const longParagraphLow = (rows: Locator) => rows.evaluateAll((els) => {
+  for (const [i, el] of els.entries()) {
+    const list = el.closest('[data-slot="scroll-area-viewport"]')!
+    const by = el.querySelector("p")!.getBoundingClientRect().top - (list.getBoundingClientRect().bottom - 120)
+    const to = list.scrollTop + by
+    if (el.getBoundingClientRect().height > 400 && to >= 0 && to <= list.scrollHeight - list.clientHeight) { list.scrollBy(0, by); return i }
+  }
+  return -1
+})
+test("the toolbar stays with its words when the list scrolls: under the wheel, out of sight and back; in the editor too", async ({ page }) => {
+  await page.goto("/")
+  await page.getByRole("navigation", { name: "Chapters" }).getByRole("button", { name: /19: Backlash/ }).click()
+  const rows = page.locator("[data-segment]")
+  await expect(rows.first()).toHaveText(/Backlash/)
+  const toolbar = page.locator("[data-floating-toolbar]")
+  const n = await longParagraphLow(rows)
+  expect(n).not.toBe(-1)
+  const block = rows.nth(n).locator("p").first()
+  const words = (await block.innerText()).trim().split(" ").slice(0, 2).join(" ")
+  await dragOver(block, words)
+  await page.mouse.up()
+  await expect(toolbar).toBeVisible()
+  await expect.poll(() => toolbarPlace(page)).toBe("under the words")
+
+  // the wheel, near the list's top, away from the toolbar
+  const top = await block.evaluate((el) => { const r = el.closest('[data-slot="scroll-area-viewport"]')!.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 60 } })
+  await page.mouse.move(top.x, top.y)
+  await page.mouse.wheel(0, 120)
+  await expect.poll(() => toolbarPlace(page)).toBe("under the words")
+
+  // the words scrolled out of the list: the toolbar goes with them, and comes back with them
+  const away = Math.round(await wordsTop(page)) + 100 // above the top of the window
+  await scrollList(block, away)
+  await expect(toolbar).toBeHidden()
+  await scrollList(block, -away)
+  await expect(toolbar).toBeVisible()
+  await expect.poll(() => toolbarPlace(page)).toBe("under the words")
+
+  // in the editor: a keyboard selection, then the list scrolls
+  await rows.nth(n).getByRole("button", { name: "Edit text" }).click()
+  const editor = rows.nth(n).getByRole("textbox")
+  await expect(editor).toBeFocused()
+  await page.keyboard.press("Meta+ArrowUp")
+  for (let i = 0; i < 12; i++) await page.keyboard.press("Shift+ArrowRight")
+  await expect(toolbar).toBeVisible()
+  await scrollList(editor, 120)
+  await expect.poll(() => toolbarPlace(page)).toBe("under the words")
   await page.keyboard.press("Escape")
 })
 

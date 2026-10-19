@@ -22,12 +22,13 @@ export function useDomSelection(paused: boolean) {
       if (!block || !row || !text || text.length > 200 || /\n/.test(text)) { state.publish(null); return }
       const pre = document.createRange(); pre.selectNodeContents(block); pre.setEnd(range.startContainer, range.startOffset)
       const start = pre.toString().length
-      const r = range.getBoundingClientRect()
+      // a copy: the browser keeps a range on its words as the page changes, while the selection itself may move on (into a comment box)
+      const words = range.cloneRange()
       const sel: TextSelection = {
         segmentId: Number(row.getAttribute("data-segment") ?? row.getAttribute("data-pair")),
         side: block.matches("[data-target]") ? "target" : "source",
         text, start, end: start + text.length,
-        rect: { x: r.x, y: r.y, width: r.width, height: r.height },
+        anchor: { getBoundingClientRect: () => words.getBoundingClientRect(), contextElement: row },
         origin: "dom",
       }
       state.publish(sel)

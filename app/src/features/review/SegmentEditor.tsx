@@ -95,9 +95,19 @@ export function SegmentEditor({
       if (!text.trim()) { onSelect(null); return }
       // text offsets: each paragraph costs one position to open and one to close
       const offset = (pos: number) => { let n = 0; editor.state.doc.nodesBetween(0, pos, (node, p) => { if (node.isText) n += Math.min(pos, p + node.nodeSize) - p; return true }); return n }
-      const a = editor.view.coordsAtPos(from), b = editor.view.coordsAtPos(to)
+      // measured when asked, from the editor's selection as it is then; once the editor has closed (a comment box took
+      // the focus, and Tiptap destroys it a tick after its DOM goes), where the words last were
+      let last = new DOMRect()
+      const measure = () => {
+        if (editor.isDestroyed || !editor.view.dom.isConnected) return last
+        const sel = editor.state.selection
+        const a = editor.view.coordsAtPos(sel.from), b = editor.view.coordsAtPos(sel.to)
+        return (last = new DOMRect(Math.min(a.left, b.left), Math.min(a.top, b.top), Math.abs(b.left - a.left) || 1, Math.max(a.bottom, b.bottom) - Math.min(a.top, b.top)))
+      }
+      measure()
       onSelect({ text, start: offset(from), end: offset(to), origin: "editor",
-        rect: { x: Math.min(a.left, b.left), y: Math.min(a.top, b.top), width: Math.abs(b.left - a.left) || 1, height: Math.max(a.bottom, b.bottom) - Math.min(a.top, b.top) } })
+        // the row outlives the editor, so the popover keeps hearing the list scroll after the editor closes
+        anchor: { getBoundingClientRect: measure, contextElement: editor.view.dom.closest("[data-segment], [data-pair]") ?? editor.view.dom } })
     },
     onUpdate: ({ editor }) => {
       if (!onDraft) return

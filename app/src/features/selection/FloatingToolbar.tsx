@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useState } from "react"
+import { useEffect, useEffectEvent, useState } from "react"
 import { IconBook2, IconMessage, IconNote, IconPinned, IconSparkles } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -45,10 +45,8 @@ export function FloatingToolbar({ blockText, onAsk }: {
   }, [])
   const selecting = pressedOn !== null && pressedOn !== rangeKey(sel) && !compose // a comment being written stays put
   useEffect(() => { if (!sel) { setCompose(null); setBody("") } }, [sel])
-  // a virtual element: the popover positions itself against the selection rectangle
-  const anchor = useMemo(() => (sel ? { getBoundingClientRect: () => DOMRect.fromRect(sel.rect) } : null), [sel])
 
-  if (!sel || !anchor || !spell || !ann || selecting) return null
+  if (!sel || !spell || !ann || selecting) return null
   const known = spell.glossary.some((t) => t.term.toLowerCase() === sel.text.toLowerCase())
   // author's notes of this paragraph still waiting for a place in the translation (never placed, or placed in text since rewritten)
   const unplaced = sel.side === "target"
@@ -73,7 +71,7 @@ export function FloatingToolbar({ blockText, onAsk }: {
   return (
     <Popover open onOpenChange={(o) => { if (!o && !compose) state?.publish(null) }} modal={false}>
       <PopoverContent
-        anchor={anchor}
+        anchor={sel.anchor} // the popover measures the words on every scroll of the list they are in
         side="bottom"
         align="center"
         sideOffset={6}
@@ -81,7 +79,9 @@ export function FloatingToolbar({ blockText, onAsk }: {
         data-quote={sel.text}
         initialFocus={false}
         finalFocus={false}
-        className={compose ? "w-72 gap-1.5 p-2" : "w-auto gap-0 p-1"}
+        // the buttons go out of sight with their words; a comment being written never does (hidden, it would lose the
+        // focus, and the keys typed next would fall to the list's shortcuts)
+        className={compose ? "w-72 gap-1.5 p-2" : "w-auto gap-0 p-1 in-data-anchor-hidden:invisible"}
         onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("textarea")) e.preventDefault() }} // keep the text selection
       >
         {compose ? (
