@@ -166,6 +166,7 @@ def migrate(path: Path) -> list[str]:
             made_on      TEXT NOT NULL,
             status       TEXT NOT NULL DEFAULT 'active'
                          CHECK (status IN ('active','learned','known','disputed','kept','changed','discussed','stale')),
+            decided_on   TEXT,
             created_at   TEXT NOT NULL DEFAULT (datetime('now')),
             CHECK ((kind = 'challenge') = (proposal IS NOT NULL)),
             CHECK ((kind = 'challenge') = (options IS NULL AND answer IS NULL))
@@ -191,6 +192,10 @@ def migrate(path: Path) -> list[str]:
           );
         """)
         done.append("Session tables (drill_run, drill_card, drill_review, drill_pick)")
+    dcols = {r[1] for r in conn.execute("PRAGMA table_info(drill_card)")}
+    if dcols and "decided_on" not in dcols:
+        conn.execute("ALTER TABLE drill_card ADD COLUMN decided_on TEXT")
+        done.append("drill_card.decided_on column")
     triggers ={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     if "segment_version_on_update" not in triggers:
         # the same triggers as db/schema.sql

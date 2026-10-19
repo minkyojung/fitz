@@ -610,6 +610,11 @@ test("every command says what it touched, read back from the log, both ways: par
   const sid = Number(db.prepare(`INSERT INTO agent_suggestion(conversation_id, task, segment_id, side, quote, replacement, why, base_version)
     VALUES ('c', 'typos', 4, 'source', 'last', 'least', '-', 1)`).run().lastInsertRowid)
   execute(db, "decideSuggestion", { id: sid, decision: "accept" })
+  execute(db, "updateSegment", { id: 3, targetDoc: doc("엡실론 제타") })
+  db.prepare("INSERT INTO drill_run(id, slot, status) VALUES (1, '2026-10-19', 'done')").run()
+  const ch = Number(db.prepare(`INSERT INTO drill_card(run_id, segment_id, kind, origin, written_by, quote, question, proposal, why, base_version, due_on, made_on)
+    VALUES (1, 3, 'challenge', 'claude', 'translator', '제타', '?', '제터', '-', 1, '2026-10-19', '2026-10-19')`).run().lastInsertRowid)
+  execute(db, "decideChallenge", { id: ch, decidedOn: "2026-10-19" })
 
   const named = new Set()
   for (const row of db.prepare("SELECT * FROM ops ORDER BY id").all()) {
@@ -629,6 +634,7 @@ test("every command says what it touched, read back from the log, both ways: par
   assert.deepEqual(touches({ name: "addComment", params: { id: 9, parentId: c.id }, segmentIds: [4] }), ["comment:9", `comment:${c.id}`], "a reply touches its thread")
   assert.deepEqual(forward("setNoteAnchor"), ["note:3"], "linking a note does not touch the paragraph's text")
   assert.deepEqual(forward("decideSuggestion"), [`suggestion:${sid}`, "seg:4"])
+  assert.deepEqual(forward("decideChallenge"), [`challenge:${ch}`, "seg:3"])
   assert.throws(() => touches({ name: "somethingNew", params: {}, segmentIds: [] }), /not known/)
 })
 

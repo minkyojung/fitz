@@ -249,3 +249,20 @@ def test_migration_adds_the_session_tables_as_the_schema_has_them(tmp_path: Path
     assert conn.execute("SELECT (SELECT count(*) FROM drill_card) + (SELECT count(*) FROM drill_review)").fetchone()[0] == 0
     conn.close()
     assert migrate(p) == []
+
+
+def test_migration_adds_decided_on_to_session_cards_made_before_it(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("""
+      CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);
+      CREATE TABLE drill_run (id INTEGER PRIMARY KEY, slot TEXT, status TEXT NOT NULL);
+      CREATE TABLE drill_card (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL, segment_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active');
+      INSERT INTO drill_card(run_id, segment_id) VALUES (1, 1);
+    """)
+    conn.commit(); conn.close()
+    assert "drill_card.decided_on column" in migrate(p)
+    conn = sqlite3.connect(p)
+    assert conn.execute("SELECT status, decided_on FROM drill_card").fetchone() == ("active", None)
+    conn.close()
+    assert migrate(p) == []

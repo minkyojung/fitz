@@ -241,6 +241,7 @@ CREATE TABLE drill_card (
   made_on      TEXT NOT NULL,
   status       TEXT NOT NULL DEFAULT 'active'
                CHECK (status IN ('active','learned','known','disputed','kept','changed','discussed','stale')),
+  decided_on   TEXT,                       -- 번역자가 끝낸 날: 챌린지를 정하거나, 이미 앎·이의로 뺀 날. 하루 챌린지 수를 센다
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK ((kind = 'challenge') = (proposal IS NOT NULL)),
   CHECK ((kind = 'challenge') = (options IS NULL AND answer IS NULL))

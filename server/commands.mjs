@@ -147,6 +147,11 @@ const getSuggestion = (db, id) => {
   return r
 }
 const DECIDED = { accept: "accepted", dismiss: "dismissed", comment: "commented" }
+const getChallenge = (db, id) => {
+  const r = db.prepare("SELECT * FROM drill_card WHERE id = ? AND kind = 'challenge'").get(id)
+  if (!r) throw httpError(404, `challenge ${id} not found`)
+  return r
+}
 const anchorCols = (p, a) => a ? [a.exact, a.prefix ?? "", a.suffix ?? "", a.start ?? null, a.end ?? null] : [null, null, null, null, null]
 
 /** Boxes of one segment: { pageNo, x0, y0, x1, y1 }[] */
@@ -572,6 +577,25 @@ export const COMMANDS = {
     const decision = Object.keys(DECIDED).find((d) => DECIDED[d] === s.status)
     return { result: suggestionRow(getSuggestion(db, id)), forward: { id, undo }, inverse: { name: "decideSuggestion", params: { id, decision } }, segmentIds: [s.segment_id] }
   },
+  /** Use the suggestion of one of Session's challenges (docs/session.md §2), as accepting a review suggestion does: its
+   *  words found again in the translation as it stands (exactly once there, or refused) and only they replaced, the
+   *  translator's write. Keeping a challenge or discussing it is not an edit of the book (drill/today.mjs). */
+  decideChallenge(db, { id, decidedOn }) {
+    const c = getChallenge(db, id)
+    if (c.status !== "active") throw httpError(409, `challenge ${id} is already ${c.status}`)
+    const seg = getSegment(db, c.segment_id)
+    const at = findOnce(seg.target_text ?? "", c.quote)
+    if (at === -1) throw httpError(409, `¶${seg.id} changed: "${c.quote}" is no longer in it exactly once`)
+    const did = COMMANDS.updateSegment(db, { id: seg.id, targetDoc: replaceRange(JSON.parse(seg.target_doc), at, at + c.quote.length, c.proposal) })
+    db.prepare("UPDATE drill_card SET status = 'changed', decided_on = ? WHERE id = ?").run(decidedOn, id)
+    return { result: { id, status: "changed" }, forward: { id, decidedOn }, inverse: { name: "reopenChallenge", params: { id, undo: did.inverse } }, segmentIds: [seg.id] }
+  },
+  reopenChallenge(db, { id, undo }) {
+    const c = getChallenge(db, id)
+    if (undo) COMMANDS[undo.name](db, undo.params)
+    db.prepare("UPDATE drill_card SET status = 'active', decided_on = NULL WHERE id = ?").run(id)
+    return { result: { id, status: "active" }, forward: { id, undo }, inverse: { name: "decideChallenge", params: { id, decidedOn: c.decided_on } }, segmentIds: [c.segment_id] }
+  },
 }
 
 export const inTransaction = (db, fn) => {
@@ -622,6 +646,10 @@ export function touches({ name, params: p, segmentIds }) {
       return [`suggestion:${p.id}`, ...(p.decision === "accept" ? paragraphs : p.decision === "comment" ? [`comment:${p.commentId}`] : [])]
     case "reopenSuggestion":
       return [`suggestion:${p.id}`, ...(p.undo ? touches({ name: p.undo.name, params: p.undo.params, segmentIds }) : [])]
+    case "decideChallenge":
+      return [`challenge:${p.id}`, ...paragraphs]
+    case "reopenChallenge":
+      return [`challenge:${p.id}`, ...(p.undo ? touches({ name: p.undo.name, params: p.undo.params, segmentIds }) : [])]
     default:
       throw new Error(`what ${name} touches is not known`)
   }

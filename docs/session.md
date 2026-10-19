@@ -73,7 +73,7 @@
 | 테이블 | 담는 것 |
 |---|---|
 | `drill_run` | 저녁 실행과 "더 만들기" 한 번: 그날(저녁 실행만), 시작한 때(다음 재료의 시작), 상태(running·done·failed·skipped), 읽게 한 단락, 저장·버린 수, 오류, 세션 id, 비용·시간 |
-| `drill_card` | 카드 하나: 단락, 종류, 출처(claude·picked·asked), 누가 쓴 번역(만들 때), 구절, 질문, 보기·정답 / 대안, 이유, 만들 때 단락 버전, 상자, 다음 날짜, 만든 날, 상태(active·learned·known·disputed·kept·changed·discussed·stale) |
+| `drill_card` | 카드 하나: 단락, 종류, 출처(claude·picked·asked), 누가 쓴 번역(만들 때), 구절, 질문, 보기·정답 / 대안, 이유, 만들 때 단락 버전, 상자, 다음 날짜, 만든 날, 상태(active·learned·known·disputed·kept·changed·discussed·stale), 끝낸 날(챌린지 결정·이미 앎·이의 — 하루 챌린지 수를 센다) |
 | `drill_review` | 답 하나: 카드, 날짜, 고른 보기, 맞음, 그날의 첫 답인가 |
 | `drill_pick` | 직접 고르거나 물어본 구절. 카드를 만든 실행이 정해지면 그 실행 |
 | `meta.drill_more` | 오늘 늘린 한도(날짜와 함께) |
