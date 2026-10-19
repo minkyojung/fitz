@@ -208,7 +208,6 @@ END;
 CREATE TABLE drill_run (
   id          INTEGER PRIMARY KEY,
   slot        TEXT,                       -- 저녁 실행의 날. NULL = 더 만들기
-  through_op  INTEGER NOT NULL,           -- 재료의 끝: 시작할 때의 마지막 ops.id. 끝난 저녁 실행의 최댓값이 다음 재료의 시작
   status      TEXT NOT NULL CHECK (status IN ('running','done','failed','skipped')),  -- skipped = 재료가 없어 Claude를 부르지 않음
   segment_ids TEXT,                       -- 읽게 한 단락 id JSON
   made        INTEGER,                    -- 저장한 카드 수(챌린지 포함)
@@ -217,7 +216,8 @@ CREATE TABLE drill_run (
   session_id  TEXT,                       -- Claude Code의 세션 id
   cost        REAL,                       -- 달러(추정)
   ms          INTEGER,
-  started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at  TEXT NOT NULL DEFAULT (datetime('now')),  -- 재료는 지난 저녁 실행(끝난 것)이 시작한 뒤에 기록된 변경. ops.id로 가르지 않는다:
+                                          -- 맨 위의 되돌린 변경은 그쪽의 다음 변경이 지우고, 그 id가 다시 쓰인다(AUTOINCREMENT 없음)
   finished_at TEXT
 );
 

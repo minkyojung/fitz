@@ -236,7 +236,7 @@ def test_migration_adds_the_session_tables_as_the_schema_has_them(tmp_path: Path
     fresh.close()
     # a card is either four options with one answer, or a challenge with a proposal — never both or neither
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("INSERT INTO drill_run(id, slot, through_op, status) VALUES (1, '2026-10-19', 0, 'done')")
+    conn.execute("INSERT INTO drill_run(id, slot, status) VALUES (1, '2026-10-19', 'done')")
     card = "INSERT INTO drill_card(run_id, segment_id, kind, origin, written_by, quote, question, options, answer, proposal, why, base_version, due_on, made_on) VALUES (1, 1, ?, 'claude', 'translator', 'q', '?', ?, ?, ?, 'why', 1, '2026-10-19', '2026-10-19')"
     conn.execute(card, ("meaning", '["a","b","c","d"]', 2, None))
     conn.execute(card, ("challenge", None, None, "p"))

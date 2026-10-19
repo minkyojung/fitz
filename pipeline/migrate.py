@@ -136,7 +136,6 @@ def migrate(path: Path) -> list[str]:
           CREATE TABLE drill_run (
             id          INTEGER PRIMARY KEY,
             slot        TEXT,
-            through_op  INTEGER NOT NULL,
             status      TEXT NOT NULL CHECK (status IN ('running','done','failed','skipped')),
             segment_ids TEXT,
             made        INTEGER,
