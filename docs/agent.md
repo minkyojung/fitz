@@ -62,7 +62,7 @@ server/
     protocol.mjs        ClientMsg / ServerMsg 닫힌 union. 수신 시 모든 필드 검증
 app/src/
   lib/live.ts           페이지의 실시간 연결 하나(다시 붙기, resync). 9단계의 대화 화면도 이 위에
-  features/agent/       패널 "Agent" 탭: 스레드, 라이브 라인, 승인 카드, 결과 카드, 비용
+  features/agent/       오른쪽 Claude 패널(§17, §22): 스레드, 라이브 라인, 승인 카드, 결과 카드, 비용
 ```
 
 ## 3. 도구 (MCP 서버 `fitz`)
@@ -398,6 +398,8 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 
 ## 17. Claude 탭 — 에디터 안의 대화 (9단계, 2026-10-18)
 
+> 2026-10-19부터 오른쪽 패널은 탭 없이 Claude 전용이다(§22): 머리줄의 ✦로 여닫는다. 아래의 "탭"은 지금의 이 패널이다.
+
 갤러리 `?gallery&agent`(B안, 승인). 새 열은 없다: 본문에서 부르고(선택 툴바의 **Ask Claude**, ⌘L), 오른쪽 패널의 **Claude** 탭에서 대화하고, 바뀐 것은 본문으로 돌아온다(`/live`의 `changed`). 부품은 shadcn AI Elements 그대로: Message·Bubble(번역자), Trace(Claude가 읽고 생각한 것), Item(쓰기 허락, Confirmation 패턴), Input Group(입력·모델), Message Scroller(스크롤). 답의 글은 Streamdown(AI Elements가 쓰는 마크다운 렌더러: 쓰는 도중의 마크다운을 다루고, 모델의 글을 정화한다).
 
 | 정한 것 | 왜 |
@@ -522,3 +524,44 @@ B는 번역자가 직접 요청한 표기를 검사 때문에 용어집 표기�
 
 **실측**(2026-10-19, 커밋 4976f06을 따로 꺼내 돌림, Gatsby 1장). 화면에서 Haiku 5.5 · low로 ¶4의 한 구절을 묻고(5초, $0.0006), 메뉴로 Sonnet 5.5 → high로 바꿔 다시 물었다(2초, $0.024; 답하는 동안 메뉴는 잠김). 세션의 assistant 메시지는 Haiku 셋 다음 Sonnet 하나 — 같은 Claude Code 프로세스에서 바뀌었다. 책 DB의 대화는 `claude-sonnet-5-5`/`high`, 새로고침해 다시 열어도 메뉴가 Sonnet 5.5 · high. 세션은 지웠다.
 
+## 22. 화면 구성 — sidebar-07 사이드바와 Claude 전용 패널 (2026-10-19)
+
+갤러리 `?gallery&shell`(승인). 오른쪽 패널의 탭 다섯(History·Find·Glossary·Notes·Claude)은 범위가 다른 것들을 한 상자에 담고 있었다(문단·책·책·문단과 책·대화). 각자 범위의 자리로 보내고 오른쪽에는 Claude만 남겼다. shadcn 블록의 규칙을 따른다: 사이드바는 어디로 갈지(와 검색), 머리줄은 breadcrumb와 동작, 문단에 딸린 것은 그 문단에서.
+
+| 있던 곳 | 간 곳 |
+|---|---|
+| 머리줄의 Review·Translate·Export 탭 | 사이드바의 단계(장 목록 위, 책 전체 진행률). 머리줄은 단계 › 장 ▾(사이드바를 아이콘으로 접어도 장을 바꾼다) |
+| Find 탭 | 사이드바 맨 위 Find in book: 결과가 장 목록 자리에, Esc로 돌아온다(VS Code의 검색 보기) |
+| Glossary 탭 | 사이드바 아래 Glossary 페이지(표). Translate에서는 원문의 용어 밑줄을 눌러 그 자리에서 |
+| History 탭 | 선택한 문단의 History 버튼(편집 점 자리) |
+| Notes 탭: 댓글 | 표시를 누르면 그 자리(Popover). 장의 댓글 전부와 문단 전체에 단 댓글은 상태줄 Notes |
+| Notes 탭: 역주·저자 주 | Translate에서 번역문 아래 각주 칸 |
+| Notes 탭: 미연결 저자 주 | 상태줄 Notes → Link(문단 고르기 대화상자) |
+| Claude 탭 | 탭 없는 Claude 패널, 머리줄 ✦로 여닫음 |
+
+| 정한 것 | 왜 |
+|---|---|
+| 용어 밑줄을 눌러 고치는 것은 Translate에서만 | Review에서 클릭은 그 자리 편집의 시작이다. 자주 나오는 이름 근처를 고치기 어려워진다(기존 e2e 둘이 실패해서 알았다) |
+| History는 점 클릭이 아니라 선택한 문단의 버튼, 점 자리에 | 점은 원문을 고친 문단에만 있어 번역만 고친 문단의 기록에 닿지 않는다. 점 옆에 두면 1440px에서 Review 문단 머리줄이 두 줄로 넘어간다(여유 7px) |
+| 상태줄은 Notes 하나: 열린 댓글 수와 단계의 수(Review는 미연결, Translate는 미번역 저자 주) | 셋을 따로 두면 Translate 상태줄이 1280px에서 넘친다(원래 여유 12px). Suspects는 OCR 검수의 수라 Review에서만 |
+| 미연결 주의 Link는 목록을 닫고 대화상자를 연다 | 대화상자 안의 클릭은 Popover 밖의 클릭이라, 목록이 닫히며 그 안의 대화상자도 사라진다 |
+| 각주가 "붙은 자리"는 본문 번호와 같은 기준(번역문에서 그 말이 찾아지는가) | 옛 번역의 앵커가 남은 주가 "붙음"으로 보였다 |
+| ✦로 닫은 것도 새로고침 뒤 기억 | 레이아웃 저장(`useDefaultLayout`, 사용자 변경만)은 코드의 collapse를 사용자 변경으로 치지 않는다 → 그 변경에 `isUserInteraction: true`. 열려 있는지는 패널이 정하고 버튼은 바꿔 달라고만 한다(페이지를 열 때는 남겨 둔 그대로) |
+| 닫힌 패널의 내용은 `hidden` | 0px로 잘리기만 하면 Tab 순서와 화면 낭독에 남는다 |
+| e2e는 영역으로 좁혀 찾는다: 장은 `navigation "Chapters"`, 찾은 것은 `region "Find results"`, 단계는 이름 그대로(exact) | breadcrumb에 같은 이름의 장 버튼이 생겼다. shadcn SidebarRail도 "Toggle Sidebar"라 토글은 exact |
+
+Claude 패널의 글자(같은 날, 758a87a): 읽는 글 14px, 조작·상태 12px, 버튼 24px(보내기 28px). 10·12·13·14px 넷과 20·24·28px 셋이 섞여 있었다. 입력창은 13px로 적혀 있었지만 Textarea의 `md:text-xs`가 이겨 12px였다.
+
+### 22.1 만든 순서 (행 = 커밋)
+
+| # | 무엇 | 커밋 | e2e |
+|---|---|---|---|
+| 0 | 갤러리, Claude 패널 글자 | bd7a5dc, 758a87a | |
+| 1 | 사이드바(sidebar-07), 머리줄 breadcrumb | ce85cb8 | 52 |
+| 2 | Find → 사이드바 / Translate에서도 찾은 문단으로 | a8daf43 / fd50407 | 53 / 54 |
+| 3 | Glossary → 페이지, 용어 밑줄 / SpellMark의 콘솔 경고 | 98d514c / 623e4e3 | 55 |
+| 4 | History 버튼 | 7803edd | 56 |
+| 5 | 댓글은 표시 옆과 상태줄 Notes / 각주는 번역문 아래, Notes 탭 제거 | cfe7bba / 4fe4e9e | 56 / 59 |
+| 6 | 오른쪽은 Claude 전용, ✦ | 38dbf9c | 60 |
+
+같은 작업 폴더에서 다른 세션들이 일하는 중이라, 커밋마다 HEAD에 그 커밋의 파일만 얹은 임시 worktree에서 e2e 전체를 돌렸다(e2e 수에는 그 사이 다른 세션이 더한 테스트도 들어 있다). 남은 것: 앱의 작은 버튼(20px·글자 10px) 19개를 24px·12px로.
