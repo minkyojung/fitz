@@ -35,7 +35,7 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 10
+    assert len(steps) == 11
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
@@ -210,5 +210,42 @@ def test_migration_adds_the_checks_column_to_kept_turns(tmp_path: Path):
     assert "agent_turn.checks column" in migrate(p)
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT reason, checks FROM agent_turn").fetchone() == ("completed", None)
+    conn.close()
+    assert migrate(p) == []
+
+
+def _session_tables(conn: sqlite3.Connection) -> dict[str, str]:
+    """The Session tables and indexes as SQLite keeps them, comments and spacing aside: what both paths must agree on."""
+    import re
+    rows = conn.execute("SELECT name, sql FROM sqlite_master WHERE name LIKE '%drill%' AND sql IS NOT NULL").fetchall()
+    return {name: " ".join(re.sub(r"--[^\n]*", "", sql).split()).replace("( ", "(").replace(" )", ")") for name, sql in rows}
+
+
+def test_migration_adds_the_session_tables_as_the_schema_has_them(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("""
+      CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);
+      INSERT INTO segment(id, source_text) VALUES (1, 'x');
+    """)
+    conn.commit(); conn.close()
+    assert "Session tables (drill_run, drill_card, drill_review, drill_pick)" in migrate(p)
+    fresh = db.create(tmp_path / "fresh.db")
+    conn = sqlite3.connect(p)
+    assert _session_tables(conn) == _session_tables(fresh) and len(_session_tables(fresh)) == 6
+    fresh.close()
+    # a card is either four options with one answer, or a challenge with a proposal — never both or neither
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("INSERT INTO drill_run(id, slot, through_op, status) VALUES (1, '2026-10-19', 0, 'done')")
+    card = "INSERT INTO drill_card(run_id, segment_id, kind, origin, written_by, quote, question, options, answer, proposal, why, base_version, due_on, made_on) VALUES (1, 1, ?, 'claude', 'translator', 'q', '?', ?, ?, ?, 'why', 1, '2026-10-19', '2026-10-19')"
+    conn.execute(card, ("meaning", '["a","b","c","d"]', 2, None))
+    conn.execute(card, ("challenge", None, None, "p"))
+    for bad in [("meaning", None, None, "p"), ("challenge", '["a","b","c","d"]', 0, "p"), ("meaning", '["a","b","c","d"]', 4, None), ("guess", '["a","b","c","d"]', 0, None)]:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(card, bad)
+    # a paragraph that goes takes its cards and their answers with it
+    conn.execute("INSERT INTO drill_review(card_id, answered_on, choice, correct, first) VALUES (1, '2026-10-19', 2, 1, 1)")
+    conn.execute("DELETE FROM segment WHERE id = 1")
+    assert conn.execute("SELECT (SELECT count(*) FROM drill_card) + (SELECT count(*) FROM drill_review)").fetchone()[0] == 0
     conn.close()
     assert migrate(p) == []

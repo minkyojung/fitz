@@ -200,3 +200,71 @@ CREATE TRIGGER segment_version_on_insert AFTER INSERT ON segment
 BEGIN
   UPDATE segment SET version = (SELECT max(version) FROM segment) + 1 WHERE id = NEW.id;
 END;
+
+-- Session (docs/session.md): 매일 저녁 그날 바뀐 단락으로 Claude가 만드는 퀴즈. 퀴즈 기록은 ops에 넣지 않는다(⌘Z에 섞이지 않게).
+-- 날짜(slot, made_on, due_on, answered_on)는 서버가 셈한 로컬 날짜 'YYYY-MM-DD' — datetime('now')는 UTC다.
+
+-- 카드를 만든 한 번: 저녁 실행(slot = 그날) 또는 번역자가 누른 "더 만들기"(slot = NULL)
+CREATE TABLE drill_run (
+  id          INTEGER PRIMARY KEY,
+  slot        TEXT,                       -- 저녁 실행의 날. NULL = 더 만들기
+  through_op  INTEGER NOT NULL,           -- 재료의 끝: 시작할 때의 마지막 ops.id. 끝난 저녁 실행의 최댓값이 다음 재료의 시작
+  status      TEXT NOT NULL CHECK (status IN ('running','done','failed','skipped')),  -- skipped = 재료가 없어 Claude를 부르지 않음
+  segment_ids TEXT,                       -- 읽게 한 단락 id JSON
+  made        INTEGER,                    -- 저장한 카드 수(챌린지 포함)
+  dropped     INTEGER,                    -- 서버 검사에서 버린 수
+  error       TEXT,
+  session_id  TEXT,                       -- Claude Code의 세션 id
+  cost        REAL,                       -- 달러(추정)
+  ms          INTEGER,
+  started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT
+);
+
+-- 카드 하나. 뜻·뉘앙스는 보기 넷 중 정답 하나(코드가 채점), 챌린지는 번역의 한 구절과 그 대안(번역자가 정함)
+CREATE TABLE drill_card (
+  id           INTEGER PRIMARY KEY,
+  run_id       INTEGER NOT NULL REFERENCES drill_run(id),
+  segment_id   INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK (kind IN ('meaning','nuance','challenge')),
+  origin       TEXT NOT NULL CHECK (origin IN ('claude','picked','asked')),  -- Claude가 고름 / 번역자가 고름 / 번역자가 물어봄
+  written_by   TEXT NOT NULL CHECK (written_by IN ('translator','agent')),  -- 만들 때 그 단락의 번역을 마지막으로 쓴 쪽
+  quote        TEXT NOT NULL,              -- 뜻·뉘앙스: 원문의 그 말 / 챌린지: 번역문의 그 구절. 만들 때 그 글에 정확히 한 번
+  question     TEXT NOT NULL,
+  options      TEXT,                       -- 뜻·뉘앙스: 보기 넷 JSON, 서버가 섞은 순서
+  answer       INTEGER CHECK (answer BETWEEN 0 AND 3),  -- 뜻·뉘앙스: 정답 보기의 자리
+  proposal     TEXT,                       -- 챌린지: 그 구절 대신 쓸 말
+  why          TEXT NOT NULL,
+  base_version INTEGER NOT NULL,           -- 만들 때의 단락 버전
+  box          INTEGER NOT NULL DEFAULT 1 CHECK (box BETWEEN 1 AND 5),  -- 간격 1·2·4·8·16일
+  due_on       TEXT NOT NULL,              -- 다음에 물을 날. 챌린지는 만든 날
+  made_on      TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'active'
+               CHECK (status IN ('active','learned','known','disputed','kept','changed','discussed','stale')),
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK ((kind = 'challenge') = (proposal IS NOT NULL)),
+  CHECK ((kind = 'challenge') = (options IS NULL AND answer IS NULL))
+);
+CREATE INDEX idx_drill_card_due ON drill_card(status, due_on);
+
+-- 답 하나. 상자는 그날 그 카드의 첫 답만 움직이고, 틀린 카드는 그날 맞을 때까지 다시 묻는다
+CREATE TABLE drill_review (
+  id          INTEGER PRIMARY KEY,
+  card_id     INTEGER NOT NULL REFERENCES drill_card(id) ON DELETE CASCADE,
+  answered_on TEXT NOT NULL,
+  choice      INTEGER NOT NULL CHECK (choice BETWEEN 0 AND 3),
+  correct     INTEGER NOT NULL CHECK (correct IN (0, 1)),
+  first       INTEGER NOT NULL CHECK (first IN (0, 1)),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_drill_review_card ON drill_review(card_id, answered_on);
+
+-- 번역자가 원문에서 고른 말(Add to Session), 또는 원문 구절로 Claude에게 물어본 것. 다음 실행이 카드로 만든다
+CREATE TABLE drill_pick (
+  id         INTEGER PRIMARY KEY,
+  segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  quote      TEXT NOT NULL,
+  origin     TEXT NOT NULL CHECK (origin IN ('picked','asked')),
+  run_id     INTEGER REFERENCES drill_run(id),  -- 이것을 넘긴 실행. NULL = 아직
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

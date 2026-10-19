@@ -130,7 +130,69 @@ def migrate(path: Path) -> list[str]:
           CREATE INDEX idx_suggestion_segment ON agent_suggestion(segment_id, status);
         """)
         done.append("agent_suggestion table")
-    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    if "drill_run" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+        # the same tables as db/schema.sql (Session, docs/session.md)
+        conn.executescript("""
+          CREATE TABLE drill_run (
+            id          INTEGER PRIMARY KEY,
+            slot        TEXT,
+            through_op  INTEGER NOT NULL,
+            status      TEXT NOT NULL CHECK (status IN ('running','done','failed','skipped')),
+            segment_ids TEXT,
+            made        INTEGER,
+            dropped     INTEGER,
+            error       TEXT,
+            session_id  TEXT,
+            cost        REAL,
+            ms          INTEGER,
+            started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            finished_at TEXT
+          );
+          CREATE TABLE drill_card (
+            id           INTEGER PRIMARY KEY,
+            run_id       INTEGER NOT NULL REFERENCES drill_run(id),
+            segment_id   INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+            kind         TEXT NOT NULL CHECK (kind IN ('meaning','nuance','challenge')),
+            origin       TEXT NOT NULL CHECK (origin IN ('claude','picked','asked')),
+            written_by   TEXT NOT NULL CHECK (written_by IN ('translator','agent')),
+            quote        TEXT NOT NULL,
+            question     TEXT NOT NULL,
+            options      TEXT,
+            answer       INTEGER CHECK (answer BETWEEN 0 AND 3),
+            proposal     TEXT,
+            why          TEXT NOT NULL,
+            base_version INTEGER NOT NULL,
+            box          INTEGER NOT NULL DEFAULT 1 CHECK (box BETWEEN 1 AND 5),
+            due_on       TEXT NOT NULL,
+            made_on      TEXT NOT NULL,
+            status       TEXT NOT NULL DEFAULT 'active'
+                         CHECK (status IN ('active','learned','known','disputed','kept','changed','discussed','stale')),
+            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            CHECK ((kind = 'challenge') = (proposal IS NOT NULL)),
+            CHECK ((kind = 'challenge') = (options IS NULL AND answer IS NULL))
+          );
+          CREATE INDEX idx_drill_card_due ON drill_card(status, due_on);
+          CREATE TABLE drill_review (
+            id          INTEGER PRIMARY KEY,
+            card_id     INTEGER NOT NULL REFERENCES drill_card(id) ON DELETE CASCADE,
+            answered_on TEXT NOT NULL,
+            choice      INTEGER NOT NULL CHECK (choice BETWEEN 0 AND 3),
+            correct     INTEGER NOT NULL CHECK (correct IN (0, 1)),
+            first       INTEGER NOT NULL CHECK (first IN (0, 1)),
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE INDEX idx_drill_review_card ON drill_review(card_id, answered_on);
+          CREATE TABLE drill_pick (
+            id         INTEGER PRIMARY KEY,
+            segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+            quote      TEXT NOT NULL,
+            origin     TEXT NOT NULL CHECK (origin IN ('picked','asked')),
+            run_id     INTEGER REFERENCES drill_run(id),
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+        """)
+        done.append("Session tables (drill_run, drill_card, drill_review, drill_pick)")
+    triggers ={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     if "segment_version_on_update" not in triggers:
         # the same triggers as db/schema.sql
         conn.executescript("""
