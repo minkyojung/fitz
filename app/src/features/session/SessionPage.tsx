@@ -31,7 +31,7 @@ type Decision = "keep" | "discuss" | "change"
 
 const days = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
 /** A time as SQLite keeps it (UTC, no zone written), as the clock on the wall shows it. */
-const clockOf = (sqlite: string) => new Date(`${sqlite.replace(" ", "T")}Z`).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+const clockOf = (sqlite: string) => new Date(`${sqlite.replace(" ", "T")}Z`).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
 const enterKbd = <Kbd className="bg-primary-foreground/20 text-primary-foreground">↵</Kbd>
 
 export function SessionPage({ day, error, chapters, reload, onJump, onDiscuss }: Props) {
