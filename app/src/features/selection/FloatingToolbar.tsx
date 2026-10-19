@@ -81,7 +81,7 @@ export function FloatingToolbar({ blockText, onAsk }: {
         data-quote={sel.text}
         initialFocus={false}
         finalFocus={false}
-        className={compose ? "w-72 gap-1.5 p-2" : "w-auto gap-0 p-0.5"}
+        className={compose ? "w-72 gap-1.5 p-2" : "w-auto gap-0 p-1"}
         onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("textarea")) e.preventDefault() }} // keep the text selection
       >
         {compose ? (
@@ -91,31 +91,31 @@ export function FloatingToolbar({ blockText, onAsk }: {
               className="min-h-12 text-xs"
               onKeyDown={(e) => { if (e.key === "Escape") close(); if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit() }} />
             <div className="flex justify-end gap-1">
-              <Button size="xs" variant="ghost" onClick={close}>Cancel</Button>
-              <Button size="xs" onClick={() => void submit()} disabled={!body.trim()}>{compose === "comment" ? "Comment" : "Add note"}</Button>
+              <Button size="sm" variant="ghost" onClick={close}>Cancel</Button>
+              <Button size="sm" onClick={() => void submit()} disabled={!body.trim()}>{compose === "comment" ? "Comment" : "Add note"}</Button>
             </div>
           </>
         ) : (
           <div className="flex gap-0.5">
             {sel.side === "source" && (
-              <Button size="xs" variant="ghost" disabled={known}
+              <Button variant="ghost" disabled={known}
                 onClick={() => { void spell.setTerm({ term: sel.text, translation: "", aliases: "", kind: "other" }); close() }}>
                 <IconBook2 data-icon="inline-start" /> {known ? "In glossary" : "Add to glossary"}
               </Button>
             )}
-            <Button size="xs" variant="ghost" onClick={() => setCompose("comment")}>
+            <Button variant="ghost" onClick={() => setCompose("comment")}>
               <IconMessage data-icon="inline-start" /> Comment
             </Button>
             {sel.side === "target" && (
-              <Button size="xs" variant="ghost" onClick={() => setCompose("note")}>
+              <Button variant="ghost" onClick={() => setCompose("note")}>
                 <IconNote data-icon="inline-start" /> Translator's note
               </Button>
             )}
-            <Button size="xs" variant="ghost" onClick={() => { onAsk({ segmentId: sel.segmentId, side: sel.side, quote: sel.text }); close() }}>
+            <Button variant="ghost" onClick={() => { onAsk({ segmentId: sel.segmentId, side: sel.side, quote: sel.text }); close() }}>
               <IconSparkles data-icon="inline-start" /> Ask Claude <Kbd className="ml-0.5">⌘L</Kbd>
             </Button>
             {unplaced.map((n) => (
-              <Button key={n.id} size="xs" variant="ghost" title={n.bodySource ?? undefined}
+              <Button key={n.id} variant="ghost" title={n.bodySource ?? undefined}
                 onClick={() => { void ann.actions.setNote(n.id, { targetAnchor: anchorOf() }); close() }}>
                 <IconPinned data-icon="inline-start" /> Place note {ann.markers.get(n.id) ?? ""}
               </Button>
