@@ -431,7 +431,7 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 |---|---|---|---|---|
 | **1** ✓ | **되돌리기 나누기**(§14, §18.1) | ⌘Z가 누가 했든 마지막 변경을 되돌린다 → Claude가 쓴 것을 모르고 지우거나, 그 반대 | ⌘Z = 번역자의 것만(구글 독스·Yjs `trackedOrigins`). Claude의 것 = 대화에서 그 쓰기를 골라 "여기부터 되돌리기"(Claude Code `/rewind`처럼 선형, `ops.tool_use_id`로 이미 이어져 있다). 그 뒤 다른 쪽이 같은 단락을 고쳤으면 되돌리지 않고 이유를 말한다 | 큼 |
 | **2** ✓ | **번역 검사**(6단계, §5, §19) | Claude가 쓴 번역이 용어집을 어겨도 아무도 모른다 | 앱이 검사(`checkSegments`: missingTerm·emptyTarget·ratio·unplacedNote)하고 기록. Stop hook이 실패를 돌려보내고 횟수는 앱이 센다(TRIES=3, hook은 fail-open이므로 진실은 `agent_turn`) | 중~큼 |
-| 3a | 대화 도중 모델·강도 바꾸기 | 첫 메시지 전에만 | SDK `Query.setModel()` + 프로토콜 `configure` | 작음 |
+| 3a ✓ | 대화 도중 모델·강도 바꾸기(§21) | 첫 메시지 전에만 | SDK `Query.setModel()` + 프로토콜 `configure` | 작음 |
 | 3b | 대화 제목 자동 갱신 | 메뉴를 열어야 Claude Code의 제목으로 바뀜 | 서버가 제목을 정하면 `/live`로 알림 | 작음 |
 | 3c | 실제 책 한 장으로 리뷰·OCR 실측 | Gatsby 5단락 값뿐 | 한 장 돌려 시간·비용·품질 기록, 상한(60턴·$5)·지시문 조정 | 작음 |
 | 4 | 작업 진행 표시가 새로고침에 사라짐 | "Claude is reading the chapter…"가 없어짐(제안은 옴) | 서버가 진행 중인 작업 대화를 알려 주고 화면이 다시 따라감 | 작음~중 |
@@ -518,5 +518,7 @@ B는 번역자가 직접 요청한 표기를 검사 때문에 용어집 표기�
 | 0 ✓ | SDK로 잰다(§8) | `.context/measure/set-model.mjs`, `flag-merge.mjs` | §8에 기록 |
 | 1 ✓ | 서버: 세션의 `configure`, 기록 `setConfig`, 프로토콜 `configure`(→) · `configured`(←) · snapshot에 모델·강도, host의 `configure`(답하는 중 409, 작업 400, 알리지 못하면 기록도 그대로), `/live` 연결. 턴이 끝났다는 표시(`conv.turn = null`)는 턴 기록을 남기다 실패해도 먼저 지운다 — 답하는 중인지를 그것으로 보므로 | `agent/session.mjs`, `records.mjs`, `protocol.mjs`, `host.mjs`, `live.mjs` | 스텁 세션: 서버 테스트 209 |
 | 2 ✓ | 화면: 대화 중에도 모델·강도 메뉴(답하는 중 잠김), 값은 서버가 알린 것(snapshot, 그다음 `configured`; 그 전에는 목록의 값) | `api.ts`, `http.ts`, `lib/conversation.ts`, `useClaude.ts`, `Composer.tsx` | 화면 단위 64, e2e 52 |
-| 3 | 진짜로 한 번(Haiku로 묻고 Sonnet으로 바꿔 다시 묻기), README·이 문서 | `.context/real` | 실측 |
+| 3 ✓ | 진짜로 한 번(Haiku로 묻고 Sonnet으로 바꿔 다시 묻기), README·이 문서 | `.context/real/model-real.spec.ts` | 실측(아래) |
+
+**실측**(2026-10-19, 커밋 4976f06을 따로 꺼내 돌림, Gatsby 1장). 화면에서 Haiku 5.5 · low로 ¶4의 한 구절을 묻고(5초, $0.0006), 메뉴로 Sonnet 5.5 → high로 바꿔 다시 물었다(2초, $0.024; 답하는 동안 메뉴는 잠김). 세션의 assistant 메시지는 Haiku 셋 다음 Sonnet 하나 — 같은 Claude Code 프로세스에서 바뀌었다. 책 DB의 대화는 `claude-sonnet-5-5`/`high`, 새로고침해 다시 열어도 메뉴가 Sonnet 5.5 · high. 세션은 지웠다.
 
