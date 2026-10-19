@@ -421,6 +421,8 @@ Agent SDK와의 관계: SDK는 연결 방식을 정하지 않는다. 바뀌는 �
 | 1 ✓ | 변경이 건드린 것(`touches`)과 뒤의 겹침 판정 — 마이그레이션 없음(위 "판정을 바꿨다") | `server/commands.mjs` | 모든 명령이 앞뒤로 빠짐없이 |
 | 2 ✓ | 번역자의 ⌘Z·⌘⇧Z는 번역자의 op만. 되돌릴 op 뒤에 Claude가 같은 단락을 고쳤으면 되돌리지 않고 그렇다고 답한다. 새 쓰기는 같은 쪽의 다시 하기만 지운다 | `commands.mjs`, `index.mjs`, `app/src/data/useBook.ts` | 서버 테스트(두 쪽이 섞인 스택), e2e |
 | 3 ✓ | Claude의 변경 되돌리기: 고른 쓰기부터 그 뒤 Claude의 op를 최근 것부터(충돌에서 멈추고 말한다) | `commands.mjs`, `index.mjs`, `features/agent/Thread.tsx` | 서버 테스트 + e2e(녹화 프레임) |
+| 3.5 ✓ | 화면: ⌘Z·⌘⇧Z가 거절되면 오류가 아니라 경고 알림(누가 무엇을 바꿨는지 + Claude 탭에서 먼저 되돌리라고) | `app/src/data/useBook.ts` | e2e `undo.spec`(Claude의 쓰기는 e2e 사본에 도구처럼 직접) |
+| 3.6 | 화면: Claude 탭 턴 끝의 Undo from here(B안) | `api.ts`, `http.ts`, `useClaude.ts`, `Thread.tsx`, `lib/trace.ts` | e2e |
 | 4 | README·이 문서 | | |
 
 **정한 것**(2026-10-19, 갤러리 `?gallery&undo`): Claude의 변경은 **턴 끝의 Undo from here**(B안)로, 그 턴부터 이 대화의 끝까지. ⌘Z가 Claude의 변경을 건너뛸 때 알리지 않는다. 되돌린 Claude의 변경은 다시 하지 않는다(Claude Code의 rewind처럼).

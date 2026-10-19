@@ -32,6 +32,14 @@ const DECISION_LABEL: Record<SuggestionDecision, string> = { accept: "Accept", d
 
 export const CAPTION_PLACEHOLDER = "Caption"
 
+// ⌘Z and ⌘⇧Z take back only the translator's own changes (docs/agent.md §18). One that Claude changed the same thing
+// after is not taken back: the server says so (409), and that is news, not a failure.
+function refused(title: string, e: unknown): null {
+  if ((e as { status?: number }).status !== 409) throw e
+  toast.warning(title, { description: `${(e as Error).message}. To take yours back, first undo Claude's change in the Claude tab.` })
+  return null
+}
+
 export type SaveState = "idle" | "saving" | "saved" | "error"
 
 /** Book-level state: chapters, the selected chapter's segments, and page images. */
@@ -273,7 +281,7 @@ export function useBook() {
   const undo = useCallback(
     () =>
       mutate("Undo", async () => {
-        const op = await api.undo()
+        const op = await api.undo().catch((e) => refused("Can't undo", e))
         if (!op) return
         await reloadAll()
         toast("Undone", { description: OP_LABEL[op.name] ?? op.name })
@@ -284,7 +292,7 @@ export function useBook() {
   const redo = useCallback(
     () =>
       mutate("Redo", async () => {
-        const op = await api.redo()
+        const op = await api.redo().catch((e) => refused("Can't redo", e))
         if (!op) return
         await reloadAll()
         toast("Redone", { description: OP_LABEL[op.name] ?? op.name })
