@@ -276,6 +276,8 @@ export interface Api {
   followConversation(convId: string, onEvent: (e: LiveEvent) => void, start?: { model: string; effort: string }): () => void
   sendMessage(convId: string, text: string): void
   stopTurn(convId: string): void
+  /** The model or effort a begun conversation's next message goes to; the server tells its followers once it is. */
+  configureConversation(convId: string, change: { model?: string; effort?: string }): void
   answerAsk(convId: string, requestId: string, decision: AskDecision): void
   /** Take back Claude's changes made by these tool calls, together, newest first — or none (409, saying why). */
   undoClaude(toolUseIds: string[]): Promise<OpSummary[]>

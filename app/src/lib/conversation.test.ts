@@ -36,6 +36,14 @@ test("trouble the server reports is kept until the next snapshot", () => {
   assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [] }], view).error, null)
 })
 
+test("the model and effort the next message goes to: from the snapshot, then as the server says they changed", () => {
+  let view = play([{ type: "snapshot", state: foldMessages([]), asks: [], model: "claude-haiku-5-5", effort: "low" }])
+  assert.deepEqual(view.config, { model: "claude-haiku-5-5", effort: "low" })
+  view = play([{ type: "configured", model: "claude-sonnet-5-5", effort: "high" }], view)
+  assert.deepEqual(view.config, { model: "claude-sonnet-5-5", effort: "high" })
+  assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [] }]).config, null, "not said: not known")
+})
+
 test("what the translator pointed at goes before their words, and comes apart again for showing", () => {
   const sent = withPointed("말장난이야?", { segmentId: 604, side: "source", quote: "reserve all judgments" })
   assert.equal(sent, "¶604 (English): “reserve all judgments”\n\n말장난이야?")

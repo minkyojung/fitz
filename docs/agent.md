@@ -517,6 +517,6 @@ B는 번역자가 직접 요청한 표기를 검사 때문에 용어집 표기�
 |---|---|---|---|
 | 0 ✓ | SDK로 잰다(§8) | `.context/measure/set-model.mjs`, `flag-merge.mjs` | §8에 기록 |
 | 1 ✓ | 서버: 세션의 `configure`, 기록 `setConfig`, 프로토콜 `configure`(→) · `configured`(←) · snapshot에 모델·강도, host의 `configure`(답하는 중 409, 작업 400, 알리지 못하면 기록도 그대로), `/live` 연결. 턴이 끝났다는 표시(`conv.turn = null`)는 턴 기록을 남기다 실패해도 먼저 지운다 — 답하는 중인지를 그것으로 보므로 | `agent/session.mjs`, `records.mjs`, `protocol.mjs`, `host.mjs`, `live.mjs` | 스텁 세션: 서버 테스트 209 |
-| 2 | 화면: 대화 중에도 모델·강도 메뉴(답하는 중 잠김), 값은 서버가 알린 것 | `api.ts`, `http.ts`, `lib/conversation.ts`, `useClaude.ts`, `Composer.tsx` | 단위 + e2e(녹화 프레임) |
+| 2 ✓ | 화면: 대화 중에도 모델·강도 메뉴(답하는 중 잠김), 값은 서버가 알린 것(snapshot, 그다음 `configured`; 그 전에는 목록의 값) | `api.ts`, `http.ts`, `lib/conversation.ts`, `useClaude.ts`, `Composer.tsx` | 화면 단위 64, e2e 52 |
 | 3 | 진짜로 한 번(Haiku로 묻고 Sonnet으로 바꿔 다시 묻기), README·이 문서 | `.context/real` | 실측 |
 

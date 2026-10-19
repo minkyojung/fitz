@@ -117,6 +117,7 @@ export const api: Api = {
   },
   sendMessage: (convId, text) => live().send({ type: "send", convId, text }),
   stopTurn: (convId) => live().send({ type: "stop", convId }),
+  configureConversation: (convId, change) => live().send({ type: "configure", convId, ...change }),
   answerAsk: (convId, requestId, decision) => live().send({ type: "answer", convId, requestId, decision }),
   undoClaude: (toolUseIds) => call("undoClaude", { toolUseIds }),
   claudeChanges: (toolUseIds) => call("claudeChanges", { toolUseIds }),

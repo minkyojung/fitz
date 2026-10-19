@@ -15,7 +15,7 @@ export const EFFORTS = ["low", "medium", "high"] as const
 
 /** The conversation with Claude the Claude tab shows (docs/agent.md §17). It opens on an empty new conversation, which
  *  begins with its first message; past ones come from the list. What the translator pointed at (Ask Claude) waits
- *  here until it is sent with their words. */
+ *  here until it is sent with their words. The model and effort can change between turns (§21). */
 export function useClaude() {
   const [convId, setConvId] = useState<string | null>(null)
   const [view, setView] = useState<ConversationView>(emptyView)
@@ -100,14 +100,22 @@ export function useClaude() {
   const checksOf = useCallback((userUuid: string) => (checks?.sessionId === sessionId ? checks.byUser.get(userUuid) ?? null : null), [checks, sessionId])
 
   const summary = list.find((c) => c.id === convId) ?? null
+  // what the next message goes to: a new conversation's choice; a begun one's as the server says, or as the list said
+  // until the server has
+  const shown = convId === null ? choice : view.config ?? (summary ? { model: summary.model, effort: summary.effort } : choice)
+  const config = useMemo(() => ({ model: shown.model, effort: shown.effort }), [shown.model, shown.effort])
+  const configure = useCallback((change: { model?: string; effort?: string }) => {
+    if (convId) api.configureConversation(convId, change)
+    else setChoice((c) => ({ ...c, ...change }))
+  }, [convId])
   return useMemo(() => ({
-    convId, view, list, summary, choice, setChoice, pointed, point: setPointed, pending,
+    convId, view, list, summary, config, configure, pointed, point: setPointed, pending,
     refreshList, send, stands, undoFrom, checksOf,
     open: (id: string) => follow(id),
     newConversation: () => { unfollow.current?.(); unfollow.current = null; setConvId(null); setView(emptyView()); setPending(null) },
     stop: () => { if (convId) api.stopTurn(convId) },
     answer: (requestId: string, decision: AskDecision) => { if (convId) api.answerAsk(convId, requestId, decision) },
-  }), [convId, view, list, summary, choice, pointed, pending, refreshList, send, stands, undoFrom, checksOf, follow])
+  }), [convId, view, list, summary, config, configure, pointed, pending, refreshList, send, stands, undoFrom, checksOf, follow])
 }
 
 export type Claude = ReturnType<typeof useClaude>

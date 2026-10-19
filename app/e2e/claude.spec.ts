@@ -12,7 +12,7 @@ const recording = (name: string): SdkMessage[] =>
 const nuance = recording("nuance")
 const translate = recording("translate")
 const websearch = recording("websearch")
-const CONVERSATION = ["start", "send", "stop", "answer", "list", "open"]
+const CONVERSATION = ["start", "send", "stop", "answer", "list", "open", "configure"]
 
 type Said = { type: string; convId?: string; [k: string]: unknown }
 async function fakeServer(page: Page) {
@@ -71,7 +71,35 @@ test("a question begins a conversation; what Claude read, thought and answered c
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible()
   await expect(page.locator("[data-conversation-title]")).toContainText("¶4의 'unusually communicative")
   await expect(page.getByRole("button", { name: /^Suggestions/ })).toBeInViewport()  // a long title gives way
-  await expect(page.getByText("Opus 5.5 · medium")).toBeVisible()  // what it began with, no longer a choice
+  await expect(page.getByRole("button", { name: /Opus 5.5 · medium/ })).toBeVisible()  // what it began with
+})
+
+test("between turns the model and effort can change; the menu shows what the server says, and is shut while Claude answers", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("이 문장 뉘앙스는?")
+  await box.press("Enter")
+  const start = await fake.last("start")
+  const menu = page.getByRole("button", { name: /Opus 5.5 · medium/ })
+  await expect(menu).toBeDisabled()  // until Claude Code echoes the message, and while it answers
+  fake.tell({ type: "snapshot", convId: start.convId, state: foldMessages([]), asks: [], model: "claude-opus-5-5", effort: "medium" })
+  fake.play(start.convId!, nuance)
+  await expect(thread(page)).toContainText("21s · $0.039")
+  await expect(menu).toBeEnabled()
+
+  await menu.click()
+  await page.getByRole("menuitemradio", { name: "Sonnet 5.5" }).click()
+  expect(await fake.last("configure")).toEqual({ type: "configure", convId: start.convId, model: "claude-sonnet-5-5" })
+  await page.keyboard.press("Escape")
+  await expect(menu).toBeVisible()  // not changed until the server says so
+  fake.tell({ type: "configured", convId: start.convId, model: "claude-sonnet-5-5", effort: "medium" })
+  const changed = page.getByRole("button", { name: /Sonnet 5.5 · medium/ })
+  await expect(changed).toBeVisible()
+
+  await changed.click()
+  await page.getByRole("menuitemradio", { name: "high" }).click()
+  await expect.poll(() => fake.said.filter((m) => m.type === "configure").length).toBe(2)
+  expect(await fake.last("configure")).toEqual({ type: "configure", convId: start.convId, effort: "high" })
 })
 
 test("a write Claude asks for waits on a card; Allow goes to the server and the card becomes a line", async ({ page }) => {
@@ -148,7 +176,7 @@ test("past conversations are listed (not the review's), and one opens as it was,
   fake.tell({ type: "snapshot", convId: past, state: foldMessages(nuance), asks: [] })
   await expect(thread(page).getByRole("heading", { name: "뜻과 뉘앙스" })).toBeVisible()
   await expect(page.locator("[data-conversation-title]")).toHaveText("Reserved 뉘앙스")
-  await expect(page.getByText("Sonnet 5.5 · low")).toBeVisible()  // its own, no longer a choice
+  await expect(page.getByRole("button", { name: /Sonnet 5.5 · low/ })).toBeVisible()  // its own
 
   await page.locator("[data-conversation-title]").click()
   await page.getByRole("menuitem", { name: "New conversation" }).click()
