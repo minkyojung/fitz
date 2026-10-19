@@ -1,4 +1,13 @@
+import { DatabaseSync } from "node:sqlite"
+
 import { expect, test, type Locator } from "@playwright/test"
+
+// The e2e book is a copy of the translator's own (playwright.config.ts), whose glossary grows as they work: this test
+// adds "Zemurray", so it starts from a copy without it.
+test.beforeEach(() => {
+  const db = new DatabaseSync("/tmp/fitz-e2e.db", { timeout: 5000 })
+  try { db.prepare("DELETE FROM glossary WHERE term = 'Zemurray'").run() } finally { db.close() }
+})
 
 /** Select a word inside a read-only source paragraph (fires selectionchange like a mouse drag). */
 async function selectWord(p: Locator, word: string) {
