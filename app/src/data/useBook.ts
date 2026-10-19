@@ -134,7 +134,7 @@ export function useBook() {
         void refreshWords(b.id)
       })
       .catch((e: Error) => setError(e.message))
-  }, [])
+  }, [refreshCorpus, refreshWords])  // both stable: this still runs once, on load
 
   useEffect(() => {
     if (chapterId !== null) { void refreshSegments(chapterId); void refreshAnnotations(chapterId); void refreshSuggestions(chapterId) }

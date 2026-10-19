@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { Editor } from "@tiptap/react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -122,7 +121,6 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
     },
     [onEditingChange, onConfirm, settle],
   )
-  const onReady = useCallback((_e: Editor) => undefined, [])
 
   const startEdit = (e: React.MouseEvent<HTMLElement>) => {
     if (editing) return
@@ -180,7 +178,6 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
             onStep={onStep}
             onFlow={onFlow}
             onDraft={saveDraft}
-            onReady={onReady}
             onSelect={(sel) => selectionState?.publish(sel ? { ...sel, segmentId: s.id, side: "target" } : null)}
           />
         ) : (
