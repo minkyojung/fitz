@@ -171,7 +171,7 @@ def test_migration_adds_the_agent_conversation_tables(tmp_path: Path):
     assert "agent_conversation and agent_turn tables" in migrate(p)
     conn = sqlite3.connect(p)
     assert {r[1] for r in conn.execute("PRAGMA table_info(agent_conversation)")} == {"id", "session_id", "title", "model", "effort", "task", "chapter_id", "created_at", "used_at"}
-    assert {r[1] for r in conn.execute("PRAGMA table_info(agent_turn)")} == {"session_id", "user_uuid", "reason", "is_error", "ms", "cost"}
+    assert {r[1] for r in conn.execute("PRAGMA table_info(agent_turn)")} == {"session_id", "user_uuid", "reason", "is_error", "ms", "cost", "checks"}
     conn.close()
     assert migrate(p) == []
 
@@ -191,5 +191,24 @@ def test_migration_adds_task_columns_to_existing_conversations_and_the_suggestio
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT task, chapter_id FROM agent_conversation").fetchone() == (None, None)
     assert {"quote", "replacement", "why", "level", "base_version", "status"} <= {r[1] for r in conn.execute("PRAGMA table_info(agent_suggestion)")}
+    conn.close()
+    assert migrate(p) == []
+
+
+def test_migration_adds_the_checks_column_to_kept_turns(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("""
+      CREATE TABLE segment (id INTEGER PRIMARY KEY, source_text TEXT, updated_at TEXT);
+      CREATE TABLE agent_conversation (id TEXT PRIMARY KEY, session_id TEXT, title TEXT, model TEXT NOT NULL, effort TEXT NOT NULL,
+                                       task TEXT, chapter_id INTEGER, created_at TEXT, used_at TEXT);
+      CREATE TABLE agent_turn (session_id TEXT NOT NULL, user_uuid TEXT NOT NULL, reason TEXT NOT NULL, is_error INTEGER NOT NULL DEFAULT 0,
+                               ms INTEGER, cost REAL, PRIMARY KEY (session_id, user_uuid));
+      INSERT INTO agent_turn(session_id, user_uuid, reason) VALUES ('s1', 'u1', 'completed');
+    """)
+    conn.commit(); conn.close()
+    assert "agent_turn.checks column" in migrate(p)
+    conn = sqlite3.connect(p)
+    assert conn.execute("SELECT reason, checks FROM agent_turn").fetchone() == ("completed", None)
     conn.close()
     assert migrate(p) == []

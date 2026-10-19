@@ -168,6 +168,7 @@ CREATE TABLE agent_turn (
   is_error    INTEGER NOT NULL DEFAULT 0,
   ms          INTEGER,
   cost        REAL,                       -- 그 턴이 더한 비용(추정, 달러)
+  checks      TEXT,                       -- 번역 검사(§19) JSON { checked: 단락 id들, rounds: 검사마다 찾은 실패들 } — 마지막이 판정, 그 앞의 수가 돌려보낸 횟수. 검사하지 않은 턴은 NULL
   PRIMARY KEY (session_id, user_uuid)
 );
 

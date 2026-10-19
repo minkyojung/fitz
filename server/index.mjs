@@ -7,6 +7,7 @@ import { resolve, basename } from "node:path"
 import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
+import { turnChecks } from "./agent/records.mjs"
 import { attachLive } from "./live.mjs"
 import { corsHeaders, fromThisMachine } from "./origin.mjs"
 import { agentOps, execute, getBook, httpError, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo, undoAgent } from "./commands.mjs"
@@ -89,6 +90,14 @@ const routes = {
   /** Claude's changes made by these tool calls, taken back together from the conversation; and their state. */
   undoClaude: ({ toolUseIds }) => undoAgent(db, toolCallIds(toolUseIds)),
   claudeChanges: ({ toolUseIds }) => agentOps(db, toolCallIds(toolUseIds)),
+  /** What the checks found in a conversation's turns (docs/agent.md §19). */
+  turnChecks: ({ sessionId }) => turnChecks(db, sessionIdOf(sessionId)),
+}
+
+/** A Claude Code session id as the page sends it. */
+function sessionIdOf(id) {
+  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/.test(id)) throw httpError(400, "sessionId must be a session id")
+  return id
 }
 
 /** Tool call ids as the page sends them: checked, since they come over HTTP. */

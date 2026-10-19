@@ -96,10 +96,15 @@ def migrate(path: Path) -> list[str]:
             is_error    INTEGER NOT NULL DEFAULT 0,
             ms          INTEGER,
             cost        REAL,                       -- 그 턴이 더한 비용(추정, 달러)
+            checks      TEXT,                       -- 번역 검사(§19) JSON, 검사하지 않은 턴은 NULL
             PRIMARY KEY (session_id, user_uuid)
           );
         """)
         done.append("agent_conversation and agent_turn tables")
+    tcols = {r[1] for r in conn.execute("PRAGMA table_info(agent_turn)")}
+    if tcols and "checks" not in tcols:
+        conn.execute("ALTER TABLE agent_turn ADD COLUMN checks TEXT")
+        done.append("agent_turn.checks column")
     acols = {r[1] for r in conn.execute("PRAGMA table_info(agent_conversation)")}
     if acols and "task" not in acols:
         conn.execute("ALTER TABLE agent_conversation ADD COLUMN task TEXT CHECK (task IN ('review','typos'))")

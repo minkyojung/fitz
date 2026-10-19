@@ -111,3 +111,13 @@ test("Claude's changes are taken back from the conversation by their tool calls;
   assert.deepEqual((await api("claudeChanges", { toolUseIds: ["toolu_index"] })).body.map((o) => o.undone), [true])
   assert.equal((await api("undoClaude", { toolUseIds: ["../../etc"] })).status, 400)
 })
+
+test("the page asks what the checks found in a conversation's turns", async () => {
+  const api = async (name, body = {}) => { const r = await send({ path: `/api/${name}`, body: JSON.stringify(body) }); return { status: r.status, body: JSON.parse(r.text) } }
+  const { recordTurn } = await import("./agent/records.mjs")
+  const db = new DatabaseSync(dbPath)
+  const sessionId = "6f1d3c2a-9b8e-4c7d-a6f5-e4d3c2b1a0f9"
+  try { recordTurn(db, sessionId, "u1", { reason: "completed", isError: false, checks: { checked: [4], rounds: [[]] } }) } finally { db.close() }
+  assert.deepEqual((await api("turnChecks", { sessionId })).body, [{ userUuid: "u1", checks: { checked: [4], rounds: [[]] } }])
+  assert.equal((await api("turnChecks", { sessionId: "../x" })).status, 400)
+})

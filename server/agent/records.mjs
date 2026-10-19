@@ -23,12 +23,20 @@ export const setSession = (db, id, sessionId) => db.prepare("UPDATE agent_conver
 export const setTitle = (db, id, title) => db.prepare("UPDATE agent_conversation SET title = ? WHERE id = ?").run(title, id)
 export const touchConversation = (db, id) => db.prepare("UPDATE agent_conversation SET used_at = datetime('now') WHERE id = ?").run(id)
 
-/** A finished turn, keyed by its session and the translator's message that began it. */
-export const recordTurn = (db, sessionId, userUuid, { reason, isError, ms, cost }) =>
-  db.prepare("INSERT OR REPLACE INTO agent_turn(session_id, user_uuid, reason, is_error, ms, cost) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(sessionId, userUuid, reason, isError ? 1 : 0, ms ?? null, cost ?? null)
+/** A finished turn, keyed by its session and the translator's message that began it. `checks`: what the app found
+ *  checking the translations Claude wrote in it (docs/agent.md §19) — { checked: paragraph ids, rounds: the failures
+ *  found at each check, the last being the verdict } — or null when there was nothing to check. */
+export const recordTurn = (db, sessionId, userUuid, { reason, isError, ms, cost, checks = null }) =>
+  db.prepare("INSERT OR REPLACE INTO agent_turn(session_id, user_uuid, reason, is_error, ms, cost, checks) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(sessionId, userUuid, reason, isError ? 1 : 0, ms ?? null, cost ?? null, checks ? JSON.stringify(checks) : null)
 
 /** The kept turns of a session: user message uuid → { reason, isError, ms, cost }. */
 export const turnsOf = (db, sessionId) =>
   new Map(db.prepare("SELECT * FROM agent_turn WHERE session_id = ?").all(sessionId)
     .map((r) => [r.user_uuid, { reason: r.reason, isError: r.is_error === 1, ms: r.ms, cost: r.cost }]))
+
+/** The checks of a session's turns that had any: [{ userUuid, checks }]. Kept here and not in the session file, which
+ *  does not keep a turn's being sent back (measured, §8). */
+export const turnChecks = (db, sessionId) =>
+  db.prepare("SELECT user_uuid, checks FROM agent_turn WHERE session_id = ? AND checks IS NOT NULL").all(sessionId)
+    .map((r) => ({ userUuid: r.user_uuid, checks: JSON.parse(r.checks) }))
