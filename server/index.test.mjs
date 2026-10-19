@@ -95,3 +95,19 @@ test("Claude's suggestions: listed by chapter, accepted by the translator, and t
   assert.deepEqual((await api("listSuggestions", { chapterId: 1 })).body.map((s) => s.id), [1])
   assert.equal((await api("decideSuggestion", { id: 1, decision: "maybe" })).status, 400)
 })
+
+test("Claude's changes are taken back from the conversation by their tool calls; ⌘Z (undo) leaves them", async () => {
+  const api = async (name, body = {}) => { const r = await send({ path: `/api/${name}`, body: JSON.stringify(body) }); return { status: r.status, body: JSON.parse(r.text) } }
+  const { execute, openDb } = await import("./commands.mjs")
+  const db = openDb(dbPath)
+  try { execute(db, "updateSegment", { id: 4, targetDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Claude가 쓴 번역" }] }] } }, { actor: "agent", toolUseId: "toolu_index" }) } finally { db.close() }
+  const target = async () => (await api("listSegments", { chapterId: 1 })).body.find((s) => s.id === 4).targetText
+
+  assert.equal((await api("undo")).body, null, "nothing of the translator's to undo")
+  assert.equal(await target(), "Claude가 쓴 번역")
+  assert.deepEqual((await api("claudeChanges", { toolUseIds: ["toolu_index"] })).body.map((o) => o.undone), [false])
+  assert.deepEqual((await api("undoClaude", { toolUseIds: ["toolu_index"] })).body.map((o) => o.actor), ["agent"])
+  assert.equal(await target(), "")
+  assert.deepEqual((await api("claudeChanges", { toolUseIds: ["toolu_index"] })).body.map((o) => o.undone), [true])
+  assert.equal((await api("undoClaude", { toolUseIds: ["../../etc"] })).status, 400)
+})

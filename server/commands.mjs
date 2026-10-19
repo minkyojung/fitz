@@ -719,6 +719,33 @@ export const redo = (db, by = TRANSLATOR) => {
   return op
 }
 
+/** Take back Claude's changes made by these tool calls (a conversation's, from a chosen turn on: Claude Code's
+ *  rewind), newest first, as one step — or none of them: refused if anything logged after one of them, still standing
+ *  and not among them, touched the same thing (docs/agent.md §18). Returns the changes taken back. */
+export const undoAgent = (db, toolUseIds) => {
+  if (!toolUseIds.length) return []
+  const ops = inTransaction(db, () => {
+    const rows = db.prepare(`SELECT * FROM ops WHERE actor = 'agent' AND undone = 0 AND tool_use_id IN (${toolUseIds.map(() => "?").join(",")})
+                             ORDER BY id DESC`).all(...toolUseIds)
+    const together = new Set(rows.map((r) => r.id))
+    for (const row of rows) refuseOverLater(db, row, together)
+    for (const row of rows) {
+      run(db, row.inverse_name, JSON.parse(row.inverse_params))
+      db.prepare("UPDATE ops SET undone = 1 WHERE id = ?").run(row.id)
+    }
+    if (rows.length) touch(db)
+    return rows.map(summary)
+  })
+  for (const op of ops) announce(db, { opId: op.id, name: op.name, segmentIds: op.segmentIds, kind: "undo", actor: op.actor })
+  return ops
+}
+
+/** The change each of these tool calls made, and whether it still stands. A call that wrote has its change here until
+ *  Claude's next change after it was taken back (a new change ends its writer's redo), then not at all. */
+export const agentOps = (db, toolUseIds) =>
+  !toolUseIds.length ? [] : db.prepare(`SELECT id, tool_use_id, undone FROM ops WHERE actor = 'agent' AND tool_use_id IN (${toolUseIds.map(() => "?").join(",")}) ORDER BY id`)
+    .all(...toolUseIds).map((r) => ({ toolUseId: r.tool_use_id, opId: r.id, undone: r.undone === 1 }))
+
 export const getBook = (db) => {
   const b = db.prepare("SELECT id, title, author FROM book ORDER BY id LIMIT 1").get()
   return { id: b.id, title: b.title, author: b.author }

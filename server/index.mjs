@@ -9,7 +9,7 @@ import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { attachLive } from "./live.mjs"
 import { corsHeaders, fromThisMachine } from "./origin.mjs"
-import { execute, getBook, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo } from "./commands.mjs"
+import { agentOps, execute, getBook, httpError, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo, undoAgent } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -83,8 +83,18 @@ const routes = {
   deleteNote: ({ id }) => execute(db, "deleteNote", { id }),
   /** accept | dismiss | comment: the translator's decision on one of Claude's suggestions, undone with ⌘Z. */
   decideSuggestion: ({ id, decision }) => execute(db, "decideSuggestion", { id, decision }),
+  // ⌘Z and ⌘⇧Z: the translator's own changes (docs/agent.md §18)
   undo: () => undo(db),
   redo: () => redo(db),
+  /** Claude's changes made by these tool calls, taken back together from the conversation; and their state. */
+  undoClaude: ({ toolUseIds }) => undoAgent(db, toolCallIds(toolUseIds)),
+  claudeChanges: ({ toolUseIds }) => agentOps(db, toolCallIds(toolUseIds)),
+}
+
+/** Tool call ids as the page sends them: checked, since they come over HTTP. */
+function toolCallIds(ids) {
+  if (!Array.isArray(ids) || ids.length > 1000 || !ids.every((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id))) throw httpError(400, "toolUseIds must be tool call ids")
+  return ids
 }
 
 const json = (res, status, body, cors = {}) => {

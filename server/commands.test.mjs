@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, touches, undo, watchChanges } from "./commands.mjs"
+import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, touches, undo, undoAgent, agentOps, watchChanges } from "./commands.mjs"
 
 const CLAUDE = { actor: "agent" }
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
@@ -688,4 +688,45 @@ test("redo: each writer's own, not over a later change to the same thing; a new 
   assert.equal(redo(db), null, "the translator's new change ended the translator's redo")
   assert.equal(redo(db, CLAUDE).segmentIds[0], 3, "but not Claude's")
   assert.equal(sourceOf(db, 3), "Claude's ¶3")
+})
+
+// --- Claude's changes, taken back from the conversation (its rewind)
+
+const claude = (toolUseId) => ({ actor: "agent", toolUseId })
+
+test("Claude's changes from a chosen turn on are taken back together, newest first; the translator's stay", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, text: "Claude first" }, claude("toolu_1"))
+  execute(db, "updateSegment", { id: 3, text: "mine" })
+  execute(db, "updateSegment", { id: 2, text: "Claude again" }, claude("toolu_2"))
+  execute(db, "addComment", { segmentId: 4, side: "source", anchor: null, body: "Claude's note" }, claude("toolu_3"))
+  const heard = []
+  watchChanges(db, (c) => heard.push([c.kind, c.actor]))
+  const taken = undoAgent(db, ["toolu_1", "toolu_2", "toolu_3"])
+  assert.deepEqual(taken.map((o) => o.name), ["addComment", "updateSegment", "updateSegment"], "newest first")
+  assert.deepEqual([sourceOf(db, 2), sourceOf(db, 3)], ["alpha beta gamma delta", "mine"])
+  assert.equal(db.prepare("SELECT count(*) n FROM comment WHERE body = ?").get("Claude's note").n, 0)
+  assert.deepEqual(heard, [["undo", "agent"], ["undo", "agent"], ["undo", "agent"]])
+  assert.deepEqual(agentOps(db, ["toolu_1", "toolu_3", "toolu_none"]).map((o) => [o.toolUseId, o.undone]), [["toolu_1", true], ["toolu_3", true]])
+  assert.deepEqual(undoAgent(db, ["toolu_1"]), [], "taken back already")
+  assert.deepEqual(undoAgent(db, []), [])
+})
+
+test("all or nothing: if anything after one of them, not among them, touched the same thing, none is taken back", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, text: "Claude ¶2" }, claude("toolu_1"))
+  execute(db, "updateSegment", { id: 3, text: "Claude ¶3" }, claude("toolu_2"))
+  execute(db, "updateSegment", { id: 3, text: "mine over Claude's" })
+  const before = snapshot(db)
+  assert.throws(() => undoAgent(db, ["toolu_1", "toolu_2"]), { status: 409, message: "You changed ¶3 after this" })
+  assert.deepEqual(snapshot(db), before)
+  assert.deepEqual(agentOps(db, ["toolu_1", "toolu_2"]).map((o) => o.undone), [false, false])
+  assert.equal(undoAgent(db, ["toolu_1"]).length, 1, "from a later point, without the overwritten one, it goes")
+})
+
+test("a change of Claude's in another conversation, after these and on the same thing, also stands in the way", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 2, text: "this conversation" }, claude("toolu_1"))
+  execute(db, "updateSegment", { id: 2, text: "another conversation" }, claude("toolu_9"))
+  assert.throws(() => undoAgent(db, ["toolu_1"]), { status: 409, message: "Claude changed ¶2 after this" })
 })
