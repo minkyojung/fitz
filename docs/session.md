@@ -121,5 +121,11 @@
 | 7 ✓ | 진짜로 한 번(Haiku 테스트, 실제 책 사본으로 Opus 한 번) | `server/drill/real.test.mjs`, `server/package.json`(`test:real`) | 실측(아래) |
 
 **7행 실측**(2026-10-19). `pnpm test:real`의 Gatsby(Haiku 5.5 / low, ¶4 번역자·¶5 Claude): 끝남, 카드 3 저장·0 버림, 15.6초, $0.0026. 실제 책 사본에 서버와 똑같이 한 번(`runDrill`, Opus 5.5 / medium, `.context/measure/drill-evening.mjs`, 세션은 지움): 재료 4단락, 끝남, 11 저장(뜻 8, 뉘앙스 0, 챌린지 3)·1 버림(이유는 기록하지 못함), 54초, $0.147. 섞은 뒤 정답 자리 2·1·3·2. 그날의 화면: 카드 8, 챌린지 3. 이번엔 뉘앙스 카드가 없었다 — 지시문에서 볼 것.
-| 8 | 화면: Session, 배지, 카드, 챌린지, 끝 화면, 툴바 버튼, Ask의 자동 재료 | `app/src/features/session/`, `api.ts`, `http.ts`, … | e2e |
-| 9 | README · 이 문서에 결과 | | |
+| 8 ✓ | 화면: Session, 배지, 카드, 챌린지, 끝 화면, 툴바 버튼, Ask의 자동 재료 | `app/src/features/session/`, `api.ts`, `http.ts`, `App.tsx`, `AppShell.tsx`, `FloatingToolbar.tsx`, `useClaude.ts` | e2e |
+| 9 ✓ | README · 이 문서에 결과 | | |
+
+**8행 결과**(2026-10-19): 갤러리 그대로, 새 셸(사이드바 아래 Glossary 위, A안)에. 이 쪽은 회차의 카드를 Start 때의 모양으로 들고 있고(틀린 카드는 끝에 다시 붙인다), 채점·상자·날짜는 서버의 것이다 — 새로고침하면 서버가 오늘 틀리고 아직 못 맞힌 카드를 끝에 다시 준다. 카드의 ¶와 Discuss with Claude는 Translate로 연다(번역 옆에서 보도록). 원문 구절을 Claude에게 **보낼 때** 그 말이 재료가 된다(가리키기만 한 것은 아니다). 다른 세션이 같은 파일(`App.tsx`, `AppShell.tsx`)을 고치는 동안에는 화면만 따로 커밋하고, 그쪽이 커밋된 뒤에 붙였다. 실제 앱 스크린숏(빈 포트, 책 사본)으로 확인: 저녁 실행 시각이 브라우저 로케일의 12시간제(03:09 PM)로 나와 24시간제로 고쳤다.
+
+**결과**(2026-10-19): 서버 테스트 250(실제 Claude 테스트 4는 `pnpm test:real`에서 — 새로 1: 저녁 실행, Gatsby, Haiku), pytest 37, 화면 단위 64, e2e 63(새 3: 하루치 전부 — 채점, 맞을 때까지, 챌린지의 대안과 ⌘Z / 이미 앎·이의 / Add to Session). e2e 한 번은 다른 세션이 같은 `/tmp/fitz-e2e.db`로 e2e를 돌리던 때 실패했고, 그 뒤 연속 네 번 통과.
+
+**남은 것**: 번역자의 서버를 새 코드로 다시 켠다(`node server/index.mjs`) — 그래야 21:00 실행이 돈다. 뉘앙스 카드가 실제 책 실행에서 0이었다 — 며칠 쌓인 카드를 보고 지시문을 손본다. 한 번에 읽을 단락 상한은 장 하나를 통째로 번역한 날 잰다.
