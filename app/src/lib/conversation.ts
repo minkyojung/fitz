@@ -25,19 +25,24 @@ export interface ConversationView {
   config: { model: string; effort: string } | null
   /** The title Claude Code gave it, as the server says (null until it does). */
   title: string | null
+  /** When the turn going on began, as the server says (epoch ms; null when none): the live line's time counts from it. */
+  startedAt: number | null
 }
 
-export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null, config: null, title: null })
+export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null, config: null, title: null, startedAt: null })
 const configOf = (e: LiveEvent) => (typeof e.model === "string" && typeof e.effort === "string" ? { model: e.model, effort: e.effort } : null)
 const titleOf = (e: LiveEvent) => (typeof e.title === "string" ? e.title : null)
+const startedAtOf = (e: LiveEvent) => (typeof e.startedAt === "number" ? e.startedAt : null)
 
 /** The conversation after one of its events. */
 export function applyEvent(view: ConversationView, e: LiveEvent): ConversationView {
   switch (e.type) {
     case "snapshot":
-      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null, config: configOf(e), title: titleOf(e) }
-    case "message":
-      return { ...view, state: applyMessage(view.state, e.message as SdkMessage) }
+      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null, config: configOf(e), title: titleOf(e), startedAt: startedAtOf(e) }
+    case "message": {
+      const message = e.message as SdkMessage
+      return { ...view, state: applyMessage(view.state, message), ...(message.type === "result" && { startedAt: null }) }
+    }
     case "ask":
       return { ...view, asks: [...view.asks.filter((a) => a.requestId !== (e.ask as Ask).requestId), e.ask as Ask] }
     case "asked":
@@ -48,6 +53,8 @@ export function applyEvent(view: ConversationView, e: LiveEvent): ConversationVi
       return { ...view, config: configOf(e) }
     case "titled":
       return { ...view, title: titleOf(e) }
+    case "started":
+      return { ...view, startedAt: startedAtOf(e) }
     default:
       return view
   }

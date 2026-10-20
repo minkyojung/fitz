@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { IconAlertTriangle, IconArrowBackUp, IconBook, IconCircleCheck, IconMessage, IconNote, IconPencil, IconSearch, IconWorldSearch } from "@tabler/icons-react"
 import { Streamdown } from "streamdown"
 import { cjk } from "@streamdown/cjk"
@@ -7,6 +7,7 @@ import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
 import { Item as ItemCard, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Message, MessageContent, MessageFooter } from "@/components/ui/message"
+import { PixelLoader } from "@/components/ui/pixel-loader"
 import {
   MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport,
 } from "@/components/ui/message-scroller"
@@ -17,7 +18,7 @@ import type { AskDecision, TurnChecks } from "@/data/api"
 import type { Claude } from "@/data/useClaude"
 import { DiffView } from "@/features/review/DiffView"
 import { readPointed, type Ask, type Item } from "@/lib/conversation"
-import { WRITE_TOOLS, checksLine, doingLine, toolLine, turnLine } from "@/lib/trace"
+import { WRITE_TOOLS, checksLine, elapsedText, liveLine, toolLine, turnLine } from "@/lib/trace"
 import { Pointed } from "./Pointed"
 
 // Korean emphasis next to quotes ("**"말"**과") needs the CJK rules; Claude's words are sanitized by Streamdown
@@ -56,6 +57,50 @@ export function Thread({ claude }: { claude: Claude }) {
   const working = view.state.status !== "idle" || pending !== null
   /** A turn's checks are kept by the translator's message that began it. */
   const checksAt = (i: number) => { const began = blocks[i - 1]; return began?.kind === "user" ? claude.checksOf(began.item.uuid) : null }
+  // The turn going on has its message from Enter, its one live line at the end (docs/agent.md §26): before the echo
+  // under the words sent, then under the echo, then the block its first finished part opens. Keyed by the message
+  // that began the turn, so it is not drawn anew when a part finishes or the turn ends.
+  const last = blocks.at(-1)
+  const open = working && pending === null && last?.kind === "claude" && !last.turn ? last : null
+  const line = working ? liveLine({ sent: pending !== null, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0 }) : null
+  const since = view.startedAt ?? claude.sentAt
+  const current = { line, since, waiting: view.asks.length > 0 }
+  const items: React.ReactNode[] = []
+  let began = "start"
+  let n = 0
+  blocks.forEach((b, i) => {
+    if (b.kind === "user") {
+      began = b.item.uuid
+      n = 0
+      items.push(
+        <MessageScrollerItem key={b.item.uuid} messageId={b.item.uuid} scrollAnchor>
+          <UserMessage text={b.item.text} />
+        </MessageScrollerItem>,
+      )
+      return
+    }
+    items.push(
+      <MessageScrollerItem key={`${began}:${n++}`}>
+        <ClaudeMessage parts={b.parts} turn={b.turn} live={b === open ? view.state.live : null} current={b === open ? current : null}
+          stands={claude.stands} onUndo={claude.undoFrom}
+          checks={checksAt(i)}
+          undoable={working ? [] : blocks.slice(i).flatMap(writesOf).filter((id) => claude.stands(id) === true)} />
+      </MessageScrollerItem>,
+    )
+  })
+  const empty = (key: string, live: Claude["view"]["state"]["live"]) => (
+    <MessageScrollerItem key={key}>
+      <ClaudeMessage parts={[]} turn={null} live={live} current={current} stands={claude.stands} onUndo={claude.undoFrom} checks={null} undoable={[]} />
+    </MessageScrollerItem>
+  )
+  if (pending !== null) {
+    items.push(
+      <MessageScrollerItem key="pending" scrollAnchor>
+        <UserMessage text={pending} />
+      </MessageScrollerItem>,
+      empty("pending:0", null),
+    )
+  } else if (working && last?.kind === "user") items.push(empty(`${last.item.uuid}:0`, view.state.live))
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="min-h-0 flex-1">
@@ -66,27 +111,7 @@ export function Thread({ claude }: { claude: Claude }) {
                 Ask about this chapter, or select words in the text and choose Ask Claude (⌘L).
               </p>
             )}
-            {blocks.map((b, i) =>
-              b.kind === "user" ? (
-                <MessageScrollerItem key={b.item.uuid} messageId={b.item.uuid} scrollAnchor>
-                  <UserMessage text={b.item.text} />
-                </MessageScrollerItem>
-              ) : (
-                <MessageScrollerItem key={`c${i}`}>
-                  <ClaudeMessage parts={b.parts} turn={b.turn} live={i === blocks.length - 1 && !pending ? view.state.live : null}
-                    working={i === blocks.length - 1 && !pending && view.state.status !== "idle"} waiting={view.asks.length > 0}
-                    stands={claude.stands} onUndo={claude.undoFrom}
-                    checks={checksAt(i)}
-                    undoable={working ? [] : blocks.slice(i).flatMap(writesOf).filter((id) => claude.stands(id) === true)} />
-                </MessageScrollerItem>
-              ),
-            )}
-            {pending !== null && (
-              <MessageScrollerItem scrollAnchor>
-                <UserMessage text={pending} />
-                <Trace className="mt-3"><TraceLine status="running"><TraceTitle>Starting</TraceTitle></TraceLine></Trace>
-              </MessageScrollerItem>
-            )}
+            {items}
             {view.asks.map((a) => (
               <MessageScrollerItem key={a.requestId}>
                 <Confirmation ask={a} onAnswer={(d) => claude.answer(a.requestId, d)} />
@@ -124,8 +149,10 @@ function UserMessage({ text }: { text: string }) {
 /** Claude's side of a turn: runs of reading and thinking as one Trace each, its words between them, the turn's end —
  *  and there, Undo from here: Claude's changes from this turn to the end of the conversation, taken back together
  *  (Claude Code's rewind), or not at all, saying why (docs/agent.md §18). */
-function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, onUndo, checks }: {
-  parts: Item[]; turn: Extract<Item, { kind: "turn" }> | null; live: Claude["view"]["state"]["live"]; working: boolean; waiting: boolean
+function ClaudeMessage({ parts, turn, live, current, stands, undoable, onUndo, checks }: {
+  parts: Item[]; turn: Extract<Item, { kind: "turn" }> | null; live: Claude["view"]["state"]["live"]
+  /** The turn going on's: its live line's words (null while Claude's words stream), its start, whether a write waits. */
+  current: { line: string | null; since: number | null; waiting: boolean } | null
   stands: Claude["stands"]; undoable: string[]; onUndo: Claude["undoFrom"]; checks: TurnChecks | null
 }) {
   const [busy, setBusy] = useState(false)
@@ -148,16 +175,7 @@ function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, 
           Array.isArray(r) ? <Steps key={i} steps={r} stands={stands} /> : <Words key={r.id} text={r.text} />,
         )}
         {live?.kind === "text" && <Words text={live.text} streaming />}
-        {working && live?.kind !== "text" && (
-          // a write waiting for the translator outranks the rest: Claude is not working then, it is waiting
-          <Trace>
-            {waiting ? (
-              <TraceLine><TraceTitle>Waiting for your answer</TraceTitle></TraceLine>
-            ) : (
-              <TraceLine status="running"><TraceTitle>{live?.kind === "thinking" ? "Thinking" : live?.kind === "tool" ? doingLine(live.name) : "Working"}</TraceTitle></TraceLine>
-            )}
-          </Trace>
-        )}
+        {current?.line && <LiveLine line={current.line} since={current.since} waiting={current.waiting} thought={live?.kind === "thinking" ? live.text : ""} />}
         {turn && checks && <ChecksLine checks={checks} />}
         {/* inside the content: Message lays its children in a row, and the turn's end goes under the answer */}
         {end && (
@@ -178,6 +196,37 @@ function ClaudeMessage({ parts, turn, live, working, waiting, stands, undoable, 
       </MessageContent>
     </Message>
   )
+}
+
+/** The turn's one live line (docs/agent.md §26): what Claude is doing, and the time since the turn began; under it,
+ *  Claude's thought as it streams, its last four lines. A write waiting for the translator outranks the rest: Claude is
+ *  not working then, it is waiting — no loader, no time. Only the words are read aloud. */
+function LiveLine({ line, since, waiting, thought }: { line: string; since: number | null; waiting: boolean; thought: string }) {
+  return (
+    <Trace data-live-line>
+      <TraceLine status={waiting ? undefined : "running"}>
+        {!waiting && <TraceIcon><PixelLoader /></TraceIcon>}
+        <TraceTitle role="status">{line}</TraceTitle>
+        {!waiting && since !== null && <Elapsed since={since} />}
+      </TraceLine>
+      {thought && (
+        // the newest words stay in sight, the oldest go out at the top
+        <div data-thought-stream className="flex max-h-[4lh] flex-col justify-end overflow-hidden border-l pl-2 text-xs/relaxed text-muted-foreground">
+          <p className="whitespace-pre-wrap">{thought}</p>
+        </div>
+      )}
+    </Trace>
+  )
+}
+
+/** The time since `since`, a tenth of a second at a time. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 100)
+    return () => clearInterval(tick)
+  }, [])
+  return <TraceDescription aria-hidden>{elapsedText(now - since)}</TraceDescription>
 }
 
 // a chat answer's headings are its own sections, not the page's: the text's size, set apart by weight only

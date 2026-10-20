@@ -24,6 +24,8 @@ export function useClaude() {
   const [pointed, setPointed] = useState<Pointed | null>(null)
   // a message sent and not yet echoed back by Claude Code: the first one waits for its process to start
   const [pending, setPending] = useState<string | null>(null)
+  // when the translator last sent one: the live line counts from it until the server says when the turn began
+  const [sentAt, setSentAt] = useState<number | null>(null)
   const unfollow = useRef<(() => void) | null>(null)
   useEffect(() => () => unfollow.current?.(), [])
 
@@ -54,6 +56,7 @@ export function useClaude() {
     if (!id) { id = crypto.randomUUID(); follow(id, choice) }
     const message = withPointed(text, pointed)
     setPending(message)
+    setSentAt(Date.now())
     setPointed(null)
     api.sendMessage(id, message)
     // words of the source asked about are words not known yet: Session asks about them (docs/session.md §3)
@@ -111,13 +114,13 @@ export function useClaude() {
     else setChoice((c) => ({ ...c, ...change }))
   }, [convId])
   return useMemo(() => ({
-    convId, view, list, summary, config, configure, pointed, point: setPointed, pending,
+    convId, view, list, summary, config, configure, pointed, point: setPointed, pending, sentAt,
     refreshList, send, stands, undoFrom, checksOf,
     open: (id: string) => follow(id),
     newConversation: () => { unfollow.current?.(); unfollow.current = null; setConvId(null); setView(emptyView()); setPending(null) },
     stop: () => { if (convId) api.stopTurn(convId) },
     answer: (requestId: string, decision: AskDecision) => { if (convId) api.answerAsk(convId, requestId, decision) },
-  }), [convId, view, list, summary, config, configure, pointed, pending, refreshList, send, stands, undoFrom, checksOf, follow])
+  }), [convId, view, list, summary, config, configure, pointed, pending, sentAt, refreshList, send, stands, undoFrom, checksOf, follow])
 }
 
 export type Claude = ReturnType<typeof useClaude>

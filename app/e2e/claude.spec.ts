@@ -228,6 +228,39 @@ test("the words typed, the model button's words and the Send button keep to one 
   expect(edges.text).toBeCloseTo(17, 0)  // the frame's 1px and 16px
 })
 
+test("from Enter to the answer one live line shows Claude at work, its time from the turn's start, its thought as it streams (docs/agent.md §26)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("이 문장 뉘앙스는?")
+  await box.press("Enter")
+  const line = page.locator("[data-live-line]")
+  await expect(thread(page)).toContainText("Starting")  // before Claude Code echoes it
+
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [], working: false, startedAt: null })
+  fake.tell({ type: "started", convId, startedAt: Date.now() - 3_000 })
+  const at = (kind: string, from = 0) => nuance.findIndex((m, i) => i >= from && (m.type === kind || (m.type === "stream_event" && (m as { event: { type: string; delta?: { type: string } } }).event.delta?.type === kind)))
+  const echo = nuance.findIndex((m) => m.type === "user" && (m as { isReplay?: boolean }).isReplay)
+  fake.play(convId!, nuance.slice(0, echo + 1))
+  await expect(thread(page)).toContainText("Thinking")  // echoed, nothing of Claude's come yet: the gap there was
+  await expect(line).toContainText("Thinking")
+  await expect(line.locator("[data-slot=trace-description]")).toHaveText(/^([3-9]|\d\d)\.\ds$/)  // from the server's start, not from now
+  await line.evaluate((el) => { (el as HTMLElement & { kept?: boolean }).kept = true })
+
+  const toolDone = at("assistant", echo)
+  fake.play(convId!, nuance.slice(echo + 1, toolDone))
+  await expect(line).toContainText("Reading")  // the first block streams: a call to read
+  const thinking = at("thinking_delta", toolDone)
+  fake.play(convId!, nuance.slice(toolDone, thinking + 5))
+  await expect(line).toContainText("Thinking")
+  await expect(page.locator("[data-thought-stream]")).toContainText("I'm thinking about this Gatsby line")
+  expect(await line.evaluate((el) => (el as HTMLElement & { kept?: boolean }).kept)).toBe(true)  // the same line throughout
+
+  fake.play(convId!, nuance.slice(thinking + 5))
+  await expect(line).toHaveCount(0)
+  await expect(thread(page).locator("[data-turn-end]")).toContainText("21s")
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

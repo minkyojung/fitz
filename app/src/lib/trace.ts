@@ -51,6 +51,25 @@ const DOING: Record<string, string> = {
 }
 export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? "Working"
 
+/** The live line's words while a turn goes, from Enter to the answer (docs/agent.md §26): sent and not yet echoed,
+ *  what streams in now, or between blocks. A write waiting for the translator outranks the rest. null while Claude's
+ *  words stream: they show it. */
+export function liveLine({ sent, live, began, waiting }: {
+  sent: boolean; live: { kind: string; name?: string } | null; began: boolean; waiting: boolean
+}): string | null {
+  if (waiting) return "Waiting for your answer"
+  if (sent) return "Starting"
+  if (live?.kind === "text") return null
+  if (live?.kind === "tool") return doingLine(live.name)
+  return live?.kind === "thinking" || !began ? "Thinking" : "Working"
+}
+
+/** The time since the turn began, as the live line shows it: tenths of a second, then minutes. */
+export function elapsedText(ms: number): string {
+  const tenths = Math.max(0, Math.floor(ms / 100))
+  return tenths < 600 ? `${(tenths / 10).toFixed(1)}s` : `${Math.floor(tenths / 600)}m ${((tenths % 600) / 10).toFixed(1)}s`
+}
+
 /** A turn's end: how long, or why it ended early. Not what it cost: on the translator's subscription that is Claude
  *  Code's estimate, not a bill (docs/agent.md §17). The record keeps it. */
 export function turnLine(t: Turn): { text: string; stopped: boolean } {

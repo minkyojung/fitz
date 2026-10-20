@@ -53,6 +53,16 @@ test("the title: from the snapshot, then as the server says Claude Code gave one
   assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [] }]).title, null, "not said: not known")
 })
 
+test("when the turn going on began: from the snapshot or as it starts, and none once it ends (docs/agent.md §26)", () => {
+  let view = play([{ type: "snapshot", state: foldMessages([]), asks: [], startedAt: null }])
+  assert.equal(view.startedAt, null)
+  view = play([{ type: "started", startedAt: 1_000 }], view)
+  assert.equal(view.startedAt, 1_000)
+  view = play(translate.map((message) => ({ type: "message", message })), view)
+  assert.equal(view.startedAt, null, "its result ended it")
+  assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [], startedAt: 2_000 }]).startedAt, 2_000, "opened mid-turn")
+})
+
 test("what the translator pointed at goes before their words, and comes apart again for showing", () => {
   const sent = withPointed("말장난이야?", { segmentId: 604, side: "source", quote: "reserve all judgments" })
   assert.equal(sent, "¶604 (English): “reserve all judgments”\n\n말장난이야?")

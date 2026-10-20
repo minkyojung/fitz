@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { ago, checksLine, doingLine, toolLine, turnLine } from "./trace.ts"
+import { ago, checksLine, doingLine, elapsedText, liveLine, toolLine, turnLine } from "./trace.ts"
 
 const tool = (name: string, input: Record<string, unknown>, status: "running" | "done" | "error" = "done", result: unknown = null) =>
   ({ kind: "tool" as const, id: "t", name, input, status, result })
@@ -53,4 +53,23 @@ test("a turn's checks in a line: passed, fixed after being sent back, left wrong
     details: ["¶3: “advantages” → 혜택 / 좋은 조건 is not in the translation", "¶4: the note at “유보하는” lost its place"],
   })
   assert.deepEqual(checksLine({ checked: [3], rounds: [], error: "could not check: no such table" }), { ok: null, text: "Not checked", details: ["could not check: no such table"] })
+})
+
+test("the live line names what Claude is doing now, from Enter on; nothing while its words stream (docs/agent.md §26)", () => {
+  const at = (o: Partial<Parameters<typeof liveLine>[0]>) => liveLine({ sent: false, live: null, began: false, waiting: false, ...o })
+  assert.equal(at({ sent: true }), "Starting", "sent, not yet echoed")
+  assert.equal(at({}), "Thinking", "echoed, nothing streaming yet")
+  assert.equal(at({ live: { kind: "thinking" } }), "Thinking")
+  assert.equal(at({ live: { kind: "tool", name: "read" } }), "Reading")
+  assert.equal(at({ began: true }), "Working", "between blocks")
+  assert.equal(at({ live: { kind: "text" } }), null, "its words show it")
+  assert.equal(at({ waiting: true, began: true }), "Waiting for your answer")
+})
+
+test("the time on the live line: tenths of a second, then minutes", () => {
+  assert.equal(elapsedText(0), "0.0s")
+  assert.equal(elapsedText(3_499), "3.4s")
+  assert.equal(elapsedText(59_990), "59.9s", "never 60.0s")
+  assert.equal(elapsedText(61_250), "1m 1.2s")
+  assert.equal(elapsedText(-40), "0.0s", "a clock a little behind the server's")
 })

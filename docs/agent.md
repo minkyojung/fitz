@@ -661,3 +661,5 @@ Claude 패널의 글자(같은 날, 758a87a): 읽는 글 14px, 조작·상태 12
 | 1 | 이 절, 갤러리 | `docs/agent.md`, `app/src/gallery/LiveGallery.tsx`, `index.css`(`pixel-on`) | 번역자 확인 ✓ |
 | 2 | 서버: `started`, snapshot의 `startedAt` | `host.mjs`, `protocol.mjs`(주석) | 서버(가짜 세션) |
 | 3 | 화면: 진행 줄 | `lib/trace.ts`(단계 이름, 시간 글), `lib/conversation.ts`(`startedAt`), `useClaude.ts`(보낸 시각), `Thread.tsx`, `components/ui/pixel-loader.tsx` | 단위 + e2e: 엔터 직후 Starting, 되돌아온 뒤 첫 블록 전에도 Thinking과 시간, 생각이 흘러나옴, 끝나면 줄이 사라지고 끝 시간. HEAD에서 실패 확인 |
+
+**결과**(2026-10-20): e2e가 녹화(`nuance`)를 단계마다 재생해 본다 — 엔터 직후 Starting, 되돌아온 뒤 Thinking과 서버 시각부터의 시간, 도구가 흐를 때 Reading, 생각이 흐르면 그 글, 그동안 같은 줄(다시 그려지지 않음), 끝나면 줄이 없고 "21s". HEAD에서는 되돌아온 뒤 내 말만 있어 실패했다. 실제 에디터에서도 같은 재생으로 단계마다 눈으로 확인. 서버 258, 화면 단위 69, e2e 67.
