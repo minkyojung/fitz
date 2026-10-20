@@ -104,7 +104,7 @@ test("a follower that stops following hears nothing more; close ends every sessi
   unfollow()
   opened[0].feed(nuance[0])
   await settle()
-  assert.deepEqual(events.map((e) => e.type), ["snapshot"])
+  assert.deepEqual(events.map((e) => e.type), ["snapshot", "started"], "the turn began while it still followed")
   await host.close()
   assert.equal(opened[0].closed, true)
 })
@@ -669,4 +669,26 @@ test("a Claude Code that died counts on from what its session file saved, not fr
   opened[1].feed({ ...RESULT, uuid: "r2", user_message_uuid: "u2", total_cost_usd: 0.003 })
   await settle()
   near(lastTurnCost(events), 0.003)
+})
+
+// --- when the turn began, for the time on the live line (docs/agent.md §26)
+
+test("a turn's start is told to its followers as it begins, and is in the snapshot while it is at work", async () => {
+  const { host, opened, events, follow } = setup()
+  host.start(ID)
+  follow()
+  assert.equal(events[0].startedAt, null, "nothing at work")
+  const before = Date.now()
+  host.send(ID, "q")
+  const started = events.find((e) => e.type === "started")
+  assert.equal(started?.convId, ID)
+  assert.ok(started.startedAt >= before && started.startedAt <= Date.now())
+  const opener = []
+  host.open(ID, (e) => opener.push(e))
+  assert.equal(opener[0].startedAt, started.startedAt, "a page opened mid-turn counts from the same moment")
+  opened[0].feed(...nuance)
+  await settle()
+  const after = []
+  host.open(ID, (e) => after.push(e))
+  assert.equal(after[0].startedAt, null, "once it ended, no start")
 })

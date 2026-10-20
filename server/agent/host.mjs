@@ -49,7 +49,7 @@ export function createAgentHost({
     model: record.model, effort: record.effort, task: record.task, session: null, keptSession: record.sessionId,
     state: { ...emptyConversation(), sessionId: record.sessionId }, followers: new Set(), asks: new Map(),
     loaded: true, ready: Promise.resolve(),
-    turn: null,  // the turn going on: { wrote: paragraphs Claude translated, rounds: what each check found, rewrote, stopped, error }
+    turn: null,  // the turn going on: { wrote: paragraphs Claude translated, rounds: what each check found, rewrote, stopped, error, startedAt }
   })
   /** The conversation in memory, or brought back from book.db and Claude Code's session file (after a restart). While
    *  its history is being read it is not `loaded`; its followers get their snapshot when it is. */
@@ -75,7 +75,7 @@ export function createAgentHost({
   const working = (conv) => conv.turn !== null && conv.session !== null
   const snapshot = (convId, conv) => ({
     type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort, working: working(conv),
-    title: getConversation(db, convId)?.title ?? null,
+    title: getConversation(db, convId)?.title ?? null, startedAt: working(conv) ? conv.turn.startedAt : null,
   })
   const pending = (conv) => [...conv.asks.values()].map((a) => a.ask)
 
@@ -213,7 +213,9 @@ export function createAgentHost({
     const conv = get(convId)
     const go = () => {
       touchConversation(db, convId)
-      conv.turn = { wrote: new Set(), rounds: [], rewrote: false, stopped: false, error: null }
+      conv.turn = { wrote: new Set(), rounds: [], rewrote: false, stopped: false, error: null, startedAt: Date.now() }
+      // when it began, which every page counts the turn's time from (docs/agent.md §26)
+      tell(conv, { type: "started", convId, startedAt: conv.turn.startedAt })
       return ensureSession(convId, conv).send(text)
     }
     return conv.loaded ? go() : conv.ready.then(go)

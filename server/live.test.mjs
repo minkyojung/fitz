@@ -50,9 +50,9 @@ test("over the socket: start, send, and the conversation arrives as a snapshot a
   assert.deepEqual(opened[0].sent, ["¶4는?"])
   opened[0].feed(...nuance)
   await settle()
-  await page.until((r) => r.length === nuance.length + 1)
-  const [snapshot, ...rest] = page.received
-  assert.equal(snapshot.type, "snapshot")
+  await page.until((r) => r.filter((e) => e.type === "message").length === nuance.length)
+  const [snapshot, started, ...rest] = page.received
+  assert.deepEqual([snapshot.type, started.type], ["snapshot", "started"], "the turn's start before any of its messages")
   assert.deepEqual(foldMessages(rest.map((e) => e.message), snapshot.state), JSON.parse(JSON.stringify(foldMessages(nuance))))
 })
 
