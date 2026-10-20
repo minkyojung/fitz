@@ -205,3 +205,9 @@
     word-break: keep-all;
   }
 }
+
+/* a cell of the pixel loader on Claude's live line, lit and fading; each cell starts after its own delay */
+@keyframes pixel-on {
+  0%, 100% { opacity: 0.2; }
+  30% { opacity: 1; }
+}
