@@ -10,16 +10,22 @@
  *    { kind: "tool", id, name, input, status, result } a tool call; status "running" | "done" | "error"
  *    { kind: "turn", reason, isError, ms, cost, error } a turn's end; error: what the API answered when it did not
  *                                                     answer (authentication_failed, rate_limit, overloaded, …), else null
+ *    { kind: "compact", pre, post }                   the conversation was compacted here: tokens before and after
  *  live: the block being written now, { kind: "thinking" | "text" | "tool", text, name? }, or null.
  *  status: "idle" | "running" | "requires_action", as Claude Code reports it.
  *  retry: a request being tried again { attempt, max, delayMs, error }, or null (docs/agent.md §29).
- *  limits: the plan's last rate_limit_event { status, type, resetsAt (ms), windows }, or null. */
-export const emptyConversation = () => ({ sessionId: null, model: null, status: "idle", items: [], live: null, spent: 0, retry: null, limits: null, apiError: null })
+ *  limits: the plan's last rate_limit_event { status, type, resetsAt (ms), windows }, or null.
+ *  compacting: Claude Code is compacting the conversation (docs/agent.md §32). */
+export const emptyConversation = () => ({ sessionId: null, model: null, status: "idle", items: [], live: null, spent: 0, retry: null, limits: null, apiError: null, compacting: false })
 
 const FITZ = "mcp__fitz__"
 const toolName = (name) => (name.startsWith(FITZ) ? name.slice(FITZ.length) : name)
 const textOf = (content) =>
   typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("")
+/** What Claude Code puts in a user message that is not the translator's words: a local command (/compact) and its
+ *  output, the summary a compaction leaves (measured, docs/agent.md §32). */
+const COMMAND = /^\s*<(command-name|local-command-stdout|local-command-stderr)>/
+const notTheirs = (m) => m.isSynthetic || m.isCompactSummary || m.isMeta || m.is_meta || COMMAND.test(textOf(m.message?.content))
 
 export function applyMessage(state, m) {
   switch (m.type) {
@@ -27,6 +33,11 @@ export function applyMessage(state, m) {
       if (m.subtype === "init") return { ...state, sessionId: m.session_id, model: m.model }
       if (m.subtype === "session_state_changed") return { ...state, status: m.state }
       if (m.subtype === "api_retry") return { ...state, retry: { attempt: m.attempt, max: m.max_retries, delayMs: m.retry_delay_ms, error: m.error ?? null } }
+      if (m.subtype === "status") return m.status === "compacting" ? { ...state, compacting: true } : state.compacting ? { ...state, compacting: false } : state
+      if (m.subtype === "compact_boundary") {
+        const c = m.compact_metadata ?? m
+        return { ...state, compacting: false, items: [...state.items, { kind: "compact", pre: c.pre_tokens ?? null, post: c.post_tokens ?? null }] }
+      }
       return state
 
     case "rate_limit_event": {
@@ -81,14 +92,17 @@ export function applyMessage(state, m) {
         })
         return { ...state, items }
       }
-      // only the echo of what was sent is the translator's; other user messages (interruptions, synthetic) are not
-      if (!m.isReplay) return state
+      // only the echo of what was sent is the translator's; other user messages (interruptions, synthetic, a local
+      // command and its output) are not
+      if (!m.isReplay || notTheirs(m)) return state
       return { ...state, items: [...state.items, { kind: "user", uuid: m.uuid, text: textOf(m.message.content) }] }
     }
 
     case "result": {
       // total_cost_usd is the process's running total: a turn's cost is what it added
       const total = m.total_cost_usd ?? state.spent
+      // a local command's (/compact) is not a turn: what it cost is counted, nothing is shown for it
+      if (m.local_command) return { ...state, live: null, spent: total, status: "idle", retry: null, apiError: null, compacting: false }
       const turn = { kind: "turn", reason: m.terminal_reason ?? m.subtype, isError: m.is_error === true, ms: m.duration_ms, cost: total - state.spent, error: state.apiError }
       return { ...state, items: [...state.items, turn], live: null, spent: total, status: "idle", retry: null, apiError: null }
     }
@@ -126,8 +140,9 @@ export function foldStored(messages, turns = new Map(), sessionId = null) {
   for (const m of messages) {
     if (m.parent_tool_use_id) continue
     if (m.type === "assistant") state = applyMessage(state, m)
+    else if (m.type === "system" && m.subtype === "compact_boundary") { close(); state = applyMessage(state, m) }
     else if (m.type === "user" && isToolResult(m)) state = applyMessage(state, { ...m, tool_use_result: structured(m) })
-    else if (m.type === "user" && !INTERRUPTED.test(textOf(m.message.content).trim())) {
+    else if (m.type === "user" && !INTERRUPTED.test(textOf(m.message.content).trim()) && !notTheirs(m)) {
       close()
       prompt = m.uuid
       state = applyMessage(state, { ...m, isReplay: true })

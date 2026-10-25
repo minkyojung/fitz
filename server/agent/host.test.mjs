@@ -692,3 +692,17 @@ test("a turn's start is told to its followers as it begins, and is in the snapsh
   host.open(ID, (e) => after.push(e))
   assert.equal(after[0].startedAt, null, "once it ended, no start")
 })
+
+// --- a compaction (docs/agent.md §32)
+
+test("a /compact is not recorded as a turn: the recording's three results leave two", async () => {
+  const compact = readFileSync(new URL("./fixtures/compact.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  const { host, opened, db } = setup()
+  host.start(ID)
+  host.send(ID, "¶4를 읽고 한 줄로 요약해.")
+  opened[0].feed(...compact)
+  await settle()
+  await settle()
+  const sessionId = compact.find((m) => m.subtype === "init").session_id
+  assert.equal(turnsOf(db, sessionId).size, 2)
+})

@@ -824,4 +824,6 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 |---|---|---|---|
 | 1 | 이 절, 녹화, `record.mjs --then`, 갤러리 | `docs/agent.md`, `fixtures/compact.*`, `record.mjs`, `gallery/ContextGallery.tsx` | 번역자 확인 |
 | 2 | fold와 호스트 | `fold.mjs`(+`.d.mts`), `host.mjs`, `lib/trace.ts`, `Thread.tsx` | 서버 `fold.test`: 녹화를 접으면 user 항목은 둘(질문 둘), compact 항목 하나(5028→1087), 턴 둘; 디스크 쪽도 요약·명령이 user가 아님. `host.test`: `/compact` 결과는 기록되지 않음. HEAD에서 실패 확인 |
+
+**결과**(2026-10-25): 녹화의 압축은 6,4xx→1,4xx 토큰(측정 때와 다른 실행). 진행 줄은 압축처럼 번역자의 메시지 없이 시작한 일에도 붙도록, 열린 블록이 없으면 제 블록을 하나 둔다. 서버 273, 화면 단위 73, e2e 72(새 1: 녹화를 재생하면 Compacting → "Compacted 6.4k → 1.4k", 요약·명령은 보이지 않고 턴 끝은 둘).
 | 3 | 서버 `context`·`compact`, 페이지의 창 | `session.mjs`, `host.mjs`, `live.mjs`, `protocol.mjs`, `api.ts`, `http.ts`, `useClaude.ts`, `ContextPopover.tsx`, `ClaudeTab.tsx` | 단위(가짜 query): `context`가 `getContextUsage`를 부름. e2e: 가짜 서버의 `context` 답이 창에; Compact 버튼이 `compact`를 보냄; 녹화의 압축을 재생하면 "Compacting" 뒤 "Compacted 5.0k → 1.1k". HEAD에서 실패 확인 |

@@ -42,7 +42,7 @@ export function createAgentHost({
   openSession = openClaudeSession,
   models = knownModels,
   sessionInfo = (id) => getSessionInfo(id, { dir: AGENT_CWD }),
-  sessionMessages = (id) => getSessionMessages(id, { dir: AGENT_CWD }),
+  sessionMessages = (id, options) => getSessionMessages(id, { dir: AGENT_CWD, ...options }),
   keep = sessionKeeper({ cwd: AGENT_CWD }),
 }) {
   const conversations = new Map()  // convId → { model, effort, task, session, keptSession, state, followers, asks, loaded, ready, turn }
@@ -62,7 +62,7 @@ export function createAgentHost({
     if (record.sessionId) {
       conv.loaded = false
       conv.ready = Promise.resolve()
-        .then(() => { restore(record.sessionId); return sessionMessages(record.sessionId) })
+        .then(() => { restore(record.sessionId); return sessionMessages(record.sessionId, { includeSystemMessages: true }) })  // the compactions too (§32)
         // what the next Claude Code counts its cost on from (docs/agent.md §24)
         .then((messages) => { conv.state = { ...foldStored(messages ?? [], turnsOf(db, record.sessionId), record.sessionId), spent: keep.savedCost(record.sessionId) } })
         .catch((e) => tell(conv, { type: "error", convId, message: `could not read the conversation back: ${e.message}` }))
@@ -133,9 +133,10 @@ export function createAgentHost({
         conv.keptSession = message.session_id
       }
       if (message.type === "result") {
-        const turn = conv.state.items.at(-1)
         const going = conv.turn
         conv.turn = null  // over, whether or not its record can be kept
+        if (message.local_command) return  // a /compact: not a turn of the translator's (§32)
+        const turn = conv.state.items.at(-1)
         recordTurn(db, message.session_id, message.user_message_uuid ?? message.uuid, { ...turn, checks: checksOf(going) })
         try { keep.save(message.session_id) } catch (e) { console.error("agent: could not copy session", message.session_id, e.message) }
         if (!getConversation(db, convId)?.title) {

@@ -186,3 +186,31 @@ test("the last rate_limit_event is kept: the plan's windows, for the usage the p
   assert.deepEqual(s.limits, { status: "allowed", type: "five_hour", resetsAt: event.resetsAt * 1000, windows: event.unifiedWindows })
   assert.equal(emptyConversation().limits, null)
 })
+
+// --- a compacted conversation (docs/agent.md §32): recorded with record.mjs --then, Haiku
+
+const compact = recording("compact")
+const storedCompact = JSON.parse(readFileSync(new URL("./fixtures/compact.stored.json", import.meta.url), "utf8"))
+
+test("compacted mid-way, the conversation shows the two questions, a Compacted line with the counts, and two turns — not the summary, nor the command", () => {
+  const s = foldMessages(compact)
+  assert.deepEqual(s.items.filter((i) => i.kind === "user").map((i) => i.text), ["¶4를 읽고 한 줄로 요약해.", "방금 요약한 문단 번호만 말해."])
+  const boundary = compact.find((m) => m.subtype === "compact_boundary").compact_metadata
+  assert.deepEqual(s.items.filter((i) => i.kind === "compact"), [{ kind: "compact", pre: boundary.pre_tokens, post: boundary.post_tokens }])
+  assert.equal(s.items.filter((i) => i.kind === "turn").length, 2, "the compaction is not a turn")
+  const spent = compact.filter((m) => m.type === "result").at(-1).total_cost_usd
+  assert.equal(s.spent, spent, "but what it cost is counted")
+  assert.equal(s.compacting, false)
+})
+
+test("while Claude Code compacts, the state says so", () => {
+  const at = compact.findIndex((m) => m.type === "system" && m.subtype === "status" && m.status === "compacting")
+  assert.equal(foldMessages(compact.slice(0, at + 1)).compacting, true)
+  assert.equal(foldMessages(compact.slice(0, at + 2)).compacting, false, "the next status ends it")
+})
+
+test("read back from disk, the summary and the command are not the translator's words either", () => {
+  const s = foldStored(storedCompact)
+  assert.deepEqual(s.items.filter((i) => i.kind === "user").map((i) => i.text), ["방금 요약한 문단 번호만 말해."])
+  assert.ok(s.items.every((i) => i.kind !== "text" || !/^<(command-name|local-command-stdout)>/.test(i.text)))
+})

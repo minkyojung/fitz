@@ -355,6 +355,25 @@ test("the models and efforts offered are what Claude Code told the server; its o
   await expect(page.getByRole("menuitemradio", { name: "high", exact: true })).toBeVisible()
 })
 
+test("a compaction shows as Compacting, then a Compacted line with the counts; the summary and the command are not the translator's (docs/agent.md §32)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("¶4를 읽고 한 줄로 요약해.")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  const compact = recording("compact")
+  const compacting = compact.findIndex((m) => m.type === "system" && (m as { status?: string }).status === "compacting")
+  fake.play(convId!, compact.slice(0, compacting + 1))
+  await expect(page.locator("[data-live-line]")).toContainText("Compacting")
+  fake.play(convId!, compact.slice(compacting + 1))
+  const { pre_tokens, post_tokens } = (compact.find((m) => m.type === "system" && (m as { subtype?: string }).subtype === "compact_boundary") as { compact_metadata: { pre_tokens: number; post_tokens: number } }).compact_metadata
+  await expect(thread(page).locator("[data-compacted]")).toHaveText(`Compacted ${(pre_tokens / 1000).toFixed(1)}k → ${(post_tokens / 1000).toFixed(1)}k`)
+  await expect(thread(page)).not.toContainText("This session is being continued")
+  await expect(thread(page)).not.toContainText("command-name")
+  await expect(thread(page).locator("[data-turn-end]")).toHaveCount(2)
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

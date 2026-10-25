@@ -54,11 +54,13 @@ export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? 
 /** The live line's words while a turn goes, from Enter to the answer (docs/agent.md §26): sent and not yet echoed,
  *  what streams in now, or between blocks. A write waiting for the translator outranks the rest. null while Claude's
  *  words stream: they show it. */
-export function liveLine({ sent, live, began, waiting, retry = null }: {
+export function liveLine({ sent, live, began, waiting, retry = null, compacting = false }: {
   sent: boolean; live: { kind: string; name?: string } | null; began: boolean; waiting: boolean
   retry?: { attempt: number; max: number; delayMs: number; error: string | null } | null
+  compacting?: boolean
 }): string | null {
   if (waiting) return "Waiting for your answer"
+  if (compacting) return "Compacting"
   // a request being tried again (docs/agent.md §29): not stuck, waiting
   if (retry) return `Retrying ${retry.attempt}/${retry.max}${retry.error ? ` · ${retry.error}` : ""} · ${Math.max(1, Math.round(retry.delayMs / 1000))}s`
   if (sent) return "Starting"
@@ -74,6 +76,12 @@ export function elapsedText(ms: number): string {
 }
 
 const time = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+
+/** Tokens in a few figures: 5028 → "5.0k", 571516 → "572k". */
+export const tokens = (n: number) => (n >= 100_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+/** Where the conversation was compacted (docs/agent.md §32): what it was, what it became. */
+export const compactLine = (c: { pre: number | null; post: number | null }) =>
+  c.pre !== null && c.post !== null ? `Compacted ${tokens(c.pre)} → ${tokens(c.post)}` : "Compacted"
 
 /** Why the API did not answer, so the translator knows what to do next (docs/agent.md §29). */
 function stoppedLine(error: string, limits: { resetsAt: number | null } | null): string {

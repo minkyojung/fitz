@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { IconAlertTriangle, IconArrowBackUp, IconBook, IconCircleCheck, IconMessage, IconNote, IconPencil, IconSearch, IconWorldSearch } from "@tabler/icons-react"
+import { IconAlertTriangle, IconArrowBackUp, IconArrowsDiagonalMinimize2, IconBook, IconCircleCheck, IconMessage, IconNote, IconPencil, IconSearch, IconWorldSearch } from "@tabler/icons-react"
 import { Streamdown } from "streamdown"
 import { cjk } from "@streamdown/cjk"
 
@@ -18,7 +18,7 @@ import type { AskDecision, TurnChecks } from "@/data/api"
 import type { Claude } from "@/data/useClaude"
 import { DiffView } from "@/features/review/DiffView"
 import { readPointed, type Ask, type Item } from "@/lib/conversation"
-import { WRITE_TOOLS, checksLine, elapsedText, liveLine, toolLine, turnLine } from "@/lib/trace"
+import { WRITE_TOOLS, checksLine, compactLine, elapsedText, liveLine, toolLine, turnLine } from "@/lib/trace"
 import { Pointed } from "./Pointed"
 
 // Korean emphasis next to quotes ("**"말"**과") needs the CJK rules; Claude's words are sanitized by Streamdown
@@ -62,7 +62,7 @@ export function Thread({ claude }: { claude: Claude }) {
   // that began the turn, so it is not drawn anew when a part finishes or the turn ends.
   const last = blocks.at(-1)
   const open = working && pending === null && last?.kind === "claude" && !last.turn ? last : null
-  const line = working ? liveLine({ sent: pending !== null, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0, retry: view.state.retry }) : null
+  const line = working ? liveLine({ sent: pending !== null, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0, retry: view.state.retry, compacting: view.state.compacting }) : null
   const since = view.startedAt ?? claude.sentAt
   const current = { line, since, waiting: view.asks.length > 0 }
   const limits = view.state.limits
@@ -102,6 +102,8 @@ export function Thread({ claude }: { claude: Claude }) {
       empty("pending:0", null),
     )
   } else if (working && last?.kind === "user") items.push(empty(`${last.item.uuid}:0`, view.state.live))
+  // at work with no open block to put the line in (a compaction, §32: no message of the translator's began it)
+  else if (working && !open) items.push(empty(`${began}:${n}`, view.state.live))
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="min-h-0 flex-1">
@@ -273,8 +275,14 @@ function ChecksLine({ checks }: { checks: TurnChecks }) {
 function Steps({ steps, stands }: { steps: Item[]; stands: Claude["stands"] }) {
   return (
     <Trace>
-      {steps.map((s) => {
+      {steps.map((s, i) => {
         if (s.kind === "thinking") return <Thought key={s.id} text={s.text} />
+        if (s.kind === "compact") return (
+          <TraceLine key={`compact-${i}`} data-compacted>
+            <TraceIcon><IconArrowsDiagonalMinimize2 /></TraceIcon>
+            <TraceTitle>{compactLine(s)}</TraceTitle>
+          </TraceLine>
+        )
         if (s.kind !== "tool") return null
         const line = toolLine(s)
         if (!line) return null

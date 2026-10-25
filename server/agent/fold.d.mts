@@ -7,6 +7,8 @@ export type Item =
   | { kind: "tool"; id: string; name: string; input: Record<string, unknown>; status: "running" | "done" | "error"; result: unknown }
   /** error: what the API answered when it did not answer (authentication_failed, rate_limit, overloaded, …), else null */
   | { kind: "turn"; reason: string; isError: boolean; ms: number | null; cost: number | null; error: string | null }
+  /** The conversation was compacted here (docs/agent.md §32): tokens before and after. */
+  | { kind: "compact"; pre: number | null; post: number | null }
 
 export interface Conversation {
   sessionId: string | null
@@ -22,6 +24,8 @@ export interface Conversation {
   limits: { status: string | null; type: string | null; resetsAt: number | null; windows: Record<string, { utilization?: number; resetsAt?: number }> | null } | null
   /** The error the API answered in this turn so far, carried to the turn's end. */
   apiError: string | null
+  /** Claude Code is compacting the conversation. */
+  compacting: boolean
 }
 
 /** One Claude Agent SDK message, as the server passes it on. */

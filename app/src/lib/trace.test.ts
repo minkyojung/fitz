@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { ago, checksLine, doingLine, elapsedText, liveLine, toolLine, turnLine } from "./trace.ts"
+import { ago, checksLine, compactLine, doingLine, elapsedText, liveLine, toolLine, tokens, turnLine } from "./trace.ts"
 
 const tool = (name: string, input: Record<string, unknown>, status: "running" | "done" | "error" = "done", result: unknown = null) =>
   ({ kind: "tool" as const, id: "t", name, input, status, result })
@@ -53,6 +53,14 @@ test("while Claude Code retries, the live line says so", () => {
   assert.equal(at({ retry: { attempt: 2, max: 10, delayMs: 8000, error: "overloaded" } }), "Retrying 2/10 · overloaded · 8s")
   assert.equal(at({ retry: { attempt: 1, max: 10, delayMs: 500, error: "server_error" }, live: { kind: "thinking" } }), "Retrying 1/10 · server_error · 1s", "outranks the block that was streaming")
   assert.equal(at({ waiting: true, retry: { attempt: 1, max: 10, delayMs: 500, error: "x" } }), "Waiting for your answer")
+})
+
+test("a compaction's line, and the live line while it goes (docs/agent.md §32)", () => {
+  assert.equal(compactLine({ pre: 5028, post: 1087 }), "Compacted 5.0k → 1.1k")
+  assert.equal(compactLine({ pre: 571_516, post: 120_400 }), "Compacted 572k → 120k")
+  assert.equal(compactLine({ pre: null, post: null }), "Compacted")
+  assert.deepEqual([tokens(999), tokens(4769)], ["999", "4.8k"])
+  assert.equal(liveLine({ sent: false, live: null, began: true, waiting: false, compacting: true }), "Compacting")
 })
 
 test("how long ago", () => {
