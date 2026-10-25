@@ -213,7 +213,8 @@ export function openSession({ db, resume, model, effort, ask, task, wrote, stop,
       input.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, uuid })
       return uuid
     },
-    interrupt: async () => (await ready).interrupt(),
+    /** Stop the turn; with cancelQueued, what waits behind it too (§33; the receipt names what was cancelled). */
+    interrupt: async (options) => (await ready).interrupt(options),
     /** How full the conversation is (docs/agent.md §32): Claude Code's count by category (0.3 s once, then cached;
      *  no cost, measured). */
     async context() {

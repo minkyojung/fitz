@@ -13,6 +13,7 @@ import { DatabaseSync } from "node:sqlite"
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk"
 
 import { createAgentHost } from "./host.mjs"
+import { turnsOf } from "./records.mjs"
 import { DEFAULTS, READ_TOOLS, closeWarming, knownModels, openSession, startWarming, warmthSoFar } from "./session.mjs"
 
 const REAL = process.env.FITZ_REAL_CLAUDE === "1"
@@ -57,7 +58,7 @@ function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "l
     })
   })
   const ask = (text) => { const r = result(); host.send(id, text); return r }
-  return { ask, result, seen }
+  return { ask, result, seen, host, id }
 }
 
 test("Claude's write is recorded as the agent's, with the id of the very tool call that made it", { skip, timeout: 240_000 }, async (t) => {
@@ -110,4 +111,28 @@ test("a new conversation takes the Claude Code started ahead, switched to the mo
   assert.ok(models?.length >= 3, JSON.stringify(models))
   assert.ok(models.some((m) => m.id === "claude-haiku-5-5" && m.efforts.includes("max")), JSON.stringify(models))
   assert.ok(models.every((m) => !m.id.startsWith("claude-") || /-5-/.test(m.id) || /-5$/.test(m.id)), "the current family only: " + models.map((m) => m.id).join(", "))
+})
+
+test("sent while Claude answers, two more messages join the turn: one result, one record; a stop cancels what still waits", { skip, timeout: 240_000 }, async (t) => {
+  const db = gatsby()
+  const { ask, host, id, seen } = realConversation(t, db)
+  const heard = []
+  host.open(id, (e) => { if (["queued", "started", "dropped"].includes(e.type)) heard.push(e.type) })
+  const first = ask("¶4를 읽고 세 문장으로 요약해.")
+  await new Promise((r) => setTimeout(r, 300))
+  host.send(id, "그 요약을 한 문장으로 줄여.")
+  host.send(id, "마지막으로 한 단어로.")
+  const result = await first
+  assert.equal(result.subtype, "success", JSON.stringify(result))
+  assert.deepEqual(heard, ["started", "queued", "queued"], "two queued into the one turn, no second start")
+  assert.equal(turnsOf(db, seen.sessionId).size, 1, "one record for the turn they joined")
+  // a stop while a turn runs with one more waiting: the waiting one is cancelled, and told as dropped
+  const second = ask("¶5를 읽고 세 문장으로 요약해.")
+  await new Promise((r) => setTimeout(r, 300))
+  host.send(id, "이건 취소될 말.")
+  await new Promise((r) => setTimeout(r, 200))
+  host.stop(id)
+  await second
+  await new Promise((r) => setTimeout(r, 500))
+  assert.ok(heard.includes("dropped"), heard.join(","))
 })

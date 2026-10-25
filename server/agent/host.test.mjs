@@ -723,3 +723,68 @@ test("compact sends Claude Code's /compact as a message, told as a start; not fo
   host.start(ID2, { task: "review", chapterId: 1 })
   await assert.rejects(async () => host.compact(ID2), { status: 400 })
 })
+
+// --- sent while a turn goes (docs/agent.md §33)
+
+const echoOf = (uuid, text) => ({ type: "user", isReplay: true, uuid, session_id: SESSION, message: { role: "user", content: text }, parent_tool_use_id: null })
+
+test("sent while a turn goes, a message is queued, not a new turn: the turn's record and start stay; its echo takes it off the queue", async () => {
+  const { host, opened, events, follow, db } = setup()
+  host.start(ID)
+  follow()
+  host.send(ID, "q")
+  opened[0].feed(...nuance.slice(0, 40))
+  await settle()
+  const begun = events.find((e) => e.type === "started").startedAt
+  const uuid = await host.send(ID, "그리고 ¶5는?")
+  assert.equal(uuid, "uuid-2")
+  assert.deepEqual(events.at(-1), { type: "queued", convId: ID, uuid: "uuid-2", text: "그리고 ¶5는?" })
+  assert.equal(events.filter((e) => e.type === "started").length, 1, "no new turn")
+  const mid = []
+  host.open(ID, (e) => mid.push(e))
+  assert.deepEqual([mid[0].startedAt, mid[0].queue], [begun, [{ uuid: "uuid-2", text: "그리고 ¶5는?" }]])
+  opened[0].feed(echoOf("uuid-2", "그리고 ¶5는?"), ...nuance.slice(40))
+  await settle()
+  await settle()
+  const after = []
+  host.open(ID, (e) => after.push(e))
+  assert.deepEqual([after[0].queue, after[0].working], [[], false])
+  assert.equal(turnsOf(db, SESSION).size, 1, "one turn, one record")
+})
+
+test("delivered only after the turn ended, a queued message begins the next turn, told as a start", async () => {
+  const { host, opened, events, follow } = setup()
+  host.start(ID)
+  follow()
+  host.send(ID, "q")
+  opened[0].feed(...nuance.slice(0, 40))
+  await settle()
+  host.send(ID, "late")
+  opened[0].feed(...nuance.slice(40))  // the turn ends with "late" still waiting
+  await settle()
+  assert.equal(events.filter((e) => e.type === "started").length, 1)
+  opened[0].feed(echoOf("uuid-2", "late"))
+  await settle()
+  assert.equal(events.filter((e) => e.type === "started").length, 2, "its own turn, begun at its echo")
+  const now = []
+  host.open(ID, (e) => now.push(e))
+  assert.deepEqual([now[0].working, now[0].queue], [true, []])
+})
+
+test("a stop takes the queue with it: Claude Code is asked to cancel what waits, and what it cancelled is told as dropped", async () => {
+  const { host, opened, events, follow } = setup()
+  host.start(ID)
+  follow()
+  host.send(ID, "q")
+  opened[0].feed(...nuance.slice(0, 40))
+  await settle()
+  host.send(ID, "x")
+  opened[0].interruptReply = { still_queued: [], cancelled: ["uuid-2"] }
+  host.stop(ID)
+  await settle()
+  assert.deepEqual(opened[0].interruptedWith, [{ cancelQueued: true }])
+  assert.deepEqual(events.at(-1), { type: "dropped", convId: ID, uuids: ["uuid-2"] })
+  const now = []
+  host.open(ID, (e) => now.push(e))
+  assert.deepEqual(now[0].queue, [])
+})

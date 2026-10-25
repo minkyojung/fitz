@@ -8,7 +8,7 @@ export function stubSessions() {
     let done = false
     let failure = null
     const session = {
-      options, sent: [], interrupts: 0, closed: false, configured: [], refuseConfigure: null,
+      options, sent: [], interrupts: 0, interruptedWith: [], interruptReply: undefined, closed: false, configured: [], refuseConfigure: null,
       feed(...messages) { queue.push(...messages); wake?.() },
       end() { done = true; wake?.() },
       crash(error) { failure = error; wake?.() },
@@ -21,7 +21,7 @@ export function stubSessions() {
         }
       })(),
       send(text) { session.sent.push(text); return `uuid-${session.sent.length}` },
-      async interrupt() { session.interrupts++ },
+      async interrupt(options) { session.interrupts++; session.interruptedWith.push(options); return session.interruptReply },
       async configure(change) { if (session.refuseConfigure) throw session.refuseConfigure; session.configured.push(change) },
       close() { session.closed = true; session.end() },
     }

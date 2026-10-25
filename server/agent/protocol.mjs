@@ -7,22 +7,25 @@
 //   configure { convId, model?, effort? }  a free conversation's model and effort from its next message (not mid-turn)
 //   open  { convId }                    follow a conversation: a snapshot now, its messages from then on
 //   send  { convId, text }              the translator's message
-//   stop  { convId }                    stop the turn that is going
+//   stop  { convId }                    stop the turn that is going, and what waits behind it
 //   context { convId }                  how full the conversation is (docs/agent.md §32)
 //   compact { convId }                  compact it (Claude Code's /compact)
 //   answer { convId, requestId, decision }  allow | always (this tool, for the rest of the session) | deny
 //   list                                the conversations, most recently used first
 //   models                              the models Claude Code offers (docs/agent.md §31)
 // server → page
-//   snapshot { convId, state, asks, model, effort, working, title, startedAt }  the conversation as fold.mjs has it,
-//                                       the writes waiting for an answer, the model and effort its next message goes to,
-//                                       whether a turn is going on in a live Claude Code, its title (docs/agent.md §23),
-//                                       and when the turn going on began (epoch ms, null when none; §26)
+//   snapshot { convId, state, asks, model, effort, working, title, startedAt, queue }  the conversation as fold.mjs
+//                                       has it, the writes waiting for an answer, the model and effort its next message
+//                                       goes to, whether a turn is going on in a live Claude Code, its title (§23), when
+//                                       the turn going on began (epoch ms, null when none; §26), and what was sent while
+//                                       it went and is not yet delivered ([{ uuid, text }]; §33)
 //   configured { convId, model, effort }  those changed
 //   titled   { convId, title }          the title Claude Code gave it, kept once its first turn ends
 //   context  { convId, usage }          { totalTokens, maxTokens, categories: [{ name, tokens, kind }] }, or null while no
 //                                       Claude Code runs the conversation
 //   started  { convId, startedAt }      a turn began (the translator's message, or a task's), before any of its messages
+//   queued   { convId, uuid, text }     sent while a turn went: delivered into it at its next model call, or after it
+//   dropped  { convId, uuids }          a stop cancelled these before they were delivered
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
 //   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)

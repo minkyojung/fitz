@@ -49,6 +49,7 @@ export function createAgentHost({
   const conversation = (record) => ({
     model: record.model, effort: record.effort, task: record.task, session: null, keptSession: record.sessionId,
     state: { ...emptyConversation(), sessionId: record.sessionId }, followers: new Set(), asks: new Map(),
+    pending: new Map(),  // sent while a turn went, not yet delivered (uuid → text; docs/agent.md §33)
     loaded: true, ready: Promise.resolve(),
     turn: null,  // the turn going on: { wrote: paragraphs Claude translated, rounds: what each check found, rewrote, stopped, error, startedAt }
   })
@@ -77,6 +78,7 @@ export function createAgentHost({
   const snapshot = (convId, conv) => ({
     type: "snapshot", convId, state: conv.state, asks: pending(conv), model: conv.model, effort: conv.effort, working: working(conv),
     title: getConversation(db, convId)?.title ?? null, startedAt: working(conv) ? conv.turn.startedAt : null,
+    queue: [...conv.pending].map(([uuid, text]) => ({ uuid, text })),
   })
   const pending = (conv) => [...conv.asks.values()].map((a) => a.ask)
 
@@ -162,6 +164,19 @@ export function createAgentHost({
     }
   }
 
+  /** A turn begins: its record, and its start told to whoever follows (docs/agent.md §26). */
+  function beginTurn(convId, conv) {
+    conv.turn = { wrote: new Set(), rounds: [], rewrote: false, stopped: false, error: null, startedAt: Date.now() }
+    tell(conv, { type: "started", convId, startedAt: conv.turn.startedAt })
+  }
+  /** The echo of a message sent while a turn went (§33): delivered. Into the turn going, or — the turn having ended
+   *  first — as the next turn, which begins here. */
+  function noteEcho(convId, conv, message) {
+    if (message.type !== "user" || !message.isReplay || !conv.pending.has(message.uuid)) return
+    conv.pending.delete(message.uuid)
+    if (!conv.turn) beginTurn(convId, conv)
+  }
+
   /** The session file back in its place if Claude Code swept it, before it is read or resumed. */
   function restore(sessionId) {
     try { if (keep.restore(sessionId)) console.error("agent: restored the kept copy of session", sessionId) }
@@ -185,6 +200,7 @@ export function createAgentHost({
       try {
         for await (const message of session.messages) {
           conv.state = applyMessage(conv.state, message)
+          noteEcho(convId, conv, message)
           keepRecords(convId, conv, message)
           keepAnswer(convId, conv, message)                // before the result is told: whoever hears it can read them
           tell(conv, { type: "message", convId, message })
@@ -195,6 +211,7 @@ export function createAgentHost({
         if (conv.session === session) {
           const cut = working(conv)
           conv.session = null
+          conv.pending.clear()  // what was not delivered is not: the next process starts afresh
           for (const a of [...conv.asks.values()]) a.settle("cancelled")
           // a turn cut off with the process is over, even one Claude Code said nothing in; what was half written is
           // not kept. The next Claude Code counts its cost on from what this one saved, if it could (§24).
@@ -215,9 +232,15 @@ export function createAgentHost({
     const conv = get(convId)
     const go = () => {
       touchConversation(db, convId)
-      conv.turn = { wrote: new Set(), rounds: [], rewrote: false, stopped: false, error: null, startedAt: Date.now() }
-      // when it began, which every page counts the turn's time from (docs/agent.md §26)
-      tell(conv, { type: "started", convId, startedAt: conv.turn.startedAt })
+      // sent while a turn goes (§33): Claude Code takes it into that turn at its next model call, or after it as
+      // the next turn — the record of the turn going stays; whoever follows hears it was queued
+      if (working(conv)) {
+        const uuid = conv.session.send(text)
+        conv.pending.set(uuid, text)
+        tell(conv, { type: "queued", convId, uuid, text })
+        return uuid
+      }
+      beginTurn(convId, conv)
       return ensureSession(convId, conv).send(text)
     }
     return conv.loaded ? go() : conv.ready.then(go)
@@ -267,10 +290,14 @@ export function createAgentHost({
       Object.assign(conv, next)
       tell(conv, { type: "configured", convId, ...next })
     },
+    /** Stop the turn going, and what waits behind it (§33): the uuids Claude Code dropped are told. */
     stop(convId) {
       const conv = get(convId)
       if (conv.turn) conv.turn.stopped = true  // stopped by the translator: not judged
-      void conv.session?.interrupt().catch(() => {})
+      void conv.session?.interrupt({ cancelQueued: true }).then((receipt) => {
+        const uuids = (receipt?.cancelled ?? []).filter((u) => conv.pending.delete(u))
+        if (uuids.length) tell(conv, { type: "dropped", convId, uuids })
+      }).catch(() => {})
     },
     /** How full a conversation is (docs/agent.md §32), or null while no Claude Code runs it (known again from its
      *  next message on). */
