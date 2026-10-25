@@ -272,6 +272,20 @@ export function createAgentHost({
       if (conv.turn) conv.turn.stopped = true  // stopped by the translator: not judged
       void conv.session?.interrupt().catch(() => {})
     },
+    /** How full a conversation is (docs/agent.md §32), or null while no Claude Code runs it (known again from its
+     *  next message on). */
+    async context(convId) {
+      const conv = get(convId)
+      if (!conv.session) return null
+      try { return await conv.session.context() } catch (e) { console.error("agent: no context usage for", convId, e.message); return null }
+    },
+    /** Compact a conversation: Claude Code's /compact, sent as a message is (its start told, its result not a turn). */
+    compact(convId) {
+      const conv = get(convId)
+      if (conv.task) fail(400, "a task's conversation is not compacted")
+      if (conv.turn && conv.session) fail(409, "Claude is answering: compact once it has finished")
+      return send(convId, "/compact")
+    },
     /** Resolves once every Claude Code process has exited. */
     close() {
       return Promise.all([...conversations.values()].map((conv) => conv.session?.close()))

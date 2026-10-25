@@ -107,6 +107,15 @@ test("over the socket: the models Claude Code offers, or null before any has sai
   assert.deepEqual(page.received.find((e) => e.type === "models"), { type: "models", items: null })
 })
 
+test("over the socket: how full a conversation is — null until a Claude Code runs it", async (t) => {
+  const srv = await serve(t)
+  const page = await connect(srv)
+  page.say({ type: "start", convId: ID })
+  page.say({ type: "context", convId: ID })
+  await page.until((r) => r.some((e) => e.type === "context"))
+  assert.deepEqual(page.received.find((e) => e.type === "context"), { type: "context", convId: ID, usage: null })
+})
+
 test("over the socket: a write is asked, and the page's answer reaches Claude Code", async (t) => {
   const book = new DatabaseSync(":memory:")
   book.exec(readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"))

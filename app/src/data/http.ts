@@ -1,4 +1,4 @@
-import type { Api, BookChange, ConversationSummary, ModelOffer } from "./api"
+import type { Api, BookChange, ContextUsage, ConversationSummary, ModelOffer } from "./api"
 import { createLive, type LiveEvent } from "@/lib/live"
 import { nextRun, type TaskRun } from "@/lib/taskRun"
 
@@ -36,18 +36,19 @@ export const pageImageUrl = (url: string) => `${BASE}${url}`
 let shared: ReturnType<typeof createLive> | null = null
 const live = () => (shared ??= createLive(`${BASE.replace(/^http/, "ws")}/live`))
 
-/** One question over the live connection, answered by the next event of the given type (or not, in 10 s). */
-function asked<T>(question: string, answer: string, read: (e: LiveEvent) => T): Promise<T> {
+/** One question over the live connection, answered by the next event of the given type — for the same conversation,
+ *  when one is named — or not, in 10 s. */
+function asked<T>(question: string, answer: string, read: (e: LiveEvent) => T, convId?: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const connection = live()
     const timer = setTimeout(() => { stop(); reject(new Error(`the server did not answer with the ${answer}`)) }, 10_000)
     const stop = connection.subscribe((e) => {
-      if (e.type !== answer) return
+      if (e.type !== answer || (convId && e.convId !== convId)) return
       clearTimeout(timer)
       stop()
       resolve(read(e))
     })
-    connection.send({ type: question })
+    connection.send(convId ? { type: question, convId } : { type: question })
   })
 }
 
@@ -130,6 +131,8 @@ export const api: Api = {
   },
   sendMessage: (convId, text) => live().send({ type: "send", convId, text }),
   stopTurn: (convId) => live().send({ type: "stop", convId }),
+  contextUsage: (convId) => asked("context", "context", (e) => (e.usage as ContextUsage | null) ?? null, convId),
+  compactConversation: (convId) => live().send({ type: "compact", convId }),
   configureConversation: (convId, change) => live().send({ type: "configure", convId, ...change }),
   answerAsk: (convId, requestId, decision) => live().send({ type: "answer", convId, requestId, decision }),
   undoClaude: (toolUseIds) => call("undoClaude", { toolUseIds }),

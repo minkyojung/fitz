@@ -8,6 +8,8 @@
 //   open  { convId }                    follow a conversation: a snapshot now, its messages from then on
 //   send  { convId, text }              the translator's message
 //   stop  { convId }                    stop the turn that is going
+//   context { convId }                  how full the conversation is (docs/agent.md §32)
+//   compact { convId }                  compact it (Claude Code's /compact)
 //   answer { convId, requestId, decision }  allow | always (this tool, for the rest of the session) | deny
 //   list                                the conversations, most recently used first
 //   models                              the models Claude Code offers (docs/agent.md §31)
@@ -18,6 +20,8 @@
 //                                       and when the turn going on began (epoch ms, null when none; §26)
 //   configured { convId, model, effort }  those changed
 //   titled   { convId, title }          the title Claude Code gave it, kept once its first turn ends
+//   context  { convId, usage }          { totalTokens, maxTokens, categories: [{ name, tokens, kind }] }, or null while no
+//                                       Claude Code runs the conversation
 //   started  { convId, startedAt }      a turn began (the translator's message, or a task's), before any of its messages
 //   message  { convId, message }        one SDK message, to fold onto the snapshot
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
@@ -75,6 +79,8 @@ export function parseClientMessage(raw) {
     case "models":
       return { type: "models" }
     case "open":
+    case "context":
+    case "compact":
     case "stop":
       return { type: m.type, convId: convId(m.convId) }
     case "send": {

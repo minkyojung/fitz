@@ -243,6 +243,12 @@ export interface CardAnswer {
 }
 
 /** A conversation with Claude as book.db lists it (docs/agent.md §13); a task's carries its task and chapter. */
+/** How full a conversation is, as Claude Code counts it (docs/agent.md §32). */
+export interface ContextUsage {
+  totalTokens: number
+  maxTokens: number
+  categories: { name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" }[]
+}
 /** A model Claude Code offers, as the server passes it on (docs/agent.md §31). */
 export interface ModelOffer {
   id: string
@@ -356,6 +362,10 @@ export interface Api {
   followConversation(convId: string, onEvent: (e: LiveEvent) => void, start?: { model: string; effort: string }): () => void
   sendMessage(convId: string, text: string): void
   stopTurn(convId: string): void
+  /** How full the conversation is (docs/agent.md §32); null while no Claude Code runs it. */
+  contextUsage(convId: string): Promise<ContextUsage | null>
+  /** Compact the conversation (Claude Code's /compact). */
+  compactConversation(convId: string): void
   /** The model or effort a begun conversation's next message goes to; the server tells its followers once it is. */
   configureConversation(convId: string, change: { model?: string; effort?: string }): void
   answerAsk(convId: string, requestId: string, decision: AskDecision): void

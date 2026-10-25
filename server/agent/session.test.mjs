@@ -75,6 +75,7 @@ function fakeQuery() {
     const q = (async function* () { for await (const m of prompt) { yield { type: "user", isReplay: true, uuid: m.uuid, message: m.message }; yield { type: "result", subtype: "success", total_cost_usd: 0 } } })()
     q.interrupt = async () => {}; q.setModel = async (m) => calls.push({ setModel: m }); q.applyFlagSettings = async (f) => calls.push({ flags: f })
     q.supportedModels = async () => MODELS
+    q.getContextUsage = async ({ detail }) => { calls.push({ context: detail }); return { totalTokens: 4769, maxTokens: 1_000_000, percentage: 0.5, model: "m", categories: [{ name: "Messages", tokens: 883, kind: "used", color: "x" }, { name: "Free space", tokens: 962_231, kind: "free", color: "y" }] } }
     return q
   }
   return { calls, query }
@@ -120,6 +121,14 @@ test("a new free conversation takes the one started ahead, switched first when i
     assert.equal(calls.at(-1).resume, "sess-1", "a resumed conversation starts its own")
     await a.close(); await b.close()
   } finally { closeWarming() }
+})
+
+test("how full a conversation is comes from Claude Code's own count, in full (docs/agent.md §32)", async () => {
+  const { calls, query } = fakeQuery()
+  const s = openSession({ db: gatsby(), model: "claude-haiku-5-5", effort: "low", ask: async () => ({ behavior: "deny" }), wrote: () => {}, cwd: "/tmp/fitz-session-test", sdk: { query } })
+  assert.deepEqual(await s.context(), { totalTokens: 4769, maxTokens: 1_000_000, categories: [{ name: "Messages", tokens: 883, kind: "used" }, { name: "Free space", tokens: 962_231, kind: "free" }] })
+  assert.ok(calls.some((c) => c.context === "full"))
+  await s.close()
 })
 
 test("the one started ahead is asked for the models as it waits, so the server knows them before any conversation", async () => {

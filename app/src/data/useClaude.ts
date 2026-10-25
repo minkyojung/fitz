@@ -126,6 +126,9 @@ export function useClaude() {
     open: (id: string) => follow(id),
     newConversation: () => { unfollow.current?.(); unfollow.current = null; setConvId(null); setView(emptyView()); setPending(null) },
     stop: () => { if (convId) api.stopTurn(convId) },
+    /** How full this conversation is (docs/agent.md §32): asked of the server when the window opens. */
+    context: () => (convId ? api.contextUsage(convId).catch(() => null) : Promise.resolve(null)),
+    compact: () => { if (convId) api.compactConversation(convId) },
     answer: (requestId: string, decision: AskDecision) => { if (convId) api.answerAsk(convId, requestId, decision) },
   }), [convId, view, list, models, summary, config, configure, pointed, pending, sentAt, refreshList, send, stands, undoFrom, checksOf, follow])
 }

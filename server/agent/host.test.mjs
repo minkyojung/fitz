@@ -706,3 +706,20 @@ test("a /compact is not recorded as a turn: the recording's three results leave 
   const sessionId = compact.find((m) => m.subtype === "init").session_id
   assert.equal(turnsOf(db, sessionId).size, 2)
 })
+
+test("compact sends Claude Code's /compact as a message, told as a start; not for a task, not mid-turn; the usage is null without a process", async () => {
+  const { host, opened, events, follow } = setup()
+  host.start(ID)
+  follow()
+  assert.equal(await host.context(ID), null, "no Claude Code yet")
+  host.send(ID, "q")
+  await settle()
+  await assert.rejects(async () => host.compact(ID), { status: 409 })
+  opened[0].feed(...nuance)
+  await settle()
+  host.compact(ID)
+  assert.equal(opened[0].sent.at(-1), "/compact")
+  assert.equal(events.filter((e) => e.type === "started").length, 2)
+  host.start(ID2, { task: "review", chapterId: 1 })
+  await assert.rejects(async () => host.compact(ID2), { status: 400 })
+})

@@ -214,6 +214,12 @@ export function openSession({ db, resume, model, effort, ask, task, wrote, stop,
       return uuid
     },
     interrupt: async () => (await ready).interrupt(),
+    /** How full the conversation is (docs/agent.md §32): Claude Code's count by category (0.3 s once, then cached;
+     *  no cost, measured). */
+    async context() {
+      const u = await (await ready).getContextUsage({ detail: "full" })
+      return { totalTokens: u.totalTokens, maxTokens: u.maxTokens, categories: (u.categories ?? []).map((c) => ({ name: c.name, tokens: c.tokens, kind: c.kind })) }
+    },
     /** What /model and /effort do (measured, docs/agent.md §8): from the next turn on; the effort set here outranks the
      *  one the session began with, and the settings it began with stay. */
     async configure({ model, effort }) {

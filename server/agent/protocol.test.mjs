@@ -13,6 +13,8 @@ test("the page's messages, with only their own fields", () => {
   assert.deepEqual(parse({ type: "open", convId: ID, text: "x" }), { type: "open", convId: ID })
   assert.deepEqual(parse({ type: "send", convId: ID, text: "¶4는?" }), { type: "send", convId: ID, text: "¶4는?" })
   assert.deepEqual(parse({ type: "stop", convId: ID }), { type: "stop", convId: ID })
+  assert.deepEqual(parse({ type: "context", convId: ID, detail: "full" }), { type: "context", convId: ID })
+  assert.deepEqual(parse({ type: "compact", convId: ID }), { type: "compact", convId: ID })
   assert.deepEqual(parse({ type: "answer", convId: ID, requestId: ID, decision: "always" }), { type: "answer", convId: ID, requestId: ID, decision: "always" })
   assert.deepEqual(parse({ type: "configure", convId: ID, model: "claude-sonnet-5-5", task: "review" }), { type: "configure", convId: ID, model: "claude-sonnet-5-5" })
   assert.deepEqual(parse({ type: "configure", convId: ID, effort: "high" }), { type: "configure", convId: ID, effort: "high" })

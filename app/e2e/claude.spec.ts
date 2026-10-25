@@ -12,7 +12,7 @@ const recording = (name: string): SdkMessage[] =>
 const nuance = recording("nuance")
 const translate = recording("translate")
 const websearch = recording("websearch")
-const CONVERSATION = ["start", "send", "stop", "answer", "list", "open", "configure"]
+const CONVERSATION = ["start", "send", "stop", "answer", "list", "open", "configure", "context", "compact"]
 
 type Said = { type: string; convId?: string; [k: string]: unknown }
 async function fakeServer(page: Page) {
@@ -372,6 +372,36 @@ test("a compaction shows as Compacting, then a Compacted line with the counts; t
   await expect(thread(page)).not.toContainText("This session is being continued")
   await expect(thread(page)).not.toContainText("command-name")
   await expect(thread(page).locator("[data-turn-end]")).toHaveCount(2)
+})
+
+test("the Context window: how full as the server says, the plan's windows from the turn, and Compact asks the server (docs/agent.md §32)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await expect(page.getByRole("button", { name: "Context" })).toBeDisabled()  // nothing to ask about yet
+  await box.fill("¶4는?")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  fake.play(convId!, nuance)  // its rate_limit_event brings the plan's windows
+  await expect(thread(page)).toContainText("21s")
+  // asked, the fake server answers as the real one does: nothing while no Claude Code runs it
+  page.getByRole("button", { name: "Context" }).click()
+  await fake.last("context")
+  fake.tell({ type: "context", convId, usage: null })
+  await expect(page.locator("[data-context]")).toContainText("Known from the next message on")
+  await expect(page.locator("[data-context]")).toContainText("Current session")
+  await expect(page.locator("[data-context]")).toContainText(/Current week \(all models\)\s*67%/)
+  await page.keyboard.press("Escape")
+  await expect(page.locator("[data-context]")).toHaveCount(0)
+
+  page.getByRole("button", { name: "Context" }).click()
+  await expect.poll(() => fake.said.filter((m) => m.type === "context").length).toBe(2)
+  fake.tell({ type: "context", convId, usage: { totalTokens: 574_700, maxTokens: 1_000_000, categories: [
+    { name: "Messages", tokens: 571_516, kind: "used" }, { name: "Autocompact buffer", tokens: 33_000, kind: "buffer" }, { name: "Free space", tokens: 392_300, kind: "free" }] } })
+  await expect(page.locator("[data-context-total]")).toHaveText("575k / 1000k")
+  await expect(page.locator("[data-context]")).toContainText(/Messages\s*57%/)
+  await page.getByRole("button", { name: "Compact the conversation" }).click()
+  expect(await fake.last("compact")).toEqual({ type: "compact", convId })
 })
 
 /** Select words inside a block, as a person dragging over them would. */

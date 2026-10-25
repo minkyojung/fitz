@@ -827,3 +827,5 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 
 **결과**(2026-10-25): 녹화의 압축은 6,4xx→1,4xx 토큰(측정 때와 다른 실행). 진행 줄은 압축처럼 번역자의 메시지 없이 시작한 일에도 붙도록, 열린 블록이 없으면 제 블록을 하나 둔다. 서버 273, 화면 단위 73, e2e 72(새 1: 녹화를 재생하면 Compacting → "Compacted 6.4k → 1.4k", 요약·명령은 보이지 않고 턴 끝은 둘).
 | 3 | 서버 `context`·`compact`, 페이지의 창 | `session.mjs`, `host.mjs`, `live.mjs`, `protocol.mjs`, `api.ts`, `http.ts`, `useClaude.ts`, `ContextPopover.tsx`, `ClaudeTab.tsx` | 단위(가짜 query): `context`가 `getContextUsage`를 부름. e2e: 가짜 서버의 `context` 답이 창에; Compact 버튼이 `compact`를 보냄; 녹화의 압축을 재생하면 "Compacting" 뒤 "Compacted 5.0k → 1.1k". HEAD에서 실패 확인 |
+
+**결과**(2026-10-25): 머리줄의 Context 버튼(대화가 없으면 꺼짐) → 창. 요금제 창은 §29의 `limits.windows`에서(초 → ms). `compact`는 작업 대화와 턴 중엔 거부(400·409). `protocol`의 `open`이 새 케이스로 떨어지던 실수를 시험이 잡았다. 서버 276, e2e 73 중 72 — 남은 하나(glossary)는 HEAD에서도 실패: 실제 책의 용어집에 "Zemurray → 제머레이"가 들어와(번역자) 용어를 새로 넣는 전제가 깨졌다. 시험이 제 용어를 심고 거두게 고칠 일(따로).

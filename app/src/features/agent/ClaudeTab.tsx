@@ -10,6 +10,7 @@ import {
 import type { Segment, Suggestion, SuggestionDecision, TaskName, TaskRun } from "@/data/api"
 import type { Claude } from "@/data/useClaude"
 import { Suggestions } from "@/features/suggestions/Suggestions"
+import { ContextPopover } from "./ContextPopover"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 import { readPointed } from "@/lib/conversation"
 import { ago } from "@/lib/trace"
@@ -39,7 +40,9 @@ export function ClaudeTab({ claude, focusToken, segments, suggest }: Props) {
       <Collapsible open={suggestionsShown} onOpenChange={setSuggestionsShown} className="shrink-0 border-b">
         <div className="flex h-9 items-center gap-1 px-1.5">
           <ConversationMenu claude={claude} />
-          <Button size="sm" variant={suggestionsShown ? "secondary" : "ghost"} className="ml-auto shrink-0" aria-expanded={suggestionsShown}
+          <span className="ml-auto" />
+          <ContextPopover claude={claude} />
+          <Button size="sm" variant={suggestionsShown ? "secondary" : "ghost"} className="shrink-0" aria-expanded={suggestionsShown}
             onClick={() => setSuggestionsShown(!suggestionsShown)}>
             Suggestions <Badge variant="secondary" data-open-suggestions>{open}</Badge>
           </Button>
