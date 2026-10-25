@@ -769,3 +769,26 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 | 2 | 세워 두기와 쓰기 | `agent/warm.mjs`(새), `session.mjs`, `host.mjs`(DEFAULTS의 자리), `index.mjs` | 단위(가짜 `startup`): 하나를 세우고, 가져가면 다음을 세우고, 실패하면 null, 닫으면 닫힘. 실제(`test:real`, Haiku): 새 대화가 세워 둔 것을 쓰고, 기본값과 다른 모델로 첫 답을 한다 |
 
 **결과**(2026-10-25): 세션의 옵션은 한 함수(`sessionOptions`)가 만들고, 대화의 콜백은 `slot`을 거친다. 처음 만든 판은 cold 길에서 `inbox`를 만들기 전에 `query()`가 그것을 읽어(선언 전 접근) 스트림이 바로 끝났고, 실제 시험 셋이 결과를 영원히 기다렸다 — 호스트 시험은 `openSession`을 통째로 가짜로 두어 못 잡는다. 고치고, `openSession`에 가짜 `query`를 넣는 단위 시험 둘을 두었다(시작한 메시지가 query에 닿고 스트림이 돌아옴; 세워 둔 것을 쓰며 먼저 바꾸고, 이어 가는 대화는 제 것을 띄움). 실제(Haiku) 4/4: 세워 둔 것을 쓴 첫 답 3.2초(cold 7~8초짜리 셋과 같은 옵션). 서버 266(+실제 5), e2e 70.
+
+## 31. 모델과 강도는 Claude Code가 말한다 (2026-10-25 계획)
+
+페이지의 모델 셋(`useClaude.ts`의 `MODELS`)과 강도 셋은 코드에 고정돼 있다. 새 모델이 나오면 코드를 고쳐야 하고, 강도는 SDK의 다섯 단계 중 셋만 보인다.
+
+측정(2026-10-25, `.context/measure/models.mjs`): `startup()`으로 세워 둔 프로세스에 입력을 붙여 `Query`로 만든 뒤 `supportedModels()` — **0ms, 비용 0**(초기화 응답에 들어 있다; `initializationResult().models`도 같다). 13개: `default→claude-opus-5-5 [Default (recommended)]`, 별칭 `opus·fable·sonnet·haiku`(→ Opus 5.5·Fable 5.1·Sonnet 5.5·Haiku 5.5, 강도 low/medium/high/xhigh/max), 그리고 옛 모델들(`claude-opus-4-8`… 일부는 max까지, Haiku 4.5는 강도 없음). 20초 놀린 뒤 첫 메시지도 정상(에코 1.1초). `startup()`의 손잡이(`WarmQuery`)에는 이 물음이 없다: `query()`로 붙인 뒤에만.
+
+| 정한 것 | 왜 |
+|---|---|
+| 세워 둔 프로세스(§30)를 세울 때 바로 입력을 붙여 `Query`로 만들고 목록을 묻는다. 그 입력은 **중계**(relay): 대화가 가져갈 때 그 대화의 inbox를 붙인다 | 서버가 켜지는 순간부터 목록을 안다. 비용 0 |
+| 서버가 아는 목록(`knownModels()`): 세워 둔 것에서, 없으면 어느 대화의 `Query`에서든 한 번. 서버가 사는 동안 유지 | 프로세스마다 같은 답 |
+| 페이지에 보이는 것: **별칭 항목**(`value`가 `claude-`로 시작하지 않는 것) 중 `default`를 뺀 것, Claude Code의 순서대로; 각각 `resolvedModel`을 id로, `displayName`을 이름으로, `supportedEffortLevels`를 강도로 | 지금의 셋이 그대로 나오고(Opus 5.5·Sonnet 5.5·Haiku 5.5) Fable 5.1이 더해지며, 새 가족이 나오면 저절로 보인다. 옛 모델 아홉은 번역에 고를 일이 없다 |
+| `/live`에 `models` 물음 → `models { items }`; 아직 모르면 `items: null`. 페이지는 열릴 때와 다시 붙을 때 묻고, 답이 오기 전엔 지금의 고정 셋(이름을 "서버가 말하기 전의 값"으로 바꿈) | §21·§23의 "서버가 말할 때까지"와 같은 원칙 |
+| 강도 메뉴는 고른 모델의 단계 전부(지금 다섯). 서버의 `EFFORTS`는 이미 다섯을 받는다 | SDK가 주는 것을 그대로 |
+| 작업(리뷰·OCR·Session)의 모델은 `tasks.mjs`에 그대로 | 측정해 정한 값(§4.2, session.md §8) |
+
+### 31.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절 | `docs/agent.md` | |
+| 2 | 서버: 세울 때 Query와 목록, 중계 inbox, `knownModels`, `/live`의 `models` | `warm.mjs`·`session.mjs`·`host.mjs`·`live.mjs`·`protocol.mjs` | 단위(가짜 startup/query): 세운 것의 목록, 가져간 대화의 메시지가 중계를 지나 query에 닿음, cold 대화도 목록을 남김, 소켓에서 `models` 답. 실제: `test:real`의 ahead 시험에 목록 확인 |
+| 3 | 페이지: 목록을 묻고 메뉴에 | `api.ts`·`http.ts`·`useClaude.ts`·`Composer.tsx` | e2e: 가짜 서버가 Fable 5.1·xhigh·max를 답하면 메뉴에 보임; 답하기 전엔 고정 셋. HEAD에서 실패 확인 |
