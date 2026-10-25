@@ -261,6 +261,42 @@ test("from Enter to the answer one live line shows Claude at work, its time from
   await expect(thread(page).locator("[data-turn-end]")).toContainText("21s")
 })
 
+test("Claude's answer reads by Octave's rules at 15px: paragraphs apart, headings above the text, markers outside, quotes upright, Korean words whole (docs/agent.md §27)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("이 문장 뉘앙스는?")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  fake.play(convId!, nuance)
+  const heading = thread(page).getByRole("heading", { name: "뜻과 뉘앙스" })
+  await expect(heading).toBeVisible()
+  const read = await heading.evaluate((h) => {
+    const words = h.closest("[lang=ko]")!  // the answer
+    const css = (el: Element) => getComputedStyle(el)
+    const p = [...words.querySelectorAll("p")].find((x) => x.nextElementSibling?.tagName === "P" || x.nextElementSibling?.tagName === "UL")!
+    const probe = document.body.appendChild(document.createElement("span"))
+    probe.style.color = "var(--answer)"
+    const answerColor = css(probe).color
+    probe.remove()
+    return {
+      size: css(p).fontSize, wordBreak: css(p).wordBreak, color: css(p).color, answerColor, bodyColor: css(document.body).color,
+      gap: p.nextElementSibling!.getBoundingClientRect().top - p.getBoundingClientRect().bottom,
+      heading: parseFloat(css(words.querySelector("h2")!).fontSize),
+      markers: css(words.querySelector("ul")!).listStylePosition,
+      quote: css(words.querySelector("blockquote")!).fontStyle,
+    }
+  })
+  expect(read.size).toBe("15px")
+  expect(read.wordBreak).toBe("keep-all")
+  expect(read.gap).toBeCloseTo(16, 0)
+  expect(read.heading).toBeGreaterThan(15)
+  expect(read.markers).toBe("outside")
+  expect(read.quote).toBe("normal")
+  expect(read.answerColor).not.toBe(read.bodyColor)  // a softer black than the app's text
+  expect(read.color).toBe(read.answerColor)
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

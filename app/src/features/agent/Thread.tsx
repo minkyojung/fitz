@@ -229,12 +229,21 @@ function Elapsed({ since }: { since: number }) {
   return <TraceDescription aria-hidden>{elapsedText(now - since)}</TraceDescription>
 }
 
-// a chat answer's headings are its own sections, not the page's: the text's size, set apart by weight only
-const WORDS = "space-y-2 [&_:is(h1,h2,h3,h4)]:mt-3 [&_:is(h1,h2,h3,h4)]:mb-1 [&_:is(h1,h2,h3,h4)]:text-sm [&_:is(h1,h2,h3,h4)]:font-semibold"
+// Claude's answer read by Octave's rules, none of which costs the panel width (docs/agent.md §27): 16px between
+// blocks, headings a little larger with room above, list markers outside so a wrapped item keeps to its text, a quote
+// not slanted (Korean has no italic), lines that end well
+const WORDS = [
+  "space-y-4 [&>:first-child]:mt-0 [&_p]:text-pretty",
+  "[&_:is(h1,h2,h3,h4)]:mt-[1.6em] [&_:is(h1,h2,h3,h4)]:mb-2 [&_:is(h1,h2,h3,h4)]:leading-snug",
+  "[&_:is(h1,h2)]:text-[1.25em] [&_:is(h1,h2)]:font-bold [&_h3]:text-[1.125em] [&_h3]:font-semibold [&_h4]:text-[1em] [&_h4]:font-semibold",
+  "[&_:is(ul,ol)]:list-outside [&_:is(ul,ol)]:pl-5 [&_li]:my-1 [&_li]:py-0 [&_li::marker]:text-muted-foreground",
+  "[&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:not-italic",
+].join(" ")
 
 function Words({ text, streaming = false }: { text: string; streaming?: boolean }) {
   return (
-    <div lang="ko" className="text-sm/relaxed">
+    // 15px in a softer black; a Korean word moves whole to the next line, only a word too long for the line breaks
+    <div lang="ko" className="text-[15px]/[1.625] text-answer antialiased break-keep [overflow-wrap:anywhere]">
       <Streamdown className={WORDS} plugins={PLUGINS} mode={streaming ? "streaming" : "static"}>{text}</Streamdown>
     </div>
   )

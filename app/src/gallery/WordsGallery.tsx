@@ -23,7 +23,7 @@ const NOW = "space-y-2 [&_:is(h1,h2,h3,h4)]:mt-3 [&_:is(h1,h2,h3,h4)]:mb-1 [&_:i
 // Octave's rules (its styles: 16px apart, headings 1.25em and 1.125em, 1.6em above them, list items 4px apart with
 // the marker outside, a quote not slanted) — none of which costs width
 const PROPOSED = cn(
-  "space-y-4 [&_p]:text-pretty",
+  "space-y-4 [&>:first-child]:mt-0 [&_p]:text-pretty",
   "[&_:is(h1,h2,h3,h4)]:mt-[1.6em] [&_:is(h1,h2,h3,h4)]:mb-2 [&_:is(h1,h2,h3,h4)]:leading-snug",
   "[&_:is(h1,h2)]:text-[1.25em] [&_:is(h1,h2)]:font-bold [&_h3]:text-[1.125em] [&_h3]:font-semibold [&_h4]:text-[1em] [&_h4]:font-semibold",
   "[&_:is(ul,ol)]:list-outside [&_:is(ul,ol)]:pl-5 [&_li]:my-1 [&_li]:py-0 [&_li::marker]:text-muted-foreground",
