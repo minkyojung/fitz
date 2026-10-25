@@ -707,3 +707,27 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 | # | 무엇 | 손댈 곳 | 확인 |
 |---|---|---|---|
 | 1 | 이 절과 Stop | `lib/taskRun.ts`, `useBook.ts`, `App.tsx`, `Suggestions.tsx` | 단위: `nextRun`의 `stopped`. e2e: 리뷰 중 Stop → 가짜 서버가 `stop {convId}`를 받음 → `aborted_streaming` 결과 → "Stopped"와 버튼. HEAD에서 실패 확인 |
+
+## 29. 멈춘 이유 — 재시도, 한도, 과부하, 로그인 (2026-10-25 계획)
+
+지금은 Claude Code가 재시도 중이어도 "Thinking"만 보이고, 어떤 이유로든 답하지 못하면 턴 끝에 "Claude stopped: api_error"뿐이다. 하네스 §9: 사람이 보는 줄은 무슨 일인지 말해야 한다.
+
+측정(2026-10-25, SDK 0.3.302, Claude Code 2.1.302):
+- **로그인 없음**(빈 `CLAUDE_CONFIG_DIR`, 비용 0; 녹화 `fixtures/nologin.jsonl`): `auth_status`는 오지 않는다. `assistant`가 `error: "authentication_failed"`와 글 "Not logged in · Please run /login"으로 오고, `result`는 `subtype: success`, `terminal_reason: "api_error"`, `is_error: true`. 0.5초.
+- **한도**: 녹화 다섯 모두 턴마다 `rate_limit_event`가 한 번 온다 — `rate_limit_info { status: allowed, resetsAt(초), rateLimitType: five_hour, unifiedWindows { five_hour: {utilization, resetsAt}, seven_day: {…} } }`. Octave의 "Plan usage" 창이 이것이다(§31). `status: rejected`는 본 적이 없다.
+- **재시도**(`system/api_retry { attempt, max_retries, retry_delay_ms, error_status, error }`)와 **과부하**(`assistant.error: overloaded | rate_limit | billing_error | …`, `SDKAssistantMessageError`)는 타입으로만 읽었다. 일으킬 수 없으므로 측정 전.
+
+| 정한 것 | 왜 |
+|---|---|
+| fold에 셋: `retry`(재시도 중: 몇 번째/최대, 기다리는 ms, 이유; 다음 블록·답·결과가 오면 null), `limits`(마지막 `rate_limit_event`: 상태, 종류, 초기화 시각, 창들), 턴 항목의 `error`(그 턴의 `assistant.error`) | 서버와 페이지가 같은 fold: snapshot으로 다시 붙은 창도 같다. 녹화로 시험한다 |
+| 진행 줄(§26): 재시도 중이면 "Retrying 2/10 · overloaded · 8s" | 멈춘 게 아니라 기다리는 중임을 말한다 |
+| 턴 끝(`turnLine`): `error`에 따라 — `authentication_failed` "Not logged in — run `claude /login` in a terminal", `rate_limit` "Usage limit reached — resets at 17:50"(`limits.resetsAt`), `overloaded` "Claude is overloaded — try again in a moment", `billing_error` "A billing problem on the account", 그 밖은 "Claude stopped: <error>" | 사람이 다음에 무엇을 할지 안다 |
+| 기록(`agent_turn`)은 바꾸지 않는다: 다시 연 대화는 지금처럼 "Claude stopped: api_error" | 열의 추가는 마이그레이션. 이유는 그때 본 사람의 것; 필요가 드러나면 |
+| Session의 저녁 실행(`evening.mjs`)이 같은 이유로 멈추면 — 지금도 "다시 시도"로 보인다 | 이번엔 대화와 작업만 |
+
+### 29.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절, 녹화 | `docs/agent.md`, `fixtures/nologin.jsonl` | |
+| 2 | fold와 화면 | `fold.mjs`, `lib/trace.ts`, `Thread.tsx` | 서버 `fold.test`: nologin 녹화의 턴에 `error`, 녹화의 `rate_limit_event`가 `limits`로, `api_retry` 프레임이 `retry`로 왔다가 사라짐. 화면 단위: `turnLine`·`liveLine`. e2e: nologin 녹화를 재생하면 턴 끝에 "Not logged in"; `api_retry` 프레임이면 진행 줄에 "Retrying". HEAD에서 실패 확인 |
