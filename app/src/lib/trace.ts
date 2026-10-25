@@ -54,10 +54,13 @@ export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? 
 /** The live line's words while a turn goes, from Enter to the answer (docs/agent.md §26): sent and not yet echoed,
  *  what streams in now, or between blocks. A write waiting for the translator outranks the rest. null while Claude's
  *  words stream: they show it. */
-export function liveLine({ sent, live, began, waiting }: {
+export function liveLine({ sent, live, began, waiting, retry = null }: {
   sent: boolean; live: { kind: string; name?: string } | null; began: boolean; waiting: boolean
+  retry?: { attempt: number; max: number; delayMs: number; error: string | null } | null
 }): string | null {
   if (waiting) return "Waiting for your answer"
+  // a request being tried again (docs/agent.md §29): not stuck, waiting
+  if (retry) return `Retrying ${retry.attempt}/${retry.max}${retry.error ? ` · ${retry.error}` : ""} · ${Math.max(1, Math.round(retry.delayMs / 1000))}s`
   if (sent) return "Starting"
   if (live?.kind === "text") return null
   if (live?.kind === "tool") return doingLine(live.name)
@@ -70,10 +73,24 @@ export function elapsedText(ms: number): string {
   return tenths < 600 ? `${(tenths / 10).toFixed(1)}s` : `${Math.floor(tenths / 600)}m ${((tenths % 600) / 10).toFixed(1)}s`
 }
 
+const time = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+
+/** Why the API did not answer, so the translator knows what to do next (docs/agent.md §29). */
+function stoppedLine(error: string, limits: { resetsAt: number | null } | null): string {
+  switch (error) {
+    case "authentication_failed": return "Not logged in — run `claude /login` in a terminal"
+    case "rate_limit": return limits?.resetsAt ? `Usage limit reached — resets at ${time(limits.resetsAt)}` : "Usage limit reached"
+    case "overloaded": return "Claude is overloaded — try again in a moment"
+    case "billing_error": return "A billing problem on the account"
+    default: return `Claude stopped: ${error}`
+  }
+}
+
 /** A turn's end: how long, or why it ended early. Not what it cost: on the translator's subscription that is Claude
  *  Code's estimate, not a bill (docs/agent.md §17). The record keeps it. */
-export function turnLine(t: Turn): { text: string; stopped: boolean } {
+export function turnLine(t: Turn, limits: { resetsAt: number | null } | null = null): { text: string; stopped: boolean } {
   if (t.reason === "aborted_streaming" || t.reason === "aborted_tools") return { text: "Stopped", stopped: true }
+  if (t.error) return { text: stoppedLine(t.error, limits), stopped: true }
   if (t.isError) return { text: `Claude stopped: ${t.reason}`, stopped: true }
   return { text: t.ms != null ? `${Math.max(1, Math.round(t.ms / 1000))}s` : "", stopped: false }
 }

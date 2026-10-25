@@ -297,6 +297,26 @@ test("Claude's answer reads by Octave's rules at 15px: paragraphs apart, heading
   expect(read.color).toBe(read.answerColor)
 })
 
+test("why Claude stopped is said: not logged in at the turn's end, retrying on the live line (docs/agent.md §29)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("안녕?")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  const echo = nuance.findIndex((m) => m.type === "user" && (m as { isReplay?: boolean }).isReplay)
+  fake.play(convId!, nuance.slice(0, echo + 1))
+  fake.tell({ type: "message", convId, message: { type: "system", subtype: "api_retry", attempt: 2, max_retries: 10, retry_delay_ms: 8000, error_status: 529, error: "overloaded", uuid: "r1", session_id: "s" } })
+  await expect(page.locator("[data-live-line]")).toContainText("Retrying 2/10 · overloaded")
+  fake.play(convId!, nuance.slice(echo + 1))
+  await expect(page.locator("[data-live-line]")).toHaveCount(0)
+
+  await box.fill("또 안녕?")
+  await box.press("Enter")
+  fake.play(convId!, recording("nologin").filter((m) => m.type !== "system" || (m as { subtype?: string }).subtype !== "init"))
+  await expect(thread(page).locator("[data-turn-end]").last()).toContainText("Not logged in — run `claude /login` in a terminal")
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

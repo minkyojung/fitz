@@ -23,5 +23,5 @@ for (const name of ["nuance", "translate", "review", "typos"]) {
 }
 
 test("a new conversation is empty and idle", () => {
-  assert.deepEqual(emptyConversation(), { sessionId: null, model: null, status: "idle", items: [], live: null, spent: 0 })
+  assert.deepEqual(emptyConversation(), { sessionId: null, model: null, status: "idle", items: [], live: null, spent: 0, retry: null, limits: null, apiError: null })
 })

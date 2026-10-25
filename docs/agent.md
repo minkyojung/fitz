@@ -731,3 +731,5 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 |---|---|---|---|
 | 1 | 이 절, 녹화 | `docs/agent.md`, `fixtures/nologin.jsonl` | |
 | 2 | fold와 화면 | `fold.mjs`, `lib/trace.ts`, `Thread.tsx` | 서버 `fold.test`: nologin 녹화의 턴에 `error`, 녹화의 `rate_limit_event`가 `limits`로, `api_retry` 프레임이 `retry`로 왔다가 사라짐. 화면 단위: `turnLine`·`liveLine`. e2e: nologin 녹화를 재생하면 턴 끝에 "Not logged in"; `api_retry` 프레임이면 진행 줄에 "Retrying". HEAD에서 실패 확인 |
+
+**결과**(2026-10-25): 전부 통과, HEAD에서는 셋 다 실패(e2e는 재시도 중에도 "Thinking"). `retry`는 어떤 `stream_event`든 오면 지운다(요청이 통한 것). 빈 `rate_limit_event`(정보 없음)는 상태를 바꾸지 않는다. 서버 261, 화면 단위 72, e2e 70.

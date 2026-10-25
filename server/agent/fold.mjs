@@ -8,10 +8,13 @@
  *    { kind: "thinking", id, text }                   Claude's summarised thinking
  *    { kind: "text", id, text }                       Claude's words
  *    { kind: "tool", id, name, input, status, result } a tool call; status "running" | "done" | "error"
- *    { kind: "turn", reason, isError, ms, cost }       a turn's end
+ *    { kind: "turn", reason, isError, ms, cost, error } a turn's end; error: what the API answered when it did not
+ *                                                     answer (authentication_failed, rate_limit, overloaded, …), else null
  *  live: the block being written now, { kind: "thinking" | "text" | "tool", text, name? }, or null.
- *  status: "idle" | "running" | "requires_action", as Claude Code reports it. */
-export const emptyConversation = () => ({ sessionId: null, model: null, status: "idle", items: [], live: null, spent: 0 })
+ *  status: "idle" | "running" | "requires_action", as Claude Code reports it.
+ *  retry: a request being tried again { attempt, max, delayMs, error }, or null (docs/agent.md §29).
+ *  limits: the plan's last rate_limit_event { status, type, resetsAt (ms), windows }, or null. */
+export const emptyConversation = () => ({ sessionId: null, model: null, status: "idle", items: [], live: null, spent: 0, retry: null, limits: null, apiError: null })
 
 const FITZ = "mcp__fitz__"
 const toolName = (name) => (name.startsWith(FITZ) ? name.slice(FITZ.length) : name)
@@ -23,11 +26,19 @@ export function applyMessage(state, m) {
     case "system":
       if (m.subtype === "init") return { ...state, sessionId: m.session_id, model: m.model }
       if (m.subtype === "session_state_changed") return { ...state, status: m.state }
+      if (m.subtype === "api_retry") return { ...state, retry: { attempt: m.attempt, max: m.max_retries, delayMs: m.retry_delay_ms, error: m.error ?? null } }
       return state
+
+    case "rate_limit_event": {
+      const r = m.rate_limit_info
+      if (!r || typeof r !== "object") return state
+      return { ...state, limits: { status: r.status ?? null, type: r.rateLimitType ?? null, resetsAt: typeof r.resetsAt === "number" ? r.resetsAt * 1000 : null, windows: r.unifiedWindows ?? null } }
+    }
 
     case "stream_event": {
       if (m.parent_tool_use_id) return state
       const e = m.event
+      if (state.retry) state = { ...state, retry: null }  // anything streaming: the request went through
       if (e.type === "content_block_start") {
         const b = e.content_block
         if (b.type === "text" || b.type === "thinking") return { ...state, live: { kind: b.type, text: "" } }
@@ -53,7 +64,8 @@ export function applyMessage(state, m) {
         if (b.type === "tool_use") return [{ kind: "tool", id: b.id, name: toolName(b.name), input: b.input, status: "running", result: null }]
         return []
       })
-      return { ...state, items: [...state.items, ...added], live: null }
+      // one the API refused instead of answering says why (measured: no login → error "authentication_failed")
+      return { ...state, items: [...state.items, ...added], live: null, retry: null, apiError: m.error ?? state.apiError }
     }
 
     case "user": {
@@ -77,8 +89,8 @@ export function applyMessage(state, m) {
     case "result": {
       // total_cost_usd is the process's running total: a turn's cost is what it added
       const total = m.total_cost_usd ?? state.spent
-      const turn = { kind: "turn", reason: m.terminal_reason ?? m.subtype, isError: m.is_error === true, ms: m.duration_ms, cost: total - state.spent }
-      return { ...state, items: [...state.items, turn], live: null, spent: total, status: "idle" }
+      const turn = { kind: "turn", reason: m.terminal_reason ?? m.subtype, isError: m.is_error === true, ms: m.duration_ms, cost: total - state.spent, error: state.apiError }
+      return { ...state, items: [...state.items, turn], live: null, spent: total, status: "idle", retry: null, apiError: null }
     }
 
     default:
@@ -108,7 +120,7 @@ export function foldStored(messages, turns = new Map(), sessionId = null) {
   let prompt = null
   const close = () => {
     const t = prompt && turns.get(prompt)
-    if (t) state = { ...state, items: [...state.items, { kind: "turn", reason: t.reason, isError: t.isError, ms: t.ms, cost: t.cost }] }
+    if (t) state = { ...state, items: [...state.items, { kind: "turn", reason: t.reason, isError: t.isError, ms: t.ms, cost: t.cost, error: null }] }
     prompt = null
   }
   for (const m of messages) {

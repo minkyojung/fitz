@@ -62,9 +62,10 @@ export function Thread({ claude }: { claude: Claude }) {
   // that began the turn, so it is not drawn anew when a part finishes or the turn ends.
   const last = blocks.at(-1)
   const open = working && pending === null && last?.kind === "claude" && !last.turn ? last : null
-  const line = working ? liveLine({ sent: pending !== null, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0 }) : null
+  const line = working ? liveLine({ sent: pending !== null, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0, retry: view.state.retry }) : null
   const since = view.startedAt ?? claude.sentAt
   const current = { line, since, waiting: view.asks.length > 0 }
+  const limits = view.state.limits
   const items: React.ReactNode[] = []
   let began = "start"
   let n = 0
@@ -81,7 +82,7 @@ export function Thread({ claude }: { claude: Claude }) {
     }
     items.push(
       <MessageScrollerItem key={`${began}:${n++}`}>
-        <ClaudeMessage parts={b.parts} turn={b.turn} live={b === open ? view.state.live : null} current={b === open ? current : null}
+        <ClaudeMessage parts={b.parts} turn={b.turn} limits={limits} live={b === open ? view.state.live : null} current={b === open ? current : null}
           stands={claude.stands} onUndo={claude.undoFrom}
           checks={checksAt(i)}
           undoable={working ? [] : blocks.slice(i).flatMap(writesOf).filter((id) => claude.stands(id) === true)} />
@@ -90,7 +91,7 @@ export function Thread({ claude }: { claude: Claude }) {
   })
   const empty = (key: string, live: Claude["view"]["state"]["live"]) => (
     <MessageScrollerItem key={key}>
-      <ClaudeMessage parts={[]} turn={null} live={live} current={current} stands={claude.stands} onUndo={claude.undoFrom} checks={null} undoable={[]} />
+      <ClaudeMessage parts={[]} turn={null} limits={limits} live={live} current={current} stands={claude.stands} onUndo={claude.undoFrom} checks={null} undoable={[]} />
     </MessageScrollerItem>
   )
   if (pending !== null) {
@@ -149,8 +150,8 @@ function UserMessage({ text }: { text: string }) {
 /** Claude's side of a turn: runs of reading and thinking as one Trace each, its words between them, the turn's end —
  *  and there, Undo from here: Claude's changes from this turn to the end of the conversation, taken back together
  *  (Claude Code's rewind), or not at all, saying why (docs/agent.md §18). */
-function ClaudeMessage({ parts, turn, live, current, stands, undoable, onUndo, checks }: {
-  parts: Item[]; turn: Extract<Item, { kind: "turn" }> | null; live: Claude["view"]["state"]["live"]
+function ClaudeMessage({ parts, turn, limits, live, current, stands, undoable, onUndo, checks }: {
+  parts: Item[]; turn: Extract<Item, { kind: "turn" }> | null; limits: Claude["view"]["state"]["limits"]; live: Claude["view"]["state"]["live"]
   /** The turn going on's: its live line's words (null while Claude's words stream), its start, whether a write waits. */
   current: { line: string | null; since: number | null; waiting: boolean } | null
   stands: Claude["stands"]; undoable: string[]; onUndo: Claude["undoFrom"]; checks: TurnChecks | null
@@ -167,7 +168,7 @@ function ClaudeMessage({ parts, turn, live, current, stands, undoable, onUndo, c
     else if (Array.isArray(runs.at(-1))) (runs.at(-1) as Item[]).push(p)
     else runs.push([p])
   }
-  const end = turn ? turnLine(turn) : null
+  const end = turn ? turnLine(turn, limits) : null
   return (
     <Message>
       <MessageContent className="gap-3">

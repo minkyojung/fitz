@@ -36,6 +36,25 @@ test("the block being written, and a turn's end", () => {
   assert.deepEqual(turnLine({ kind: "turn", reason: "error_max_turns", isError: true, ms: 4000, cost: 0.01 }), { text: "Claude stopped: error_max_turns", stopped: true })
 })
 
+test("why Claude stopped, said so the translator knows what to do next (docs/agent.md §29)", () => {
+  const ended = (error: string, limits: { resetsAt: number } | null = null) =>
+    turnLine({ kind: "turn", reason: "api_error", isError: true, ms: 500, cost: 0, error }, limits).text
+  assert.equal(ended("authentication_failed"), "Not logged in — run `claude /login` in a terminal")
+  assert.equal(ended("rate_limit", { resetsAt: Date.parse("2026-10-25T08:50:00Z") }), `Usage limit reached — resets at ${new Date("2026-10-25T08:50:00Z").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`)
+  assert.equal(ended("rate_limit"), "Usage limit reached")
+  assert.equal(ended("overloaded"), "Claude is overloaded — try again in a moment")
+  assert.equal(ended("billing_error"), "A billing problem on the account")
+  assert.equal(ended("server_error"), "Claude stopped: server_error")
+  assert.equal(turnLine({ kind: "turn", reason: "completed", isError: false, ms: 6800, cost: 0.03, error: null }).text, "7s")
+})
+
+test("while Claude Code retries, the live line says so", () => {
+  const at = (o: Partial<Parameters<typeof liveLine>[0]>) => liveLine({ sent: false, live: null, began: false, waiting: false, retry: null, ...o })
+  assert.equal(at({ retry: { attempt: 2, max: 10, delayMs: 8000, error: "overloaded" } }), "Retrying 2/10 · overloaded · 8s")
+  assert.equal(at({ retry: { attempt: 1, max: 10, delayMs: 500, error: "server_error" }, live: { kind: "thinking" } }), "Retrying 1/10 · server_error · 1s", "outranks the block that was streaming")
+  assert.equal(at({ waiting: true, retry: { attempt: 1, max: 10, delayMs: 500, error: "x" } }), "Waiting for your answer")
+})
+
 test("how long ago", () => {
   const now = Date.parse("2026-10-18T12:00:00Z")
   assert.equal(ago("2026-10-18 11:59:30", now), "now")

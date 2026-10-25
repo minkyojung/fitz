@@ -28,7 +28,7 @@ test("a recorded turn folds to: the question, one read, thinking, the answer, th
   assert.ok(thinking.text.length > 0)
   assert.equal(text.text, nuance.find((m) => m.type === "result").result)
   const result = nuance.find((m) => m.type === "result")
-  assert.deepEqual(turn, { kind: "turn", reason: "completed", isError: false, ms: result.duration_ms, cost: result.total_cost_usd })
+  assert.deepEqual(turn, { kind: "turn", reason: "completed", isError: false, ms: result.duration_ms, cost: result.total_cost_usd, error: null })
   assert.equal(s.status, "idle")
   assert.equal(s.live, null)
   assert.equal(s.sessionId, nuance.find((m) => m.subtype === "init").session_id)
@@ -158,4 +158,31 @@ test("what Claude Code writes when a turn is stopped is not shown as the transla
     { type: "user", uuid: "u3", message: { role: "user", content: "다시" } },
   ]
   assert.deepEqual(foldStored(msgs).items.map((i) => i.text), ["¶4는?", "다시"])
+})
+
+// --- why Claude stopped (docs/agent.md §29)
+
+const nologin = recording("nologin")
+const RETRY = { type: "system", subtype: "api_retry", attempt: 2, max_retries: 10, retry_delay_ms: 8000, error_status: 529, error: "overloaded", uuid: "r", session_id: "s" }
+
+test("a recorded turn with no login: the turn's end carries the error Claude Code named", () => {
+  const s = foldMessages(nologin)
+  const turn = s.items.at(-1)
+  assert.deepEqual([turn.kind, turn.reason, turn.isError, turn.error], ["turn", "api_error", true, "authentication_failed"])
+  assert.equal(foldMessages(nuance).items.at(-1).error, null, "a turn that went well names none")
+})
+
+test("a retry is held while it lasts, and gone with the next thing Claude Code says", () => {
+  const during = applyMessage(foldMessages(nuance.slice(0, 6)), RETRY)
+  assert.deepEqual(during.retry, { attempt: 2, max: 10, delayMs: 8000, error: "overloaded" })
+  assert.equal(applyMessage(during, nuance[6]).retry, null, "the next stream event")
+  assert.equal(applyMessage(during, nuance.find((m) => m.type === "result")).retry, null, "or the result")
+  assert.equal(emptyConversation().retry, null)
+})
+
+test("the last rate_limit_event is kept: the plan's windows, for the usage the page shows", () => {
+  const s = foldMessages(nuance)
+  const event = nuance.find((m) => m.type === "rate_limit_event").rate_limit_info
+  assert.deepEqual(s.limits, { status: "allowed", type: "five_hour", resetsAt: event.resetsAt * 1000, windows: event.unifiedWindows })
+  assert.equal(emptyConversation().limits, null)
 })
