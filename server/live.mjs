@@ -43,6 +43,7 @@ export function attachLive(server, { db, host, heartbeatMs = HEARTBEAT_MS }) {
         if (m.type === "start") { host.start(m.convId, m); follow(m.convId) }
         else if (m.type === "open") follow(m.convId)
         else if (m.type === "list") send({ type: "conversations", items: host.list() })
+        else if (m.type === "models") send({ type: "models", items: host.models() })
         else if (m.type === "send") await host.send(m.convId, m.text)
         else if (m.type === "stop") host.stop(m.convId)
         else if (m.type === "configure") await host.configure(m.convId, m)

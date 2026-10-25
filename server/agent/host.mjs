@@ -10,7 +10,7 @@ import { listChapters } from "../commands.mjs"
 import { applyMessage, emptyConversation, foldStored } from "./fold.mjs"
 import { sessionKeeper } from "./keep.mjs"
 import { addConversation, getConversation, listConversations, recordTurn, setConfig, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
-import { AGENT_CWD, DEFAULTS, openSession as openClaudeSession } from "./session.mjs"
+import { AGENT_CWD, DEFAULTS, knownModels, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
 import { checkSegments, reasonFor } from "./checks.mjs"
 import { saveSuggestions } from "./suggestions.mjs"
@@ -40,6 +40,7 @@ const permission = (decision, toolName, input) => {
 export function createAgentHost({
   db,
   openSession = openClaudeSession,
+  models = knownModels,
   sessionInfo = (id) => getSessionInfo(id, { dir: AGENT_CWD }),
   sessionMessages = (id) => getSessionMessages(id, { dir: AGENT_CWD }),
   keep = sessionKeeper({ cwd: AGENT_CWD }),
@@ -232,6 +233,8 @@ export function createAgentHost({
       conversations.set(convId, conversation({ model, effort, task, sessionId: null }))
       if (task) send(convId, TASKS[task].prompt(chapter))
     },
+    /** The models Claude Code offers, with their efforts (docs/agent.md §31); null before any has said. */
+    models: () => models(),
     /** The conversations, newest first, each saying whether it is at work: one known only from book.db is not. */
     list: () => listConversations(db).map((c) => ({ ...c, working: conversations.has(c.id) && working(conversations.get(c.id)) })),
     /** A snapshot (with the writes waiting for an answer) — now, or once a reopened conversation is read back — then

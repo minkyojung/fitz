@@ -10,6 +10,7 @@
 //   stop  { convId }                    stop the turn that is going
 //   answer { convId, requestId, decision }  allow | always (this tool, for the rest of the session) | deny
 //   list                                the conversations, most recently used first
+//   models                              the models Claude Code offers (docs/agent.md §31)
 // server → page
 //   snapshot { convId, state, asks, model, effort, working, title, startedAt }  the conversation as fold.mjs has it,
 //                                       the writes waiting for an answer, the model and effort its next message goes to,
@@ -22,6 +23,7 @@
 //   ask      { convId, ask }            a write waiting for the translator: { requestId, tool, input, preview }
 //   asked    { convId, requestId, decision }  answered (or "cancelled": the turn stopped first)
 //   conversations { items }            [{ id, sessionId, title, model, effort, task, chapterId, createdAt, usedAt, working }]
+//   models   { items }                  [{ id, name, efforts }] in Claude Code's order; null before any Claude Code has said
 //   changed  { opId, name, segmentIds, kind, actor }  the book changed (any writer; kind: do | undo | redo)
 //   suggested { segmentIds }            Claude made new suggestions on these paragraphs (deciding one is a change)
 //   session  { run? }                   Session's cards, answers or runs changed (docs/session.md): ask sessionToday again
@@ -70,6 +72,8 @@ export function parseClientMessage(raw) {
     }
     case "list":
       return { type: "list" }
+    case "models":
+      return { type: "models" }
     case "open":
     case "stop":
       return { type: m.type, convId: convId(m.convId) }

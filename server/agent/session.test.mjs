@@ -4,7 +4,7 @@ import { test } from "node:test"
 
 import { DatabaseSync } from "node:sqlite"
 
-import { DEFAULTS, READ_TOOLS, SYSTEM_PROMPT, TASK_SYSTEM_PROMPT, WEB_TOOLS, WRITE_TOOLS, closeWarming, openSession, ownEnv, startWarming } from "./session.mjs"
+import { DEFAULTS, READ_TOOLS, SYSTEM_PROMPT, TASK_SYSTEM_PROMPT, WEB_TOOLS, WRITE_TOOLS, closeWarming, knownModels, offeredModels, openSession, ownEnv, startWarming } from "./session.mjs"
 import { WRITE_TOOL_NAMES } from "./tools.mjs"
 
 test("a conversation's prompt names the web and write tools it is given; a task's prompt names none, having none", () => {
@@ -58,6 +58,15 @@ for (const name of ["review", "typos"]) {
 // --- the query a conversation opens (docs/agent.md §30): started now, or the one started ahead
 
 const gatsby = () => { const db = new DatabaseSync(":memory:"); db.exec(readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")); db.exec(readFileSync(new URL("./fixtures/gatsby.sql", import.meta.url), "utf8")); return db }
+// what Claude Code 2.1.302 answered supportedModels() with (measured, docs/agent.md §31), shortened to the shapes seen
+const MODELS = [
+  { value: "default", resolvedModel: "claude-opus-5-5", displayName: "Default (recommended)", description: "", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
+  { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5", description: "", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
+  { value: "fable", resolvedModel: "claude-fable-5-1", displayName: "Fable 5.1", description: "", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
+  { value: "haiku", resolvedModel: "claude-haiku-5-5", displayName: "Haiku 5.5", description: "", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
+  { value: "claude-haiku-4-5-20251001", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5", description: "", supportsEffort: false },
+  { value: "claude-opus-4-6", resolvedModel: "claude-opus-4-6", displayName: "Opus 4.6", description: "", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "max"] },
+]
 /** A stand-in query(): echoes each prompt it is fed as a user message, then a result. Records its options. */
 function fakeQuery() {
   const calls = []
@@ -65,10 +74,20 @@ function fakeQuery() {
     calls.push(options)
     const q = (async function* () { for await (const m of prompt) { yield { type: "user", isReplay: true, uuid: m.uuid, message: m.message }; yield { type: "result", subtype: "success", total_cost_usd: 0 } } })()
     q.interrupt = async () => {}; q.setModel = async (m) => calls.push({ setModel: m }); q.applyFlagSettings = async (f) => calls.push({ flags: f })
+    q.supportedModels = async () => MODELS
     return q
   }
   return { calls, query }
 }
+
+test("the page is offered the current family by alias, with each one's efforts: not default, not the older models", () => {
+  assert.deepEqual(offeredModels(MODELS), [
+    { id: "claude-opus-5-5", name: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"] },
+    { id: "claude-fable-5-1", name: "Fable 5.1", efforts: ["low", "medium", "high", "xhigh", "max"] },
+    { id: "claude-haiku-5-5", name: "Haiku 5.5", efforts: ["low", "medium", "high", "xhigh", "max"] },
+  ])
+  assert.deepEqual(offeredModels(null), [])
+})
 
 test("a conversation started now: the first message reaches the query, and its stream flows back", async () => {
   const { calls, query } = fakeQuery()
@@ -93,11 +112,23 @@ test("a new free conversation takes the one started ahead, switched first when i
     a.send("q")
     for await (const m of a.messages) if (m.type === "result") break
     assert.deepEqual([started[0].model, started[0].effort], [DEFAULTS.model, DEFAULTS.effort], "the one ahead has the defaults")
-    assert.deepEqual(calls.slice(1, 3), [{ setModel: "claude-haiku-5-5" }, { flags: { effortLevel: "low" } }], "switched before the first message")
+    assert.deepEqual(calls.filter((c) => c.setModel || c.flags), [{ setModel: "claude-haiku-5-5" }, { flags: { effortLevel: "low" } }], "switched before the first message")
+    assert.equal(started.length, 2, "the next one is started as soon as this one is taken")
     const b = openSession({ db, resume: "sess-1", model: DEFAULTS.model, effort: DEFAULTS.effort, ask: async () => ({ behavior: "deny" }), wrote: () => {}, cwd: "/tmp/fitz-session-test", sdk: { query } })
     b.send("more")
     for await (const m of b.messages) if (m.type === "result") break
     assert.equal(calls.at(-1).resume, "sess-1", "a resumed conversation starts its own")
     await a.close(); await b.close()
+  } finally { closeWarming() }
+})
+
+test("the one started ahead is asked for the models as it waits, so the server knows them before any conversation", async () => {
+  const db = gatsby()
+  const { query } = fakeQuery()
+  const startup = async ({ options }) => ({ query: (prompt) => query({ prompt, options }), close() {} })
+  startWarming(db, { cwd: "/tmp/fitz-session-test", start: startup })
+  try {
+    await new Promise((r) => setTimeout(r, 0))
+    assert.deepEqual(knownModels()?.map((m) => m.name), ["Opus 5.5", "Fable 5.1", "Haiku 5.5"])
   } finally { closeWarming() }
 })

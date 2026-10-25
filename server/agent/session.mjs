@@ -118,6 +118,33 @@ function sessionOptions({ db, resume, model, effort, task, cwd, slot }) {
   }
 }
 
+/** An input that waits for the conversation's inbox to be attached, then passes it through: what a Claude Code
+ *  started ahead reads until a conversation takes it (§31). Ended, it yields nothing more. */
+function relay() {
+  let attach
+  const attached = new Promise((resolve) => { attach = resolve })
+  return {
+    attach,
+    end: () => attach(null),
+    async *[Symbol.asyncIterator]() { const source = await attached; if (source) yield* source },
+  }
+}
+
+// --- the models Claude Code offers (docs/agent.md §31): asked of any Query once, kept for the server's life
+
+let models = null
+/** What the page is offered: the current family by alias (opus, sonnet, …), not `default` and not the older models
+ *  named in full; each with the id Claude Code resolves it to and the efforts it takes. */
+export const offeredModels = (list) =>
+  (list ?? []).filter((m) => !m.value.startsWith("claude-") && m.value !== "default")
+    .map((m) => ({ id: m.resolvedModel ?? m.value, name: m.displayName, efforts: m.supportsEffort ? m.supportedEffortLevels ?? [] : [] }))
+/** The models known so far, or null before any Claude Code has said. */
+export const knownModels = () => models
+async function noteModels(q) {
+  if (models) return
+  try { const list = await q.supportedModels(); if (list?.length) models = offeredModels(list) } catch { /* an old CLI, or a process gone: the next one */ }
+}
+
 // --- one Claude Code started ahead, for the next new free conversation (docs/agent.md §30)
 
 let warmer = null
@@ -128,7 +155,16 @@ export function startWarming(db, { cwd = AGENT_CWD, start = startup } = {}) {
   mkdirSync(cwd, { recursive: true })
   warmth = { taken: 0, cold: 0 }
   const slot = {}
-  const w = createWarmer({ startup: start, options: () => sessionOptions({ db, model: DEFAULTS.model, effort: DEFAULTS.effort, task: null, cwd, slot }) })
+  // started, given a relay as its input, and made a Query at once: it can be asked things (the models, §31) while
+  // it waits, and the conversation that takes it attaches its own inbox
+  const prepare = async ({ options }) => {
+    const warm = await start({ options })
+    const input = relay()
+    const q = warm.query(input)
+    void noteModels(q)
+    return { q, input, close() { input.end(); void Promise.resolve(q.return?.()).catch(() => {}) } }
+  }
+  const w = createWarmer({ startup: prepare, options: () => sessionOptions({ db, model: DEFAULTS.model, effort: DEFAULTS.effort, task: null, cwd, slot }) })
   warmer = { take: w.take, close: w.close, db, cwd, slot }
   return warmer
 }
@@ -155,17 +191,19 @@ export function openSession({ db, resume, model, effort, ask, task, wrote, stop,
     if (spare) {
       try {
         Object.assign(warmer.slot, slot)  // the process ahead was made with the warmer's slot: now this conversation's
-        const q = spare.query(input)
-        if (model !== DEFAULTS.model) await q.setModel(model)
-        if (effort !== DEFAULTS.effort) await q.applyFlagSettings({ effortLevel: effort })
+        if (model !== DEFAULTS.model) await spare.q.setModel(model)
+        if (effort !== DEFAULTS.effort) await spare.q.applyFlagSettings({ effortLevel: effort })
+        spare.input.attach(input)  // from here on it reads this conversation's messages
         warmth.taken++
-        return q
+        return spare.q
       } catch (e) {
         console.error("agent: the Claude Code started ahead could not be used, starting one:", e.message)
       }
     }
     warmth.cold++
-    return sdk.query({ prompt: input, options: sessionOptions({ db, resume, model, effort, task, cwd, slot }) })
+    const q = sdk.query({ prompt: input, options: sessionOptions({ db, resume, model, effort, task, cwd, slot }) })
+    void noteModels(q)
+    return q
   })()
   ready.then(settled, settled)
   return {

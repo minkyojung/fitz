@@ -99,6 +99,14 @@ test("a page from another site cannot connect; this machine's pages can", async 
   assert.equal(localOrigin("null"), false)
 })
 
+test("over the socket: the models Claude Code offers, or null before any has said", async (t) => {
+  const srv = await serve(t)  // no Claude Code has run here: nothing is known yet
+  const page = await connect(srv)
+  page.say({ type: "models" })
+  await page.until((r) => r.some((e) => e.type === "models"))
+  assert.deepEqual(page.received.find((e) => e.type === "models"), { type: "models", items: null })
+})
+
 test("over the socket: a write is asked, and the page's answer reaches Claude Code", async (t) => {
   const book = new DatabaseSync(":memory:")
   book.exec(readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"))

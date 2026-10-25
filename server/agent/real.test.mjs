@@ -13,7 +13,7 @@ import { DatabaseSync } from "node:sqlite"
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk"
 
 import { createAgentHost } from "./host.mjs"
-import { DEFAULTS, READ_TOOLS, closeWarming, openSession, startWarming, warmthSoFar } from "./session.mjs"
+import { DEFAULTS, READ_TOOLS, closeWarming, knownModels, openSession, startWarming, warmthSoFar } from "./session.mjs"
 
 const REAL = process.env.FITZ_REAL_CLAUDE === "1"
 const skip = !REAL && "set FITZ_REAL_CLAUDE=1 (pnpm test:real) to run against real Claude Code"
@@ -105,4 +105,9 @@ test("a new conversation takes the Claude Code started ahead, switched to the mo
   assert.equal(result.subtype, "success", JSON.stringify(result))
   assert.deepEqual(warmthSoFar(), { taken: 1, cold: 0 })
   assert.equal(seen.model, "claude-haiku-5-5", "answered by the model asked for, not the one ahead's")
+  // the models Claude Code offers, asked of the one ahead while it waited (docs/agent.md §31)
+  const models = knownModels()
+  assert.ok(models?.length >= 3, JSON.stringify(models))
+  assert.ok(models.some((m) => m.id === "claude-haiku-5-5" && m.efforts.includes("max")), JSON.stringify(models))
+  assert.ok(models.every((m) => !m.id.startsWith("claude-") || /-5-/.test(m.id) || /-5$/.test(m.id)), "the current family only: " + models.map((m) => m.id).join(", "))
 })
