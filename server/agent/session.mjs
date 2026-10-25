@@ -6,10 +6,14 @@ import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-import { query } from "@anthropic-ai/claude-agent-sdk"
+import { query, startup } from "@anthropic-ai/claude-agent-sdk"
 
 import { TASK_LIMITS, outputFormatOf } from "./tasks.mjs"
 import { READ_TOOL_NAMES, WRITE_TOOL_NAMES, fitzServer } from "./tools.mjs"
+import { createWarmer } from "./warm.mjs"
+
+/** A new free conversation's model and effort unless another is asked for; what the one started ahead has (§30). */
+export const DEFAULTS = { model: "claude-opus-5-5", effort: "medium" }
 
 /** The session's working folder: empty, the app's own, away from the repository and the PDF. Claude Code keys
  *  its session files by it (~/.claude/projects/<this path>/). */
@@ -60,8 +64,9 @@ Here you only read and report: you answer once, in the shape you are asked for, 
 export const ownEnv = (env) => Object.fromEntries(Object.entries(env).filter(([k]) =>
   !(k === "CLAUDECODE" || k === "CLAUDE_PID" || k === "CLAUDE_EFFORT" || k === "CLAUDE_AGENT_SDK_VERSION" || (k.startsWith("CLAUDE_CODE_") && !k.startsWith("CLAUDE_CODE_USE_")))))
 
-/** Prompts for one conversation, fed to query() as streaming input: the session stays open between turns. */
-function inbox() {
+/** Prompts for one conversation, fed to query() as streaming input: the session stays open between turns. Nothing
+ *  goes out before `until` settles (a model to switch on the one started ahead, §30). */
+function inbox(until = Promise.resolve()) {
   const queue = []
   let wake = null
   let closed = false
@@ -69,6 +74,7 @@ function inbox() {
     push(msg) { queue.push(msg); wake?.(); wake = null },
     close() { closed = true; wake?.(); wake = null },
     async *[Symbol.asyncIterator]() {
+      await until
       for (;;) {
         if (queue.length) { yield queue.shift(); continue }
         if (closed) return
@@ -78,16 +84,10 @@ function inbox() {
   }
 }
 
-/** One conversation = one query(). `messages` is the SDK's stream; `send` returns the uuid the echo will carry.
- *  `ask(toolName, input, { signal })` is the host's: it puts a write to the translator and resolves with Claude Code's
- *  PermissionResult. `task` (tasks.mjs) makes it a task conversation: read tools only, an answer of the task's shape,
- *  and limits. */
-export function openSession({ db, resume, model, effort, ask, task, wrote, stop, cwd = AGENT_CWD }) {
-  mkdirSync(cwd, { recursive: true })
-  const input = inbox()
-  const q = query({
-    prompt: input,
-    options: {
+/** The options one query() takes. `slot` holds the conversation's callbacks — `ask`, `wrote`, `stop` — bound later for
+ *  a process started ahead (§30), so the options can be made before the conversation exists. */
+function sessionOptions({ db, resume, model, effort, task, cwd, slot }) {
+  return {
       cwd,
       resume,                                                    // a session id to go on with; undefined starts a new one
       model,                                                     // explicit: the CLI's default model is the terminal's choice
@@ -101,39 +101,91 @@ export function openSession({ db, resume, model, effort, ask, task, wrote, stop,
       skills: [],
       settings: { disableClaudeAiConnectors: true, autoMemoryEnabled: false, disableBundledSkills: true },
       tools: task ? [] : WEB_TOOLS,                              // web search only, no Read/Edit/Bash/WebFetch: the PDF and page images cannot be opened
-      mcpServers: { fitz: fitzServer(db, { write: !task, wrote }) },  // a task only finds: no write tools at all
+      mcpServers: { fitz: fitzServer(db, { write: !task, wrote: (segmentId) => slot.wrote?.(segmentId) }) },  // a task only finds: no write tools at all
       allowedTools: task ? READ_TOOLS : [...READ_TOOLS, ...WEB_TOOLS],  // reading and searching never ask
       permissionMode: "default",                                 // not bypass: every write is asked about
       canUseTool: async (toolName, input, options) =>            // writes go to the translator; nothing else is offered
-        !task && WRITE_TOOLS.includes(toolName) ? ask(toolName, input, options) : { behavior: "deny", message: `${toolName} is not available in this conversation.` },
+        !task && WRITE_TOOLS.includes(toolName) && slot.ask ? slot.ask(toolName, input, options) : { behavior: "deny", message: `${toolName} is not available in this conversation.` },
       // the checks of a turn's translations (docs/agent.md §19): an SDK callback, not a settings hook. Fail-open, measured:
       // a throw or a timeout ends the turn as passed — so the verdict the app keeps, not the hook, is the truth
-      ...(stop && { hooks: { Stop: [{ hooks: [async (input, _id, { signal }) => stop(input, { signal })] }] } }),
+      ...(!task && { hooks: { Stop: [{ hooks: [async (input, _id, { signal }) => (slot.stop ? slot.stop(input, { signal }) : {})] }] } }),
       // a task answers in its shape (Claude Code adds a StructuredOutput tool for it, measured) and is bounded
       ...(task && { outputFormat: outputFormatOf(task), ...TASK_LIMITS }),
       includePartialMessages: true,                              // text as it is written
       extraArgs: { "replay-user-messages": null },               // the echo of what was sent, with its uuid (measured: off by default)
       env: { ...ownEnv(process.env), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },  // env replaces the whole environment; idle/running state
       stderr: (data) => process.stderr.write(`[claude] ${data}`),
-    },
-  })
+  }
+}
+
+// --- one Claude Code started ahead, for the next new free conversation (docs/agent.md §30)
+
+let warmer = null
+let warmth = { taken: 0, cold: 0 }
+/** Start one ahead, and another each time one is taken, until `closeWarming`. For the book `db` in `cwd`. */
+export function startWarming(db, { cwd = AGENT_CWD, start = startup } = {}) {
+  closeWarming()
+  mkdirSync(cwd, { recursive: true })
+  warmth = { taken: 0, cold: 0 }
+  const slot = {}
+  const w = createWarmer({ startup: start, options: () => sessionOptions({ db, model: DEFAULTS.model, effort: DEFAULTS.effort, task: null, cwd, slot }) })
+  warmer = { take: w.take, close: w.close, db, cwd, slot }
+  return warmer
+}
+export function closeWarming() { warmer?.close(); warmer = null }
+/** How many new conversations took the one started ahead, and how many started cold (for the real test). */
+export const warmthSoFar = () => ({ ...warmth })
+
+/** One conversation = one query(). `messages` is the SDK's stream; `send` returns the uuid the echo will carry.
+ *  `ask(toolName, input, { signal })` is the host's: it puts a write to the translator and resolves with Claude Code's
+ *  PermissionResult. `task` (tasks.mjs) makes it a task conversation: read tools only, an answer of the task's shape,
+ *  and limits. A new free conversation takes the Claude Code started ahead when there is one (§30), switched to its
+ *  model and effort first if they are not the defaults; otherwise, and for a resumed or a task conversation, one is
+ *  started now. */
+export function openSession({ db, resume, model, effort, ask, task, wrote, stop, cwd = AGENT_CWD, sdk = { query } }) {
+  mkdirSync(cwd, { recursive: true })
+  const slot = { ask, wrote, stop }
+  const warmable = !resume && !task && warmer && warmer.db === db && warmer.cwd === cwd
+  // nothing is sent before the query is settled and switched: the inbox waits for `ready`, made just below
+  let settled
+  const input = inbox(new Promise((resolve) => { settled = resolve }))
+  // the query: the one ahead, or one started now
+  const ready = (async () => {
+    const spare = warmable ? await warmer.take() : null
+    if (spare) {
+      try {
+        Object.assign(warmer.slot, slot)  // the process ahead was made with the warmer's slot: now this conversation's
+        const q = spare.query(input)
+        if (model !== DEFAULTS.model) await q.setModel(model)
+        if (effort !== DEFAULTS.effort) await q.applyFlagSettings({ effortLevel: effort })
+        warmth.taken++
+        return q
+      } catch (e) {
+        console.error("agent: the Claude Code started ahead could not be used, starting one:", e.message)
+      }
+    }
+    warmth.cold++
+    return sdk.query({ prompt: input, options: sessionOptions({ db, resume, model, effort, task, cwd, slot }) })
+  })()
+  ready.then(settled, settled)
   return {
-    messages: q,
+    messages: (async function* () { yield* await ready })(),
     send(text) {
       const uuid = randomUUID()
       input.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, uuid })
       return uuid
     },
-    interrupt: () => q.interrupt(),
+    interrupt: async () => (await ready).interrupt(),
     /** What /model and /effort do (measured, docs/agent.md §8): from the next turn on; the effort set here outranks the
      *  one the session began with, and the settings it began with stay. */
     async configure({ model, effort }) {
+      const q = await ready
       if (model) await q.setModel(model)
       if (effort) await q.applyFlagSettings({ effortLevel: effort })
     },
     // return(), not close(): the same cleanup, but it resolves once Claude Code has exited (measured in the SDK, 0.3.302:
     // it ends the input, waits up to 2 s, then sends SIGTERM). On its way out Claude Code still writes to the session
     // file (the title it gave the conversation), so whatever follows a close must wait for this.
-    close() { input.close(); return q.return() },
+    async close() { input.close(); return (await ready).return() },
   }
 }

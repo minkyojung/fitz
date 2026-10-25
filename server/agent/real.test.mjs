@@ -13,7 +13,7 @@ import { DatabaseSync } from "node:sqlite"
 import { deleteSession } from "@anthropic-ai/claude-agent-sdk"
 
 import { createAgentHost } from "./host.mjs"
-import { READ_TOOLS, openSession } from "./session.mjs"
+import { DEFAULTS, READ_TOOLS, closeWarming, openSession, startWarming, warmthSoFar } from "./session.mjs"
 
 const REAL = process.env.FITZ_REAL_CLAUDE === "1"
 const skip = !REAL && "set FITZ_REAL_CLAUDE=1 (pnpm test:real) to run against real Claude Code"
@@ -27,10 +27,12 @@ function gatsby() {
 
 /** One conversation against real Claude Code in a folder of its own, cleaned up after the test. A task (`start`
  *  with task and chapterId) sets to work as soon as it starts. */
-function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "low" }) {
+function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "low" }, { ahead = false } = {}) {
   const work = mkdtempSync(join(tmpdir(), "fitz-real-"))
   const cwd = join(work, "cwd")
   mkdirSync(cwd)
+  // one Claude Code started ahead for this folder (docs/agent.md §30), as the server does for its own
+  if (ahead) { startWarming(db, { cwd }); t.after(closeWarming) }
   const projectDir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", realpathSync(cwd).replace(/[^A-Za-z0-9]/g, "-"))
   const host = createAgentHost({ db, openSession: (o) => openSession({ ...o, cwd }), sessionInfo: async () => null, keep: { save: () => false, restore: () => false, savedCost: () => 0 } })
   const id = randomUUID()
@@ -50,7 +52,7 @@ function realConversation(t, db, start = { model: "claude-haiku-5-5", effort: "l
       const m = e.message
       seen.sessionId ??= m.session_id ?? null
       if (m.type === "system" && m.subtype === "init") seen.init = m
-      if (m.type === "assistant") for (const b of m.message.content) if (b.type === "tool_use") seen.toolUses.push(b)
+      if (m.type === "assistant") { seen.model = m.message.model; for (const b of m.message.content) if (b.type === "tool_use") seen.toolUses.push(b) }
       if (m.type === "result") { stop(); resolve(m) }
     })
   })
@@ -93,4 +95,14 @@ test("an OCR-error hunt answers in the agreed shape, offered only the read tools
   const kept = db.prepare("SELECT quote FROM agent_suggestion WHERE task = 'typos' AND side = 'source'").all().map((s) => s.quote)
   assert.ok(kept.length >= 1, `nothing kept of ${JSON.stringify(r.structured_output)}`)
   assert.equal(db.prepare("SELECT count(*) n FROM ops").get().n, 0, "finding changes nothing in the book")
+})
+
+test("a new conversation takes the Claude Code started ahead, switched to the model asked for before its first message", { skip, timeout: 240_000 }, async (t) => {
+  const db = gatsby()
+  assert.notEqual(DEFAULTS.model, "claude-haiku-5-5", "the one ahead has the defaults; this conversation asks for another")
+  const { ask, seen } = realConversation(t, db, { model: "claude-haiku-5-5", effort: "low" }, { ahead: true })
+  const result = await ask("안녕이라고만 답해.")
+  assert.equal(result.subtype, "success", JSON.stringify(result))
+  assert.deepEqual(warmthSoFar(), { taken: 1, cold: 0 })
+  assert.equal(seen.model, "claude-haiku-5-5", "answered by the model asked for, not the one ahead's")
 })

@@ -10,14 +10,14 @@ import { listChapters } from "../commands.mjs"
 import { applyMessage, emptyConversation, foldStored } from "./fold.mjs"
 import { sessionKeeper } from "./keep.mjs"
 import { addConversation, getConversation, listConversations, recordTurn, setConfig, setSession, setTitle, touchConversation, turnsOf } from "./records.mjs"
-import { AGENT_CWD, openSession as openClaudeSession } from "./session.mjs"
+import { AGENT_CWD, DEFAULTS, openSession as openClaudeSession } from "./session.mjs"
 import { DECISIONS } from "./protocol.mjs"
 import { checkSegments, reasonFor } from "./checks.mjs"
 import { saveSuggestions } from "./suggestions.mjs"
 import { TASKS, TASK_NAMES } from "./tasks.mjs"
 import { describeWrite } from "./tools.mjs"
 
-export const DEFAULTS = { model: "claude-opus-5-5", effort: "medium" }
+export { DEFAULTS }
 /** How many times a turn's translations are sent back to Claude before what is left wrong is the translator's. */
 export const TRIES = 3
 

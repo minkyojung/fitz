@@ -8,7 +8,7 @@ import { buildManuscript, exportFilename } from "./export.mjs"
 import { renderDocx } from "./docx.mjs"
 import { createAgentHost } from "./agent/host.mjs"
 import { turnChecks } from "./agent/records.mjs"
-import { openSession } from "./agent/session.mjs"
+import { closeWarming, openSession, startWarming } from "./agent/session.mjs"
 import { startEvening } from "./drill/evening.mjs"
 import { announceSession } from "./drill/cards.mjs"
 import { dayOf } from "./drill/schedule.mjs"
@@ -171,13 +171,15 @@ const server = createServer(async (req, res) => {
 // the translation agent (docs/agent.md): the server owns every Claude Code process; the page's live connection
 // carries its conversations and the book's changes
 const agent = createAgentHost({ db })
+// one Claude Code started ahead for the next new conversation (docs/agent.md §30)
+startWarming(db)
 // Session's evening run (docs/session.md §4): on for the book itself, off for a copy — tests, e2e and measurements open
 // copies (--db), and a copy must not spend on Claude at 21:00 — unless --evening says otherwise
 const EVENING = arg("evening", DB === resolve("out/book.db") ? "on" : "off") === "on"
 const evening = startEvening(db, { openSession, enabled: EVENING })
 attachLive(server, { db, host: agent })
 // Claude Code finishes writing its session files before the server goes
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void Promise.all([agent.close(), evening.close()]).finally(() => process.exit(0)) })
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { closeWarming(); void Promise.all([agent.close(), evening.close()]).finally(() => process.exit(0)) })
 
 server.listen(PORT, () => {
   console.log(`api  http://localhost:${PORT}/api/*   db=${DB}`)
