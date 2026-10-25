@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { api } from "./http"
-import type { AskDecision, ConversationSummary, TurnChecks } from "./api"
+import type { AskDecision, ConversationSummary, ModelOffer, TurnChecks } from "./api"
 import { applyEvent, emptyView, withPointed, type ConversationView, type Pointed } from "@/lib/conversation"
 import { WRITE_TOOLS } from "@/lib/trace"
 
-/** The models and efforts offered for a new conversation; the server's defaults first. */
-export const MODELS = [
-  { id: "claude-opus-5-5", name: "Opus 5.5" },
-  { id: "claude-sonnet-5-5", name: "Sonnet 5.5" },
-  { id: "claude-haiku-5-5", name: "Haiku 5.5" },
-] as const
-export const EFFORTS = ["low", "medium", "high"] as const
+/** The models and efforts offered until the server says what Claude Code offers (docs/agent.md §31); the server's
+ *  default first. */
+export const MODELS: ModelOffer[] = [
+  { id: "claude-opus-5-5", name: "Opus 5.5", efforts: ["low", "medium", "high"] },
+  { id: "claude-sonnet-5-5", name: "Sonnet 5.5", efforts: ["low", "medium", "high"] },
+  { id: "claude-haiku-5-5", name: "Haiku 5.5", efforts: ["low", "medium", "high"] },
+]
 
 /** The conversation with Claude the Claude tab shows (docs/agent.md §17). It opens on an empty new conversation, which
  *  begins with its first message; past ones come from the list. What the translator pointed at (Ask Claude) waits
@@ -20,6 +20,13 @@ export function useClaude() {
   const [convId, setConvId] = useState<string | null>(null)
   const [view, setView] = useState<ConversationView>(emptyView)
   const [list, setList] = useState<ConversationSummary[]>([])
+  // what Claude Code offers, asked of the server when the page opens and after a reconnect; the page's own list until it says
+  const [models, setModels] = useState<ModelOffer[]>(MODELS)
+  useEffect(() => {
+    const ask = () => api.listModels().then((offered) => { if (offered?.length) setModels(offered) }).catch(() => undefined)
+    void ask()
+    return api.watchChanges((c) => { if (c.kind === "resync") void ask() })
+  }, [])
   const [choice, setChoice] = useState<{ model: string; effort: string }>({ model: MODELS[0].id, effort: "medium" })
   const [pointed, setPointed] = useState<Pointed | null>(null)
   // a message sent and not yet echoed back by Claude Code: the first one waits for its process to start
@@ -114,13 +121,13 @@ export function useClaude() {
     else setChoice((c) => ({ ...c, ...change }))
   }, [convId])
   return useMemo(() => ({
-    convId, view, list, summary, config, configure, pointed, point: setPointed, pending, sentAt,
+    convId, view, list, models, summary, config, configure, pointed, point: setPointed, pending, sentAt,
     refreshList, send, stands, undoFrom, checksOf,
     open: (id: string) => follow(id),
     newConversation: () => { unfollow.current?.(); unfollow.current = null; setConvId(null); setView(emptyView()); setPending(null) },
     stop: () => { if (convId) api.stopTurn(convId) },
     answer: (requestId: string, decision: AskDecision) => { if (convId) api.answerAsk(convId, requestId, decision) },
-  }), [convId, view, list, summary, config, configure, pointed, pending, sentAt, refreshList, send, stands, undoFrom, checksOf, follow])
+  }), [convId, view, list, models, summary, config, configure, pointed, pending, sentAt, refreshList, send, stands, undoFrom, checksOf, follow])
 }
 
 export type Claude = ReturnType<typeof useClaude>

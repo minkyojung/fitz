@@ -99,7 +99,7 @@ test("between turns the model and effort can change; the menu shows what the ser
   await expect(changed).toBeVisible()
 
   await changed.click()
-  await page.getByRole("menuitemradio", { name: "high" }).click()
+  await page.getByRole("menuitemradio", { name: "high", exact: true }).click()
   await expect.poll(() => fake.said.filter((m) => m.type === "configure").length).toBe(2)
   expect(await fake.last("configure")).toEqual({ type: "configure", convId: start.convId, effort: "high" })
 })
@@ -315,6 +315,44 @@ test("why Claude stopped is said: not logged in at the turn's end, retrying on t
   await box.press("Enter")
   fake.play(convId!, recording("nologin").filter((m) => m.type !== "system" || (m as { subtype?: string }).subtype !== "init"))
   await expect(thread(page).locator("[data-turn-end]").last()).toContainText("Not logged in — run `claude /login` in a terminal")
+})
+
+test("the models and efforts offered are what Claude Code told the server; its own list until then (docs/agent.md §31)", async ({ page }) => {
+  // the fake server answers the page's "models" as the real one does: nothing known at first, then the list
+  const offered = [
+    { id: "claude-opus-5-5", name: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"] },
+    { id: "claude-fable-5-1", name: "Fable 5.1", efforts: ["low", "medium", "high", "xhigh", "max"] },
+    { id: "claude-haiku-5-5", name: "Haiku 5.5", efforts: ["low", "medium", "high"] },
+  ]
+  let known: typeof offered | null = null
+  await page.routeWebSocket("**/live", (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      const msg = JSON.parse(String(m))
+      if (msg.type === "models") ws.send(JSON.stringify({ type: "models", items: known }))
+      else if (msg.type === "list") ws.send(JSON.stringify({ type: "conversations", items: [] }))
+      else if (!["start", "send", "open", "configure"].includes(msg.type)) server.send(m)
+    })
+  })
+  await openClaude(page)
+  const menu = page.getByRole("button", { name: /Opus 5.5 · medium/ })
+  await menu.click()
+  await expect(page.getByRole("menuitemradio", { name: "Sonnet 5.5" })).toBeVisible()  // the page's own list, until the server says
+  await expect(page.getByRole("menuitemradio", { name: "Fable 5.1" })).toHaveCount(0)
+  await expect(page.getByRole("menuitemradio", { name: "max" })).toHaveCount(0)
+  await page.keyboard.press("Escape")
+
+  known = offered
+  await page.reload()
+  await page.getByRole("button", { name: "Translate", exact: true }).click()
+  await page.getByRole("button", { name: /Opus 5.5 · medium/ }).click()
+  await expect(page.getByRole("menuitemradio", { name: "Fable 5.1" })).toBeVisible()
+  await expect(page.getByRole("menuitemradio", { name: "Sonnet 5.5" })).toHaveCount(0)
+  await expect(page.getByRole("menuitemradio", { name: "max" })).toBeVisible()  // Opus takes five efforts
+  await page.getByRole("menuitemradio", { name: "Haiku 5.5" }).click()
+  await page.getByRole("button", { name: /Haiku 5.5 · medium/ }).click()
+  await expect(page.getByRole("menuitemradio", { name: "max" })).toHaveCount(0)  // Haiku, as the server said, three
+  await expect(page.getByRole("menuitemradio", { name: "high", exact: true })).toBeVisible()
 })
 
 /** Select words inside a block, as a person dragging over them would. */

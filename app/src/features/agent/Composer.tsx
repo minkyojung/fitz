@@ -6,10 +6,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
-import { EFFORTS, MODELS, type Claude } from "@/data/useClaude"
+import { type Claude } from "@/data/useClaude"
 import { Pointed } from "./Pointed"
-
-const modelName = (id: string | null | undefined) => MODELS.find((m) => m.id === id)?.name ?? id ?? ""
 
 /** shadcn AI Elements' Prompt Input: what the translator pointed at above the box; below it the model and effort the
  *  next message goes to (changed between turns, not while Claude answers) and Send, which is Stop while Claude answers.
@@ -19,6 +17,9 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
   const box = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { if (focusToken) box.current?.focus() }, [focusToken])
   const working = claude.view.state.status !== "idle" || claude.pending !== null
+  // the models and their efforts as Claude Code offers them (docs/agent.md §31); one the list does not name keeps its id
+  const model = claude.models.find((m) => m.id === claude.config.model)
+  const efforts = model?.efforts.length ? model.efforts : ["low", "medium", "high"]
   const canSend = !working && text.trim().length > 0
   const send = () => {
     if (!canSend) return
@@ -54,20 +55,20 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
             <DropdownMenuTrigger disabled={working} title={working ? "Change it once Claude has answered" : "For the next message"}
               // a ghost button's words keep to the edge, not its unseen box: pulled out by its border and padding
               render={<InputGroupButton size="sm" variant="ghost" className="-ml-2.25 text-muted-foreground" />}>
-              {modelName(claude.config.model)} · {claude.config.effort}<IconChevronDown data-icon="inline-end" />
+              {model?.name ?? claude.config.model} · {claude.config.effort}<IconChevronDown data-icon="inline-end" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="top" className="w-44">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Model</DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={claude.config.model} onValueChange={(v) => claude.configure({ model: String(v) })}>
-                  {MODELS.map((m) => <DropdownMenuRadioItem key={m.id} value={m.id}>{m.name}</DropdownMenuRadioItem>)}
+                  {claude.models.map((m) => <DropdownMenuRadioItem key={m.id} value={m.id}>{m.name}</DropdownMenuRadioItem>)}
                 </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Effort</DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={claude.config.effort} onValueChange={(v) => claude.configure({ effort: String(v) })}>
-                  {EFFORTS.map((e) => <DropdownMenuRadioItem key={e} value={e}>{e}</DropdownMenuRadioItem>)}
+                  {efforts.map((e) => <DropdownMenuRadioItem key={e} value={e}>{e}</DropdownMenuRadioItem>)}
                 </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
             </DropdownMenuContent>

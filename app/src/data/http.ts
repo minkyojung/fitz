@@ -1,5 +1,5 @@
-import type { Api, BookChange, ConversationSummary } from "./api"
-import { createLive } from "@/lib/live"
+import type { Api, BookChange, ConversationSummary, ModelOffer } from "./api"
+import { createLive, type LiveEvent } from "@/lib/live"
 import { nextRun, type TaskRun } from "@/lib/taskRun"
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4800"
@@ -35,6 +35,21 @@ export const pageImageUrl = (url: string) => `${BASE}${url}`
 /** The page's one live connection (docs/agent.md §15), opened on first use and kept for the page's life. */
 let shared: ReturnType<typeof createLive> | null = null
 const live = () => (shared ??= createLive(`${BASE.replace(/^http/, "ws")}/live`))
+
+/** One question over the live connection, answered by the next event of the given type (or not, in 10 s). */
+function asked<T>(question: string, answer: string, read: (e: LiveEvent) => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const connection = live()
+    const timer = setTimeout(() => { stop(); reject(new Error(`the server did not answer with the ${answer}`)) }, 10_000)
+    const stop = connection.subscribe((e) => {
+      if (e.type !== answer) return
+      clearTimeout(timer)
+      stop()
+      resolve(read(e))
+    })
+    connection.send({ type: question })
+  })
+}
 
 export const api: Api = {
   getBook: () => call("getBook"),
@@ -101,18 +116,8 @@ export const api: Api = {
     onRun(run)
     return stop
   },
-  listConversations: () =>
-    new Promise((resolve, reject) => {
-      const connection = live()
-      const timer = setTimeout(() => { stop(); reject(new Error("the server did not answer with the conversations")) }, 10_000)
-      const stop = connection.subscribe((e) => {
-        if (e.type !== "conversations") return
-        clearTimeout(timer)
-        stop()
-        resolve(e.items as ConversationSummary[])
-      })
-      connection.send({ type: "list" })
-    }),
+  listConversations: () => asked("list", "conversations", (e) => e.items as ConversationSummary[]),
+  listModels: () => asked("models", "models", (e) => e.items as ModelOffer[] | null),
   followConversation: (convId, onEvent, start) => {
     const connection = live()
     const stop = connection.subscribe((e) => {

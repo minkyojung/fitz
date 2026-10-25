@@ -714,7 +714,7 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 
 측정(2026-10-25, SDK 0.3.302, Claude Code 2.1.302):
 - **로그인 없음**(빈 `CLAUDE_CONFIG_DIR`, 비용 0; 녹화 `fixtures/nologin.jsonl`): `auth_status`는 오지 않는다. `assistant`가 `error: "authentication_failed"`와 글 "Not logged in · Please run /login"으로 오고, `result`는 `subtype: success`, `terminal_reason: "api_error"`, `is_error: true`. 0.5초.
-- **한도**: 녹화 다섯 모두 턴마다 `rate_limit_event`가 한 번 온다 — `rate_limit_info { status: allowed, resetsAt(초), rateLimitType: five_hour, unifiedWindows { five_hour: {utilization, resetsAt}, seven_day: {…} } }`. Octave의 "Plan usage" 창이 이것이다(§31). `status: rejected`는 본 적이 없다.
+- **한도**: 녹화 다섯 모두 턴마다 `rate_limit_event`가 한 번 온다 — `rate_limit_info { status: allowed, resetsAt(초), rateLimitType: five_hour, unifiedWindows { five_hour: {utilization, resetsAt}, seven_day: {…} } }`. Octave의 "Plan usage" 창이 이것이다(§32). `status: rejected`는 본 적이 없다.
 - **재시도**(`system/api_retry { attempt, max_retries, retry_delay_ms, error_status, error }`)와 **과부하**(`assistant.error: overloaded | rate_limit | billing_error | …`, `SDKAssistantMessageError`)는 타입으로만 읽었다. 일으킬 수 없으므로 측정 전.
 
 | 정한 것 | 왜 |
@@ -748,7 +748,7 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 
 - 예열은 프로세스 시작 **약 0.55초**를 번다. 나머지 약 1초는 API의 첫 응답이라 어느 길로도 줄지 않는다.
 - 예열한 프로세스에서 **첫 메시지 전에** `setModel` + `applyFlagSettings({effortLevel})`: 된다(init과 답 모두 Haiku, Stop의 강도 low) — 그러나 **641ms**. 기본값이 아닌 모델을 고른 첫 대화는 예열의 이득이 사라진다(cold와 같다).
-- 덤: **에코(`isReplay`)는 턴이 실제로 시작될 때** 온다(에코 시각 = 첫 스트림 시각). §32의 대기열이 이 사실 위에 선다.
+- 덤: **에코(`isReplay`)는 턴이 실제로 시작될 때** 온다(에코 시각 = 첫 스트림 시각). §33의 대기열이 이 사실 위에 선다.
 - 세워 둔 프로세스는 약 230–260MB(SDK 문서의 `prewarm` 값; `startup`도 같은 프로세스. 읽은 것).
 
 | 정한 것 | 왜 |
@@ -792,3 +792,5 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 | 1 | 이 절 | `docs/agent.md` | |
 | 2 | 서버: 세울 때 Query와 목록, 중계 inbox, `knownModels`, `/live`의 `models` | `warm.mjs`·`session.mjs`·`host.mjs`·`live.mjs`·`protocol.mjs` | 단위(가짜 startup/query): 세운 것의 목록, 가져간 대화의 메시지가 중계를 지나 query에 닿음, cold 대화도 목록을 남김, 소켓에서 `models` 답. 실제: `test:real`의 ahead 시험에 목록 확인 |
 | 3 | 페이지: 목록을 묻고 메뉴에 | `api.ts`·`http.ts`·`useClaude.ts`·`Composer.tsx` | e2e: 가짜 서버가 Fable 5.1·xhigh·max를 답하면 메뉴에 보임; 답하기 전엔 고정 셋. HEAD에서 실패 확인 |
+
+**결과**(2026-10-25): 페이지는 열릴 때와 다시 붙을 때 `models`를 묻고, 답이 오면 메뉴가 그것을 보인다; 강도 메뉴는 고른 모델의 단계. 진짜 서버에 붙는 기존 e2e 하나는 `high`를 찾다가 새로 보이는 `xhigh`에도 걸려 정확 일치로 고쳤다. e2e 71. 갤러리(`AgentGallery`)의 고정 셋은 목업이라 그대로.

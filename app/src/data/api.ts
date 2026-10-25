@@ -243,6 +243,12 @@ export interface CardAnswer {
 }
 
 /** A conversation with Claude as book.db lists it (docs/agent.md §13); a task's carries its task and chapter. */
+/** A model Claude Code offers, as the server passes it on (docs/agent.md §31). */
+export interface ModelOffer {
+  id: string
+  name: string
+  efforts: string[]
+}
 export interface ConversationSummary {
   id: string
   sessionId: string | null
@@ -343,6 +349,8 @@ export interface Api {
   followTask(convId: string, onRun: (run: TaskRun) => void, start?: { task: TaskName; chapterId: number }): () => void
   /** Claude's conversations, most recently used first. */
   listConversations(): Promise<ConversationSummary[]>
+  /** The models Claude Code offers, with each one's efforts (docs/agent.md §31); null before any Claude Code has said. */
+  listModels(): Promise<ModelOffer[] | null>
   /** Hear a conversation: its snapshot, then its messages, asks and errors; after a reconnect it is followed again. With
    *  `start` the conversation is begun first, under this new id. Returns the function that stops listening. */
   followConversation(convId: string, onEvent: (e: LiveEvent) => void, start?: { model: string; effort: string }): () => void
