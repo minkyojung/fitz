@@ -733,3 +733,37 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 | 2 | fold와 화면 | `fold.mjs`, `lib/trace.ts`, `Thread.tsx` | 서버 `fold.test`: nologin 녹화의 턴에 `error`, 녹화의 `rate_limit_event`가 `limits`로, `api_retry` 프레임이 `retry`로 왔다가 사라짐. 화면 단위: `turnLine`·`liveLine`. e2e: nologin 녹화를 재생하면 턴 끝에 "Not logged in"; `api_retry` 프레임이면 진행 줄에 "Retrying". HEAD에서 실패 확인 |
 
 **결과**(2026-10-25): 전부 통과, HEAD에서는 셋 다 실패(e2e는 재시도 중에도 "Thinking"). `retry`는 어떤 `stream_event`든 오면 지운다(요청이 통한 것). 빈 `rate_limit_event`(정보 없음)는 상태를 바꾸지 않는다. 서버 261, 화면 단위 72, e2e 70.
+
+## 30. 예열 — 새 대화의 첫 메시지 (2026-10-25 계획)
+
+새 대화는 첫 메시지에서야 Claude Code를 띄운다(§6). 그 시작 시간이 "Starting"의 일부다.
+
+측정(2026-10-25, SDK 0.3.302, Haiku/low, fitz의 세션 옵션 그대로, `.context/measure/warm.mjs`; 각 2회):
+
+| | 프로세스 준비(init) | 보냄 → 에코(Starting이 보이는 동안) | 보냄 → 결과 |
+|---|---|---|---|
+| 지금(`query()`) | 572·646ms | 1398·1549ms | 1633·1567ms |
+| `startup()` 뒤 | 39·41ms(미리 537·553ms) | 621·1124ms | 828·1356ms |
+| `prewarm()`+claim 뒤 | 92·95ms(미리 540·574ms) | 1104·1857ms | 1116·1982ms |
+
+- 예열은 프로세스 시작 **약 0.55초**를 번다. 나머지 약 1초는 API의 첫 응답이라 어느 길로도 줄지 않는다.
+- 예열한 프로세스에서 **첫 메시지 전에** `setModel` + `applyFlagSettings({effortLevel})`: 된다(init과 답 모두 Haiku, Stop의 강도 low) — 그러나 **641ms**. 기본값이 아닌 모델을 고른 첫 대화는 예열의 이득이 사라진다(cold와 같다).
+- 덤: **에코(`isReplay`)는 턴이 실제로 시작될 때** 온다(에코 시각 = 첫 스트림 시각). §32의 대기열이 이 사실 위에 선다.
+- 세워 둔 프로세스는 약 230–260MB(SDK 문서의 `prewarm` 값; `startup`도 같은 프로세스. 읽은 것).
+
+| 정한 것 | 왜 |
+|---|---|
+| `startup()`. `prewarm()`은 아니다 | `startup`은 알파가 아니고 옵션이 지금 `query()`와 같다. `prewarm`은 알파이고, fitz에는 미리 끝낼 플러그인·무거운 MCP가 없어 더 벌지 못했다(위 표) |
+| 새 **자유** 대화만. 이어 가는 대화(`resume`)와 작업(리뷰·OCR·Session)은 지금처럼 cold | 둘 다 `resume`을 못 받는다. 작업은 프롬프트·도구·답의 모양이 다르다 |
+| 기본값(Opus 5.5 / medium)으로 세워 두고, 다른 모델·강도를 골랐으면 첫 메시지 전에 바꾼다(§21의 `configure`) | 대부분의 새 대화가 기본값. 바꾸면 0.64초: cold와 같아질 뿐 더 늦지 않는다 |
+| 서버당 하나. 서버가 켜질 때 세우고, 쓰이면 바로 다음 것을 세운다. 서버가 닫힐 때 닫는다 | 새 대화는 한 번에 하나 열린다 |
+| 대화별 콜백(`ask`·`wrote`·Stop 훅)은 `startup`에 고정되므로, 세션 안의 "지금 주인" 자리를 거쳐 `openSession` 때 묶는다 | 옵션은 미리, 대화는 나중에 |
+| 세우지 못했거나(바이너리·로그인 없음) 세워 둔 것이 죽었으면 cold로, 한 번 경고 | 하네스: 폴백은 호스트의 몫. 지금과 같은 길이지 더 나쁜 길이 아니다 |
+| 시작은 여전히 `session.mjs` 한 곳. 세워 두는 일은 `warm.mjs`(순수: `startup`을 주입받아 시험) | §1의 원칙 |
+
+### 30.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절 | `docs/agent.md` | |
+| 2 | 세워 두기와 쓰기 | `agent/warm.mjs`(새), `session.mjs`, `host.mjs`(DEFAULTS의 자리), `index.mjs` | 단위(가짜 `startup`): 하나를 세우고, 가져가면 다음을 세우고, 실패하면 null, 닫으면 닫힘. 실제(`test:real`, Haiku): 새 대화가 세워 둔 것을 쓰고, 기본값과 다른 모델로 첫 답을 한다 |
