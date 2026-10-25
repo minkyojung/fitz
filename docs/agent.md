@@ -829,3 +829,33 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 | 3 | 서버 `context`·`compact`, 페이지의 창 | `session.mjs`, `host.mjs`, `live.mjs`, `protocol.mjs`, `api.ts`, `http.ts`, `useClaude.ts`, `ContextPopover.tsx`, `ClaudeTab.tsx` | 단위(가짜 query): `context`가 `getContextUsage`를 부름. e2e: 가짜 서버의 `context` 답이 창에; Compact 버튼이 `compact`를 보냄; 녹화의 압축을 재생하면 "Compacting" 뒤 "Compacted 5.0k → 1.1k". HEAD에서 실패 확인 |
 
 **결과**(2026-10-25): 머리줄의 Context 버튼(대화가 없으면 꺼짐) → 창. 요금제 창은 §29의 `limits.windows`에서(초 → ms). `compact`는 작업 대화와 턴 중엔 거부(400·409). `protocol`의 `open`이 새 케이스로 떨어지던 실수를 시험이 잡았다. 서버 276, e2e 73 중 72 — 남은 하나(glossary)는 HEAD에서도 실패: 실제 책의 용어집에 "Zemurray → 제머레이"가 들어와(번역자) 용어를 새로 넣는 전제가 깨졌다. 시험이 제 용어를 심고 거두게 고칠 일(따로).
+
+## 33. 일하는 중에 다음 말 보내기 (2026-10-25 계획)
+
+입력창은 Claude가 일하는 동안 잠긴다(`Composer`의 `working`). 서버의 `send`도 도는 턴의 기록(`conv.turn`: 쓴 단락·검사 횟수·시작 시각)을 덮어쓰므로 지금은 열 수 없다.
+
+측정(2026-10-25, Haiku/low, `.context/measure/queue.mjs`; 메시지 셋을 한꺼번에, 첫 결과 뒤 둘을 더, 그중 하나가 도는 동안 `interrupt()`):
+
+| 사실 | 값 |
+|---|---|
+| 턴이 도는 동안 보낸 메시지는 **그 턴 안으로** 들어간다 | #1의 에코 1759ms에 첫 API 호출; #2·#3의 에코 1921ms; 두 번째 API 호출 4205ms; **결과는 하나**(8748ms, `user_message_uuid`는 #1의 것, `queued_turn_count: 0`), Stop 훅도 한 번. Claude Code의 steering: 다음 모델 호출 때 함께 전달된다 |
+| 결과가 난 뒤 남아 있던 메시지는 **각각 제 턴**으로 | #4·#5: #4의 턴이 시작(`state running` 8754ms) → #4 에코 → 결과 → #5 에코·결과 |
+| `interrupt()`는 도는 턴만 끊는다 | #4의 턴이 `error_during_execution/aborted_streaming`; 답은 `{ still_queued: [#5] }`, #5는 그대로 돌았다. `system/init.capabilities`에 `interrupt_receipt_v1`·`interrupt_cancel_queued_v1`: 줄까지 비우는 `interrupt({ cancelQueued: true })`(타입에는 없고 런타임에 있다, §SDK 조사) |
+| 에코는 전달될 때 온다(§30) | 보낼 때가 아니다: 턴 안으로 들어가면 다음 호출 때, 새 턴이면 그 시작 때 |
+
+| 정한 것 | 왜 |
+|---|---|
+| 입력창은 언제나 보낼 수 있다. 서버의 `send`는 턴이 도는 중이면 **새 턴을 만들지 않고** 그대로 넘긴다(`conv.turn`은 도는 것 그대로); 따라가는 쪽에 `queued { convId, uuid, text }` | SDK가 지금 턴 안으로 넣는다. 그 턴의 검사(§19)가 전부를 덮는다 |
+| 에코가 왔을 때 도는 턴이 없으면(턴이 끝난 뒤에야 전달된 것) 그때 턴을 연다: `conv.turn`·`started` | 결과 뒤에 남은 메시지는 제 턴이다 |
+| snapshot에 `queue`(보냈지만 아직 전달되지 않은 것들) | 다시 붙은 페이지도 같다(§23) |
+| 페이지: 보낸 뒤 에코 전까지는 흐린 말풍선 "Queued"(§26의 `pending`을 여럿으로); 에코가 오면 보통 말풍선. 진행 줄은 그대로 하나 | 보낸 것이 어디 있는지 보인다 |
+| Stop은 도는 턴과 줄을 함께 끊는다: `interrupt({ cancelQueued: true })`, 끊긴 uuid를 `dropped { convId, uuids }`로; 그 기능이 없는 CLI면 `interrupt()`만 | 번역자의 Stop은 "다 멈춰"다. 끊긴 말풍선은 사라진다 |
+| 모델·강도 바꾸기는 지금처럼 턴 사이에만 | §21 그대로 |
+
+### 33.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절 | `docs/agent.md` | |
+| 2 | 서버 | `host.mjs`, `session.mjs`(cancelQueued), `protocol.mjs` | 가짜 세션: 턴 중 `send`가 턴을 덮지 않고 `queued`를 말함; 에코 뒤 결과 하나에 기록 하나; 결과 뒤 에코가 오면 새 턴과 `started`; snapshot의 `queue`; stop이 `cancelQueued`로 부르고 `dropped`를 말함. 실제(Haiku): 셋을 보내 결과 하나·기록 하나 |
+| 3 | 페이지 | `conversation.ts`(queue), `useClaude.ts`, `Composer.tsx`, `Thread.tsx` | 단위: `applyEvent`의 queued/에코/dropped. e2e: 일하는 중 보내면 "Queued" 말풍선, 에코 뒤 보통 말풍선, Stop 뒤 사라짐. HEAD에서 실패 확인 |
