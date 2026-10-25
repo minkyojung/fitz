@@ -663,3 +663,27 @@ Claude 패널의 글자(같은 날, 758a87a): 읽는 글 14px, 조작·상태 12
 | 3 | 화면: 진행 줄 | `lib/trace.ts`(단계 이름, 시간 글), `lib/conversation.ts`(`startedAt`), `useClaude.ts`(보낸 시각), `Thread.tsx`, `components/ui/pixel-loader.tsx` | 단위 + e2e: 엔터 직후 Starting, 되돌아온 뒤 첫 블록 전에도 Thinking과 시간, 생각이 흘러나옴, 끝나면 줄이 사라지고 끝 시간. HEAD에서 실패 확인 |
 
 **결과**(2026-10-20): e2e가 녹화(`nuance`)를 단계마다 재생해 본다 — 엔터 직후 Starting, 되돌아온 뒤 Thinking과 서버 시각부터의 시간, 도구가 흐를 때 Reading, 생각이 흐르면 그 글, 그동안 같은 줄(다시 그려지지 않음), 끝나면 줄이 없고 "21s". HEAD에서는 되돌아온 뒤 내 말만 있어 실패했다. 실제 에디터에서도 같은 재생으로 단계마다 눈으로 확인. 서버 258, 화면 단위 69, e2e 67.
+
+## 27. Claude 답의 가독성 — Octave의 읽기 규칙, 폭은 그대로 (2026-10-25, 갤러리 `?gallery&words`)
+
+Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코드에서 읽었다(Octave 앱 번들의 `styles-*.css`, `main-*.js`). 가장 큰 차이는 한 줄의 폭(Octave 최대 약 870px, fitz 패널 약 233px)인데, 패널 폭은 바꿀 수 없다. 나머지는 폭을 쓰지 않는다.
+
+| | fitz(지금) | Octave | 정한 것 |
+|---|---|---|---|
+| 글자 | 14px, 줄 1.625 | 16px, 줄 26/16(=1.625), `antialiased` | **15px**, 줄 1.625, `antialiased`(번역자가 골랐다: 좁은 패널에서 한 줄에 한 글자쯤만 준다) |
+| 문단 사이 | 8px(`space-y-2`) | 16px(`space-y-4`) | 16px |
+| 제목 | 본문 크기, 굵게, 위 12px | h2 1.25em·h3 1.125em, 위 1.6em | h1·h2 1.25em 굵게, h3 1.125em, h4 1em, 위 1.6em·아래 8px |
+| 목록 | Streamdown 기본 `list-inside`: 둘째 줄이 점 아래로 | 점은 바깥, 들여쓰기 20px, 항목 사이 4px, 점은 흐린 색 | Octave와 같게 |
+| 인용 | Streamdown 기본 `italic`, 선 4px: 한글이 억지로 기울어진다 | 기울이지 않음, 선 2px, 왼쪽 12px | Octave와 같게 |
+| 줄 끝 | 그대로 | `text-pretty`(마지막 줄에 한두 글자만 남지 않게) | 같게 |
+| 글자색 | `foreground`(oklch 14.5%) | oklch 24%(어두운 테마 93%) | 같게: 토큰 `--answer`(번역자가 골랐다) |
+| 한국어 단어 | 줄 끝에서 음절마다 끊긴다(Octave도) | — | **끊지 않는다**(`word-break: keep-all`, 넘치는 긴 낱말만 `overflow-wrap: anywhere`). 한국어 웹 글의 표준. 번역자가 골랐다 |
+
+번역자의 말풍선과 입력창은 14px 그대로(이번엔 답만). 갤러리는 실제 녹화(`nuance`)의 답을 패널 폭에 지금·14·15·16px로 그렸다.
+
+### 27.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절, 갤러리 | `docs/agent.md`, `app/src/gallery/WordsGallery.tsx` | 번역자 확인 ✓ |
+| 2 | 답의 읽기 규칙 | `Thread.tsx`(`Words`), `index.css`(`--answer`) | e2e: 녹화된 답의 글자 15px·단어 끊지 않음·문단 사이 16px·제목이 본문보다 큼·목록 점 바깥·인용 기울이지 않음. HEAD에서 실패 확인 |

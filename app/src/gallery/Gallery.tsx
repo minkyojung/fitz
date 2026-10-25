@@ -12,6 +12,7 @@ import { ShellGallery } from "./ShellGallery"
 import { SessionGallery } from "./SessionGallery"
 import { ComposerGallery } from "./ComposerGallery"
 import { LiveGallery } from "./LiveGallery"
+import { WordsGallery } from "./WordsGallery"
 import { SourceText } from "@/features/review/SourceText"
 import { EditedDot } from "@/features/review/EditedDot"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -58,6 +59,7 @@ function Row({ title, ocr, text }: (typeof CASES)[number]) {
 export function Gallery() {
   if (location.search.includes("composer")) return <ComposerGallery />
   if (location.search.includes("live")) return <LiveGallery />
+  if (location.search.includes("words")) return <WordsGallery />
   if (location.search.includes("session")) return <SessionGallery />
   if (location.search.includes("shell")) return <ShellGallery />
   if (location.search.includes("undo")) return <UndoGallery />
