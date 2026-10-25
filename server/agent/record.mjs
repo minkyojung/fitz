@@ -1,5 +1,5 @@
 // Records one real turn of the agent as JSONL: the fixture fold.mjs is tested against (docs/agent.md §11).
-// usage: node server/agent/record.mjs --out <file.jsonl> --prompt "<what the translator asks>"
+// usage: node server/agent/record.mjs --out <file.jsonl> --prompt "<what the translator asks>" [--then "<the next>" …]
 //          [--answer allow|always|deny] [--db out/book.db] [--model claude-opus-5-5] [--effort medium]
 //        node server/agent/record.mjs --out <file.jsonl> --task review|typos [--chapter 1] [--db …] [--model …] [--effort …]
 // It runs through host.mjs, as the server does; a write Claude asks for is answered with --answer (default deny).
@@ -26,6 +26,8 @@ const arg = (name, dflt) => {
 }
 const out = arg("out")
 const prompt = arg("prompt")
+// what the translator says after each answer, in order: a conversation of several turns (a /compact among them)
+const then = process.argv.flatMap((a, i) => (a === "--then" ? [process.argv[i + 1]] : []))
 const task = arg("task")
 const answer = arg("answer", "deny")
 if (!out || !prompt === !task) throw new Error("usage: record.mjs --out <file.jsonl> (--prompt <text> [--answer allow|always|deny] | --task review|typos [--chapter <id>]) [--db <book.db>] [--model <id>] [--effort <level>]")
@@ -64,7 +66,7 @@ const result = await new Promise((resolve) => {
     if (event.type !== "message") return
     frames.push({ ms: Date.now() - started, ...event.message })
     sessionId ??= event.message.session_id ?? null
-    if (event.message.type === "result") resolve(event.message)
+    if (event.message.type === "result") { if (then.length) host.send(convId, then.shift()); else resolve(event.message) }
   })
   if (!task) host.send(convId, prompt)
   setTimeout(() => { console.error("timed out; stopping"); host.stop(convId) }, TIMEOUT_MS).unref()

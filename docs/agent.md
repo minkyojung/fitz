@@ -794,3 +794,34 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 | 3 | 페이지: 목록을 묻고 메뉴에 | `api.ts`·`http.ts`·`useClaude.ts`·`Composer.tsx` | e2e: 가짜 서버가 Fable 5.1·xhigh·max를 답하면 메뉴에 보임; 답하기 전엔 고정 셋. HEAD에서 실패 확인 |
 
 **결과**(2026-10-25): 페이지는 열릴 때와 다시 붙을 때 `models`를 묻고, 답이 오면 메뉴가 그것을 보인다; 강도 메뉴는 고른 모델의 단계. 진짜 서버에 붙는 기존 e2e 하나는 `high`를 찾다가 새로 보이는 `xhigh`에도 걸려 정확 일치로 고쳤다. e2e 71. 갤러리(`AgentGallery`)의 고정 셋은 목업이라 그대로.
+
+## 32. Context 창 — 얼마나 찼는지, 요금제, 압축 (2026-10-25 계획)
+
+Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 Claude 패널에. 지금 fitz는 압축을 어디서도 다루지 않는다: 압축 중엔 이유 없이 멈춘 듯 보이고, 압축된 대화를 다시 열면 요약이 번역자의 말처럼 보인다.
+
+측정(2026-10-25, Haiku/low, `.context/measure/context.mjs`; 녹화 `fixtures/compact.jsonl`·`.stored.json`, `record.mjs --then`):
+
+| 사실 | 값 |
+|---|---|
+| `getContextUsage({detail})` | `summary` 7ms, `full` 첫 322ms·다음 8ms. **비용 0**. 분류: System prompt·System tools·MCP tools·Messages(used), Autocompact buffer(buffer), Free space(free); `totalTokens/maxTokens`(4,769/1,000,000), `autoCompactThreshold` 967,000, `isAutoCompactEnabled`. `summary`와 `full`은 분류 값이 조금 다르고(추정 vs 셈) 합계는 같다 |
+| `usage_EXPERIMENTAL…({skipBehaviors:true})` | 302ms. `subscription_type: max`, `rate_limits.five_hour/seven_day { utilization(%), resets_at(ISO) }` — 그 밖에 내부 키 열댓 개. 이름이 바뀔 예정 |
+| `rate_limit_event`(§29) | 턴마다, 비용 0: `unifiedWindows.five_hour/seven_day { utilization(0~1), resetsAt(초) }`. 위와 같은 창 |
+| `/compact`(프롬프트로) | 스트림: `status(compacting)` → `status(null, compact_result: success)` → `init` → `compact_boundary { compact_metadata: { trigger: manual, pre_tokens 5028, post_tokens 1087 } }` → **합성 user**(`isSynthetic`, "This session is being continued…") → 에코가 `<local-command-stdout>Compacted</local-command-stdout>`(`isReplay`) → `result { subtype: success, local_command: "compact", num_turns: 0 }`, 압축 비용 $0.0009. 호스트는 지금 이것을 턴으로 기록한다 |
+| 압축 뒤 `getSessionMessages` | 사슬이 요약에서 시작한다: user(`isCompactSummary`, `is_meta`) → 압축 전 턴의 assistant 둘(그 질문은 없다) → user `<command-name>/compact</command-name>` → user `<local-command-stdout>` → 그 뒤 실제 메시지. `compact_boundary`는 `includeSystemMessages: true`일 때만 |
+
+| 정한 것 | 왜 |
+|---|---|
+| fold: `compact_boundary` → 항목 `{ kind: "compact", pre, post }`; `status: compacting` → `state.compacting`(진행 줄 "Compacting"); `local_command`가 있는 `result`는 턴 항목 없이 비용만; 합성·`<local-command-stdout>`·`<command-name>` user는 번역자의 말이 아니다(스트림과 디스크 모두) | 서버와 페이지가 같은 fold. 녹화로 시험한다 |
+| 호스트: `local_command` 결과는 `agent_turn`에 기록하지 않는다(번역자의 턴이 아니다); 대화를 읽어 올 때 `includeSystemMessages: true` | 기록이 턴을 세는 자리(§13)를 어지럽히지 않는다; 압축 자리가 보인다 |
+| 압축 전 질문이 디스크에서 사라진 것은 그대로 둔다: 다시 연 대화는 "Compacted" 줄부터 | Claude Code의 사슬이 그렇다(`claude --resume`도 같다). 파일을 직접 읽지 않는다(§13) |
+| 창: 머리줄의 버튼 → 팝오버. 막대(`totalTokens/maxTokens`), 분류 비율, Plan usage(5시간·7일 사용률과 초기화 시각 — `limits.windows`에서; 없으면 숨김), **Compact the conversation** | Octave와 같은 모양. 요금제는 실험적 호출 대신 턴마다 공짜로 오는 것 |
+| `/live`에 `context { convId }` → `context { convId, usage }`(`full`; 프로세스가 없으면 `usage: null`, 창은 "다음 메시지부터 보여요"), `compact { convId }` → `send("/compact")`와 같은 길(started·snapshot) | 서버가 묻고 페이지는 받는다 |
+| 작업 대화에는 없다 | 한 번 답하고 끝난다 |
+
+### 32.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절, 녹화, `record.mjs --then`, 갤러리 | `docs/agent.md`, `fixtures/compact.*`, `record.mjs`, `gallery/ContextGallery.tsx` | 번역자 확인 |
+| 2 | fold와 호스트 | `fold.mjs`(+`.d.mts`), `host.mjs`, `lib/trace.ts`, `Thread.tsx` | 서버 `fold.test`: 녹화를 접으면 user 항목은 둘(질문 둘), compact 항목 하나(5028→1087), 턴 둘; 디스크 쪽도 요약·명령이 user가 아님. `host.test`: `/compact` 결과는 기록되지 않음. HEAD에서 실패 확인 |
+| 3 | 서버 `context`·`compact`, 페이지의 창 | `session.mjs`, `host.mjs`, `live.mjs`, `protocol.mjs`, `api.ts`, `http.ts`, `useClaude.ts`, `ContextPopover.tsx`, `ClaudeTab.tsx` | 단위(가짜 query): `context`가 `getContextUsage`를 부름. e2e: 가짜 서버의 `context` 답이 창에; Compact 버튼이 `compact`를 보냄; 녹화의 압축을 재생하면 "Compacting" 뒤 "Compacted 5.0k → 1.1k". HEAD에서 실패 확인 |
