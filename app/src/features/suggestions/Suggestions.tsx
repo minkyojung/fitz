@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { IconCheck, IconMessage, IconSparkles, IconX } from "@tabler/icons-react"
+import { IconCheck, IconMessage, IconPlayerStopFilled, IconSparkles, IconX } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,12 +18,14 @@ interface Props {
   segments: Segment[]
   run: TaskRun | undefined
   onRun: () => void
+  /** Stop the run going on (docs/agent.md §28). */
+  onStop: () => void
   onDecide: (s: Suggestion, decision: SuggestionDecision) => Promise<unknown>
 }
 
 /** Claude's suggestions on the chapter (docs/agent.md §4.1), under the Claude tab's head: one line to start the task
  *  and see it go, then a card for each. The text only points at them; each is decided with its card's buttons. */
-export function Suggestions({ task, segments, run, onRun, onDecide }: Props) {
+export function Suggestions({ task, segments, run, onRun, onStop, onDecide }: Props) {
   const ctx = useSuggestions()
   if (!ctx) return null
   const t = TASK[task]
@@ -32,11 +34,15 @@ export function Suggestions({ task, segments, run, onRun, onDecide }: Props) {
     <div>
       <div data-run={run?.state ?? "idle"} className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
         {run?.state === "running" ? (
-          <span className="text-muted-foreground"><IconSparkles className="mr-1 inline size-3.5 animate-pulse" />Claude is reading the chapter…</span>
+          <>
+            <span className="text-muted-foreground"><IconSparkles className="mr-1 inline size-3.5 animate-pulse" />Claude is reading the chapter…</span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={onStop}><IconPlayerStopFilled data-icon="inline-start" />Stop</Button>
+          </>
         ) : (
           <>
             <Button size="sm" variant="outline" onClick={onRun}><IconSparkles data-icon="inline-start" />{t.start}</Button>
             {run?.state === "done" && <span className="text-muted-foreground">{open.length ? t.found(open.length) : "No open suggestions"}</span>}
+            {run?.state === "stopped" && <span className="text-muted-foreground">Stopped</span>}
             {run?.state === "failed" && <span className="text-destructive">{run.message}</span>}
           </>
         )}

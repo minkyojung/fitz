@@ -30,6 +30,13 @@ test("a snapshot no longer at work with no turn ended says the run ended without
   assert.equal(nextRun(running, { type: "snapshot", convId: "c", state: { status: "idle", items } }), running, "a server that does not say goes on as before")
 })
 
+test("a run the translator stopped is stopped, not failed (docs/agent.md §28)", () => {
+  assert.deepEqual(nextRun(running, result({ subtype: "success", terminal_reason: "aborted_streaming", is_error: true })), { state: "stopped" })
+  assert.deepEqual(nextRun(running, result({ subtype: "success", terminal_reason: "aborted_tools", is_error: true })), { state: "stopped" })
+  const items = [{ kind: "user", text: "Review" }, { kind: "turn", reason: "aborted_streaming", isError: true }]
+  assert.deepEqual(nextRun(running, { type: "snapshot", convId: "c", state: { status: "idle", items }, working: false }), { state: "stopped" }, "after a reconnect too")
+})
+
 test("an ended run stays as it ended", () => {
   const failed: TaskRun = { state: "failed", message: "x" }
   assert.equal(nextRun(failed, result({ subtype: "success", is_error: false })), failed)

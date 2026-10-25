@@ -2,7 +2,7 @@
  *  events of its conversation on the live connection. A task answers once, so its first turn's end is its end. */
 import type { LiveEvent } from "./live.ts"
 
-export type TaskRun = { state: "running" } | { state: "done" } | { state: "failed"; message: string }
+export type TaskRun = { state: "running" } | { state: "done" } | { state: "stopped" } | { state: "failed"; message: string }
 
 type Turn = { reason: string; isError: boolean }
 
@@ -20,12 +20,16 @@ function turnIn(e: LiveEvent): Turn | null {
   return null
 }
 
-/** The run after one event of its conversation. Once it has ended it stays as it ended. */
+const STOPPED = new Set(["aborted_streaming", "aborted_tools"])
+
+/** The run after one event of its conversation. Once it has ended it stays as it ended. A turn the translator stopped
+ *  (docs/agent.md §28) is stopped, not failed: not an error, their act. */
 export function nextRun(run: TaskRun, e: LiveEvent): TaskRun {
   if (run.state !== "running") return run
   if (e.type === "error") return { state: "failed", message: String(e.message) }
   const turn = turnIn(e)
   // no longer at work with no turn ended: its Claude Code went before answering (the server restarted, say)
   if (!turn) return e.type === "snapshot" && e.working === false ? { state: "failed", message: "Claude Code stopped before answering" } : run
+  if (STOPPED.has(turn.reason)) return { state: "stopped" }
   return turn.isError ? { state: "failed", message: `Claude stopped before answering (${turn.reason})` } : { state: "done" }
 }

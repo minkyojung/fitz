@@ -174,6 +174,7 @@ export function App() {
           suggest={{
             task, run: book.chapterId !== null ? book.suggest.runs[`${task}:${book.chapterId}`] : undefined,
             onRun: () => { if (book.chapterId !== null) book.suggest.run(task, book.chapterId) },
+            onStop: () => { if (book.chapterId !== null) book.suggest.stop(task, book.chapterId) },
             onDecide: book.suggest.decide,
           }}
         />

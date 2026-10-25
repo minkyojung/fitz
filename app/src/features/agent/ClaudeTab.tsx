@@ -21,7 +21,7 @@ interface Props {
   /** Brings the cursor to the box (Ask Claude). */
   focusToken: number
   segments: Segment[]
-  suggest: { task: TaskName; run: TaskRun | undefined; onRun: () => void; onDecide: (s: Suggestion, decision: SuggestionDecision) => Promise<unknown> }
+  suggest: { task: TaskName; run: TaskRun | undefined; onRun: () => void; onStop: () => void; onDecide: (s: Suggestion, decision: SuggestionDecision) => Promise<unknown> }
 }
 
 /** Everything Claude (docs/agent.md §17): one head row — the conversation, and this chapter's suggestions folded away
@@ -45,7 +45,7 @@ export function ClaudeTab({ claude, focusToken, segments, suggest }: Props) {
           </Button>
         </div>
         <CollapsibleContent className="max-h-[45vh] overflow-auto border-t">
-          <Suggestions task={suggest.task} segments={segments} run={suggest.run} onRun={suggest.onRun} onDecide={suggest.onDecide} />
+          <Suggestions task={suggest.task} segments={segments} run={suggest.run} onRun={suggest.onRun} onStop={suggest.onStop} onDecide={suggest.onDecide} />
         </CollapsibleContent>
       </Collapsible>
       <Thread claude={claude} />

@@ -217,3 +217,30 @@ test("a review at work goes on showing after a reload, then what it found (docs/
   await expect(page.locator("[data-run]")).toContainText("1 suggestion")
   await post(request, "undo")
 })
+
+test("a review at work is stopped from its line: the server is told, and the line says Stopped, not an error (docs/agent.md §28)", async ({ page, request }) => {
+  let live: WebSocketRoute | null = null
+  const said: { type: string; convId: string }[] = []
+  await page.routeWebSocket("**/live", (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => { const msg = JSON.parse(String(m)); if (msg.type === "start" || msg.type === "stop") said.push(msg); else server.send(m) })
+    live = ws
+  })
+  const { id } = await open(page, "Translate")
+  await translate(request, id, "Claude가 읽을 번역입니다.")
+  await open(page, "Translate")
+  await showSuggestions(page)
+  await page.getByRole("button", { name: "Review this chapter with Claude" }).click()
+  await expect(page.locator("[data-run]")).toContainText("Claude is reading the chapter…")
+  await expect.poll(() => said.length).toBe(1)
+  await page.locator("[data-run]").getByRole("button", { name: "Stop" }).click()
+  await expect.poll(() => said.map((m) => m.type)).toEqual(["start", "stop"])
+  expect(said[1].convId).toBe(said[0].convId)
+
+  live!.send(JSON.stringify({ type: "message", convId: said[0].convId, message: { type: "result", subtype: "success", terminal_reason: "aborted_streaming", is_error: true } }))
+  await expect(page.locator("[data-run]")).toHaveAttribute("data-run", "stopped")
+  await expect(page.locator("[data-run]")).toContainText("Stopped")
+  await expect(page.locator("[data-run]")).not.toContainText("before answering")
+  await expect(page.getByRole("button", { name: "Review this chapter with Claude" })).toBeVisible()
+  await post(request, "undo")
+})

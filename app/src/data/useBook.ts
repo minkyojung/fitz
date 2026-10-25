@@ -63,10 +63,13 @@ export function useBook() {
   const [runs, setRuns] = useState<Record<string, TaskRun>>({})
   // the task conversations heard here, so none is heard twice: one begun here is in the server's list too
   const heard = useRef(new Set<string>())
+  // the conversation of each run, for a Stop to name it (docs/agent.md §28)
+  const conversationOf = useRef(new Map<string, string>())
   /** Hear a run until it ends; begun now when `begin`. */
   const followTask = useCallback((convId: string, task: TaskName, chapterId: number, begin = false) => {
     if (heard.current.has(convId)) return
     heard.current.add(convId)
+    conversationOf.current.set(`${task}:${chapterId}`, convId)
     api.followTask(convId, (run) => setRuns((r) => ({ ...r, [`${task}:${chapterId}`]: run })), begin ? { task, chapterId } : undefined)
   }, [])
   // Claude's tasks still at work go on showing on a page opened again, or back after a reconnect (docs/agent.md §23)
@@ -336,6 +339,7 @@ export function useBook() {
   const suggest = useMemo(() => ({
     runs,
     run: (task: TaskName, id: number) => followTask(crypto.randomUUID(), task, id, true),
+    stop: (task: TaskName, id: number) => { const convId = conversationOf.current.get(`${task}:${id}`); if (convId) api.stopTurn(convId) },
     decide: (s: Suggestion, decision: SuggestionDecision) =>
       mutate(DECISION_LABEL[decision], async () => {
         await api.decideSuggestion(s.id, decision)
