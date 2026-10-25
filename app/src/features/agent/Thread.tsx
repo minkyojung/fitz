@@ -54,15 +54,18 @@ const ICON: Record<string, React.ReactNode> = {
 export function Thread({ claude }: { claude: Claude }) {
   const { view, pending } = claude
   const blocks = blocksOf(view.state.items)
-  const working = view.state.status !== "idle" || pending !== null
+  const turning = view.state.status !== "idle"
+  const working = turning || pending !== null
+  // sent while the turn goes (§33): the server's queue, and the one the server has not yet taken
+  const queued = [...view.queue.map((q) => q.text), ...(pending !== null && turning ? [pending] : [])]
   /** A turn's checks are kept by the translator's message that began it. */
   const checksAt = (i: number) => { const began = blocks[i - 1]; return began?.kind === "user" ? claude.checksOf(began.item.uuid) : null }
   // The turn going on has its message from Enter, its one live line at the end (docs/agent.md §26): before the echo
   // under the words sent, then under the echo, then the block its first finished part opens. Keyed by the message
   // that began the turn, so it is not drawn anew when a part finishes or the turn ends.
   const last = blocks.at(-1)
-  const open = working && pending === null && last?.kind === "claude" && !last.turn ? last : null
-  const line = working ? liveLine({ sent: pending !== null, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0, retry: view.state.retry, compacting: view.state.compacting }) : null
+  const open = working && (pending === null || turning) && last?.kind === "claude" && !last.turn ? last : null
+  const line = working ? liveLine({ sent: pending !== null && !turning, live: view.state.live, began: Boolean(open?.parts.length), waiting: view.asks.length > 0, retry: view.state.retry, compacting: view.state.compacting }) : null
   const since = view.startedAt ?? claude.sentAt
   const current = { line, since, waiting: view.asks.length > 0 }
   const limits = view.state.limits
@@ -94,7 +97,7 @@ export function Thread({ claude }: { claude: Claude }) {
       <ClaudeMessage parts={[]} turn={null} limits={limits} live={live} current={current} stands={claude.stands} onUndo={claude.undoFrom} checks={null} undoable={[]} />
     </MessageScrollerItem>
   )
-  if (pending !== null) {
+  if (pending !== null && !turning) {
     items.push(
       <MessageScrollerItem key="pending" scrollAnchor>
         <UserMessage text={pending} />
@@ -104,6 +107,11 @@ export function Thread({ claude }: { claude: Claude }) {
   } else if (working && last?.kind === "user") items.push(empty(`${last.item.uuid}:0`, view.state.live))
   // at work with no open block to put the line in (a compaction, §32: no message of the translator's began it)
   else if (working && !open) items.push(empty(`${began}:${n}`, view.state.live))
+  queued.forEach((text, i) => items.push(
+    <MessageScrollerItem key={`queued:${i}`} scrollAnchor={i === queued.length - 1}>
+      <UserMessage text={text} queued />
+    </MessageScrollerItem>,
+  ))
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="min-h-0 flex-1">
@@ -133,17 +141,19 @@ export function Thread({ claude }: { claude: Claude }) {
   )
 }
 
-function UserMessage({ text }: { text: string }) {
+/** The translator's message; queued, it waits for Claude to reach it (§33): dimmed, and said so. */
+function UserMessage({ text, queued = false }: { text: string; queued?: boolean }) {
   const { pointed, text: words } = readPointed(text)
   return (
-    <Message align="end">
-      <MessageContent>
+    <Message align="end" data-queued={queued || undefined}>
+      <MessageContent className={queued ? "items-end opacity-60" : undefined}>
         <Bubble align="end" variant="muted">
           <BubbleContent className="space-y-1 text-sm/relaxed whitespace-pre-wrap">
             {pointed && <Pointed pointed={pointed} />}
             <p lang="ko">{words}</p>
           </BubbleContent>
         </Bubble>
+        {queued && <span className="text-xs text-muted-foreground">Queued</span>}
       </MessageContent>
     </Message>
   )

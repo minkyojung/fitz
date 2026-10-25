@@ -404,6 +404,44 @@ test("the Context window: how full as the server says, the plan's windows from t
   expect(await fake.last("compact")).toEqual({ type: "compact", convId })
 })
 
+test("sent while Claude answers, a message waits as Queued until Claude reaches it; a Stop drops what waits (docs/agent.md §33)", async ({ page }) => {
+  const fake = await fakeServer(page)
+  const box = await openClaude(page)
+  await box.fill("¶4의 뉘앙스는?")
+  await box.press("Enter")
+  const { convId } = await fake.last("start")
+  fake.tell({ type: "snapshot", convId, state: foldMessages([]), asks: [] })
+  fake.play(convId!, nuance.slice(0, 60))  // the turn runs
+  await expect(page.locator("[data-live-line]")).toBeVisible()
+
+  await expect(box).toBeEnabled()  // the box stays open while Claude answers
+  await box.fill("그리고 ¶5는?")
+  await box.press("Enter")
+  await expect.poll(() => fake.said.filter((m) => m.type === "send").length).toBe(2)
+  const queued = thread(page).locator("[data-queued]")
+  await expect(queued).toHaveCount(1)
+  await expect(queued).toContainText("그리고 ¶5는?")
+  await expect(queued).toContainText("Queued")
+  await expect(page.locator("[data-live-line]")).not.toContainText("Starting")  // the turn goes on; nothing starts
+  fake.tell({ type: "queued", convId, uuid: "u2", text: "그리고 ¶5는?" })
+  await expect(queued).toHaveCount(1)  // the server took it: still the one bubble
+
+  fake.tell({ type: "message", convId, message: { type: "user", isReplay: true, uuid: "u2", session_id: "s", message: { role: "user", content: "그리고 ¶5는?" }, parent_tool_use_id: null } })
+  await expect(queued).toHaveCount(0)  // delivered: a message like any
+  await expect(thread(page).getByText("그리고 ¶5는?")).toBeVisible()
+
+  await box.fill("이건 취소될 말")
+  await box.press("Enter")
+  await expect.poll(() => fake.said.filter((m) => m.type === "send").length).toBe(3)
+  fake.tell({ type: "queued", convId, uuid: "u3", text: "이건 취소될 말" })
+  await expect(queued).toHaveCount(1)
+  await page.getByRole("button", { name: "Stop" }).click()
+  await fake.last("stop")
+  fake.tell({ type: "dropped", convId, uuids: ["u3"] })
+  await expect(queued).toHaveCount(0)
+  await expect(thread(page).getByText("이건 취소될 말")).toHaveCount(0)
+})
+
 /** Select words inside a block, as a person dragging over them would. */
 async function selectWords(block: import("@playwright/test").Locator, words: string) {
   await block.evaluate((el, w: string) => {

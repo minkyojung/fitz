@@ -27,21 +27,32 @@ export interface ConversationView {
   title: string | null
   /** When the turn going on began, as the server says (epoch ms; null when none): the live line's time counts from it. */
   startedAt: number | null
+  /** Sent while a turn went and not yet delivered (docs/agent.md §33): delivered, each becomes a user item. */
+  queue: { uuid: string; text: string }[]
 }
 
-export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null, config: null, title: null, startedAt: null })
+export const emptyView = (): ConversationView => ({ loaded: false, state: emptyConversation(), asks: [], error: null, config: null, title: null, startedAt: null, queue: [] })
 const configOf = (e: LiveEvent) => (typeof e.model === "string" && typeof e.effort === "string" ? { model: e.model, effort: e.effort } : null)
 const titleOf = (e: LiveEvent) => (typeof e.title === "string" ? e.title : null)
 const startedAtOf = (e: LiveEvent) => (typeof e.startedAt === "number" ? e.startedAt : null)
+const queueOf = (e: LiveEvent) => (Array.isArray(e.queue) ? (e.queue as { uuid: string; text: string }[]) : [])
 
 /** The conversation after one of its events. */
 export function applyEvent(view: ConversationView, e: LiveEvent): ConversationView {
   switch (e.type) {
     case "snapshot":
-      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null, config: configOf(e), title: titleOf(e), startedAt: startedAtOf(e) }
+      return { loaded: true, state: e.state as Conversation, asks: (e.asks as Ask[]) ?? [], error: null, config: configOf(e), title: titleOf(e), startedAt: startedAtOf(e), queue: queueOf(e) }
     case "message": {
       const message = e.message as SdkMessage
-      return { ...view, state: applyMessage(view.state, message), ...(message.type === "result" && { startedAt: null }) }
+      // the echo of a queued message is its delivery
+      const queue = message.type === "user" && message.isReplay ? view.queue.filter((q) => q.uuid !== message.uuid) : view.queue
+      return { ...view, state: applyMessage(view.state, message), queue, ...(message.type === "result" && { startedAt: null }) }
+    }
+    case "queued":
+      return { ...view, queue: [...view.queue.filter((q) => q.uuid !== e.uuid), { uuid: String(e.uuid), text: String(e.text) }] }
+    case "dropped": {
+      const gone = new Set((e.uuids as string[]) ?? [])
+      return { ...view, queue: view.queue.filter((q) => !gone.has(q.uuid)) }
     }
     case "ask":
       return { ...view, asks: [...view.asks.filter((a) => a.requestId !== (e.ask as Ask).requestId), e.ask as Ask] }

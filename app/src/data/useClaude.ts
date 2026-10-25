@@ -38,10 +38,12 @@ export function useClaude() {
 
   const users = view.state.items.filter((i) => i.kind === "user").length
   const echoed = useRef(users)
+  // echoed, or taken by the server into its queue (§33), or lost to trouble: no longer the page's to show
+  const taken = pending !== null && view.queue.some((q) => q.text === pending)
   useEffect(() => {
-    if (users > echoed.current || view.error) setPending(null)
+    if (users > echoed.current || view.error || taken) setPending(null)
     echoed.current = users
-  }, [users, view.error])
+  }, [users, view.error, taken])
 
   const follow = useCallback((id: string, start?: { model: string; effort: string }) => {
     unfollow.current?.()

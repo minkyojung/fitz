@@ -859,3 +859,5 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 | 1 | 이 절 | `docs/agent.md` | |
 | 2 | 서버 | `host.mjs`, `session.mjs`(cancelQueued), `protocol.mjs` | 가짜 세션: 턴 중 `send`가 턴을 덮지 않고 `queued`를 말함; 에코 뒤 결과 하나에 기록 하나; 결과 뒤 에코가 오면 새 턴과 `started`; snapshot의 `queue`; stop이 `cancelQueued`로 부르고 `dropped`를 말함. 실제(Haiku): 셋을 보내 결과 하나·기록 하나 |
 | 3 | 페이지 | `conversation.ts`(queue), `useClaude.ts`, `Composer.tsx`, `Thread.tsx` | 단위: `applyEvent`의 queued/에코/dropped. e2e: 일하는 중 보내면 "Queued" 말풍선, 에코 뒤 보통 말풍선, Stop 뒤 사라짐. HEAD에서 실패 확인 |
+
+**결과**(2026-10-25): 페이지의 `pending`(서버가 아직 받지 않은 하나)과 서버의 `queue`(받았지만 전달 전)를 나눠 둔다: 턴 중 보낸 말은 흐린 "Queued" 말풍선으로 진행 줄 아래, 서버가 `queued`로 받으면 그 목록으로, 에코가 오면 보통 말풍선, `dropped`면 사라진다. 진행 줄은 그대로 하나("Starting"은 턴이 없을 때만). 서버 279(+실제 2), 화면 단위 74, e2e 74 중 73(glossary는 책 데이터, §32). 검증 스크립트는 끊겨도 임시 작업 트리를 치운다.

@@ -20,7 +20,9 @@ export function Composer({ claude, focusToken }: { claude: Claude; focusToken: n
   // the models and their efforts as Claude Code offers them (docs/agent.md §31); one the list does not name keeps its id
   const model = claude.models.find((m) => m.id === claude.config.model)
   const efforts = model?.efforts.length ? model.efforts : ["low", "medium", "high"]
-  const canSend = !working && text.trim().length > 0
+  // sent while Claude answers, a message joins the turn or begins the next (§33): the box stays open; only one at a
+  // time waits for the server to take it
+  const canSend = claude.pending === null && text.trim().length > 0
   const send = () => {
     if (!canSend) return
     claude.send(text.trim())

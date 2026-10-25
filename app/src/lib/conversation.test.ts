@@ -63,6 +63,18 @@ test("when the turn going on began: from the snapshot or as it starts, and none 
   assert.equal(play([{ type: "snapshot", state: foldMessages([]), asks: [], startedAt: 2_000 }]).startedAt, 2_000, "opened mid-turn")
 })
 
+test("sent while a turn goes: queued until its echo, or until a stop drops it (docs/agent.md §33)", () => {
+  let view = play([{ type: "snapshot", state: foldMessages([]), asks: [], queue: [{ uuid: "u1", text: "first" }] }])
+  assert.deepEqual(view.queue, [{ uuid: "u1", text: "first" }], "from the snapshot")
+  view = play([{ type: "queued", uuid: "u2", text: "second" }, { type: "queued", uuid: "u2", text: "second" }], view)
+  assert.deepEqual(view.queue.map((q) => q.uuid), ["u1", "u2"], "once each")
+  view = play([{ type: "message", message: { type: "user", isReplay: true, uuid: "u1", message: { role: "user", content: "first" } } }], view)
+  assert.deepEqual(view.queue.map((q) => q.uuid), ["u2"], "delivered: a user item now")
+  assert.equal(view.state.items.at(-1)?.kind, "user")
+  assert.deepEqual(play([{ type: "dropped", uuids: ["u2"] }], view).queue, [])
+  assert.deepEqual(play([{ type: "snapshot", state: foldMessages([]), asks: [] }]).queue, [], "none said: none")
+})
+
 test("what the translator pointed at goes before their words, and comes apart again for showing", () => {
   const sent = withPointed("말장난이야?", { segmentId: 604, side: "source", quote: "reserve all judgments" })
   assert.equal(sent, "¶604 (English): “reserve all judgments”\n\n말장난이야?")
