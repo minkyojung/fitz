@@ -689,3 +689,21 @@ Octave의 답(같은 Streamdown)이 더 읽기 좋은 까닭을 두 앱의 코�
 | 2 | 답의 읽기 규칙 | `Thread.tsx`(`Words`), `index.css`(`--answer`) | e2e: 녹화된 답의 글자 15px·단어 끊지 않음·문단 사이 16px·제목이 본문보다 큼·목록 점 바깥·인용 기울이지 않음. HEAD에서 실패 확인 |
 
 **결과**(2026-10-25): e2e가 녹화된 답을 재생해 계산된 스타일을 본다 — 15px, `keep-all`, 문단 사이 16px, 제목 18.75px, 목록 점 바깥, 인용 똑바로, 글자색 `--answer`. HEAD에서는 14px에서 실패했다. 맨 앞 블록의 위 여백은 0(Octave의 `first-child:mt-0`: 답이 제목으로 시작해도 뜨지 않게, 갤러리도 같게). 실제 에디터(패널 233px)에서 같은 답을 눈으로 확인. e2e 68.
+
+## 28. 작업 멈추기 (2026-10-25)
+
+리뷰·OCR 작업은 최대 60턴·$5까지 가는데(§4.2) 화면에 멈출 길이 없었다. 멈추기 자체는 있다: 서버의 `stop`(`host.stop` → `interrupt()`, 멈춘 턴은 검사하지 않음)과 페이지의 `stopTurn`. 측정(§8): 멈춘 턴의 `result`는 `terminal_reason: "aborted_streaming"`, `is_error: true`; 세션은 살아 있다.
+
+| 정한 것 | 왜 |
+|---|---|
+| "Claude is reading the chapter…" 옆에 Stop. 누르면 그 작업 대화에 `stop` | 대화의 Stop과 같은 길. 서버는 바뀌지 않는다 |
+| 멈춘 작업은 `TaskRun`의 새 상태 `stopped`: 줄에 "Stopped"(흐린 글자), 버튼이 돌아온다 | 사람이 멈춘 것은 오류가 아니다(§19의 원칙). 지금은 "Claude stopped before answering (aborted_streaming)"이 빨갛게 보인다 |
+| `nextRun`: `reason`이 `aborted_streaming`·`aborted_tools`면 `stopped`, 다른 `is_error`는 지금처럼 `failed` | 화면 단위로 가른다 |
+| 페이지는 작업 대화의 id를 `runs`의 키(`task:chapter`)로 기억해 둔다 | Stop이 어느 대화를 멈출지 알아야 한다. 다시 붙은 페이지(§23)도 목록에서 같은 id를 받는다 |
+| 멈춘 작업 대화의 Claude Code는 끝난 작업의 것처럼 서버가 닫힐 때까지 산다 | 지금과 같다. 작업 대화의 프로세스 정리는 따로 정할 일 |
+
+### 28.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절과 Stop | `lib/taskRun.ts`, `useBook.ts`, `App.tsx`, `Suggestions.tsx` | 단위: `nextRun`의 `stopped`. e2e: 리뷰 중 Stop → 가짜 서버가 `stop {convId}`를 받음 → `aborted_streaming` 결과 → "Stopped"와 버튼. HEAD에서 실패 확인 |
