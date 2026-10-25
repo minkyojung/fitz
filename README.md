@@ -111,7 +111,7 @@ cd app && pnpm test:unit   # keymap 단위 테스트
 - **경고·통계**: Export 화면이 `exportSummary`로 미리 보여 줌(장별 미번역·미배치 수, 주석 수, 원고지 환산은 번역문 글자만). 파일명 `제목_장범위_날짜.docx`.
 - 댓글은 내보내지 않음. 설정은 저장하지 않음(기본 A).
 
-처음 한 번 `cd server && pnpm install`. 테스트: `node --test server/`(모델·XML 검사), `cd app && pnpm e2e`(다운로드까지).
+처음 한 번 `cd server && pnpm install`. 테스트: `cd server && pnpm test`(모델·XML 검사), `cd app && pnpm e2e`(다운로드까지).
 
 ## 용어집
 
@@ -154,7 +154,7 @@ cd app && pnpm test:unit   # keymap 단위 테스트
 `segment_version`은 병합 시 삭제되며 복원하지 않는다(번역문 히스토리는 아직 미사용).
 
 ```sh
-node --test server/      # 명령 왕복·내보내기 단위 테스트
+cd server && pnpm test  # 명령 왕복·내보내기 단위 테스트
 ```
 
 ## 세그먼트 위치 (segment_box)
