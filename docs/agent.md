@@ -76,7 +76,7 @@ app/src/
 | `book` | 책과 차례 | — | `{ id, title, author, chapters: [{ id, idx, title, startPage, segmentCount, confirmedCount }] }` | `getBook`, `listChapters` |
 | `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다. 저자 미주에는 번역문에서 번호가 붙은 단어(`placedAfter`, 없으면 null) | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, version, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
 | `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
-| `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로) | `query` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
+| `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로). `side: "target"`이면 번역문에서(§34) | `query`, `side` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
 | `annotations` | 장의 주석 전부와 열린 댓글 스레드(답글 포함), 단락의 글 없이. 둘 다 없는 단락은 빠진다 | `chapterId`, `from`(`next`로 받은 값) | `{ paragraphs: [{ segmentId, idx, status, notes, comments }], next? }` — `notes`·`comments`는 `read`와 같은 모양, 같은 예산 | `listAnnotations`와 같은 것 |
 
 - `read`가 주석·용어를 동봉하므로 단락 하나를 번역하는 데 읽기 호출은 1번이다.

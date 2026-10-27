@@ -112,7 +112,7 @@ export function annotations(db, { chapterId, from = 0 }) {
 export const glossary = (db) =>
   ({ terms: listGlossary(db, { bookId: getBook(db).id }).map(({ term, translation, aliases, kind, occurrences }) => ({ term, translation, aliases, kind, occurrences })) })
 
-export const searchBook = (db, { query }) => ({ hits: search(db, { query }) })
+export const searchBook = (db, { query, side }) => ({ hits: search(db, { query, side }) })
 
 // --- writes: the agent's door. Each is recorded as the agent's, with the id of the tool call that made it.
 
@@ -345,8 +345,11 @@ export const readTools = (db) => [
     async (args) => result(read(db, args)), READ_ONLY),
   tool("glossary", "The book's glossary: each source term, its agreed Korean form (empty = not decided yet), accepted variants, kind, and how many paragraphs mention it.",
     {}, async () => result(glossary(db)), READ_ONLY),
-  tool("search", "Find paragraphs whose English source contains the exact text (case-sensitive). Returns where, how many times, and a snippet.",
-    { query: z.string().min(1).describe("Exact text to find") },
+  tool("search", "Find paragraphs whose English source — or, with side \"target\", whose Korean translation — contains the exact text (case-sensitive). Returns where, how many times, and a snippet.",
+    {
+      query: z.string().min(1).describe("Exact text to find"),
+      side: z.enum(["source", "target"]).optional().describe("source (default): the English; target: the translation so far"),
+    },
     async (args) => result(searchBook(db, args)), READ_ONLY),
   tool("annotations",
     "What is attached to a chapter's paragraphs, without their text: every note (author's notes with their translation and placedAfter, translator's notes) and the comment threads still open, with their replies. " +

@@ -25,7 +25,7 @@ export function toolLine(t: Tool): { title: string; note?: string } | null {
     }
     case "book": return { title: "Looked at the book's chapters" }
     case "glossary": return { title: "Read the glossary" }
-    case "search": return { title: `Searched “${String(i.query ?? "")}”` }
+    case "search": return { title: `Searched ${i.side === "target" ? "the translation for " : ""}“${String(i.query ?? "")}”` }
     case "annotations": return { title: "Looked at the chapter's notes and comments" }
     case "WebSearch": return { title: `Searched the web for “${String(i.query ?? "")}”` }
     case "set_translation": return write(`Writing the translation of ${p}`, `Wrote the translation of ${p}`, `Did not write the translation of ${p}`)

@@ -266,6 +266,15 @@ test("search lists matching segments with counts and snippets in book order", ()
   assert.deepEqual(search(db, { query: "" }), [])
 })
 
+test("search finds in the translation with side target, and in the source by default", () => {
+  const db = fixture()
+  execute(db, "updateSegment", { id: 3, targetDoc: JSON.parse(pmDoc("감마와 감마")) })
+  assert.deepEqual(search(db, { query: "감마", side: "target" }).map((h) => [h.segmentId, h.count, h.snippet]), [[3, 2, "감마와 감마"]])
+  assert.deepEqual(search(db, { query: "감마" }), [])
+  assert.deepEqual(search(db, { query: "a", side: "source" }), search(db, { query: "a" }))
+  assert.throws(() => search(db, { query: "a", side: "both" }), { status: 400 })
+})
+
 test("replaceInDoc keeps marks and replaces inside each text node", () => {
   const { doc, count } = replaceInDoc(ITALIC_DOC, "a", "A")
   assert.equal(count, 5)

@@ -786,18 +786,21 @@ export const listChapters = (db) =>
               FROM chapter c LEFT JOIN segment s ON s.chapter_id = c.id GROUP BY c.id ORDER BY c.idx`).all()
     .map((r) => ({ id: r.id, idx: r.idx, title: r.title, startPage: r.start_page, segmentCount: r.n, verifiedCount: r.v, confirmedCount: r.t }))
 
-/** Segments whose text contains `query` (case-sensitive, literal), book order. */
-export const search = (db, { query }) => {
+/** Segments whose text contains `query` (case-sensitive, literal), book order: the source, or with side "target" the
+ *  translation. */
+export const search = (db, { query, side = "source" }) => {
   if (!query) return []
-  return db.prepare(`SELECT s.id, s.chapter_id, c.title, s.page_start, s.source_text, s.source_doc
+  if (!["source", "target"].includes(side)) throw httpError(400, "bad side")
+  const col = side === "source" ? "source_text" : "target_text"
+  return db.prepare(`SELECT s.id, s.chapter_id, c.title, s.page_start, s.${col} AS text, s.source_doc
                      FROM segment s JOIN chapter c ON c.id = s.chapter_id
-                     WHERE instr(s.source_text, ?) > 0 ORDER BY c.idx, s.idx`).all(query)
+                     WHERE instr(s.${col}, ?) > 0 ORDER BY c.idx, s.idx`).all(query)
     .map((r) => {
-      const at = r.source_text.indexOf(query)
+      const at = r.text.indexOf(query)
       return {
         segmentId: r.id, chapterId: r.chapter_id, chapterTitle: r.title, pageStart: r.page_start,
-        count: r.source_text.split(query).length - 1,
-        snippet: r.source_text.slice(Math.max(0, at - 40), at + query.length + 40),
+        count: r.text.split(query).length - 1,
+        snippet: r.text.slice(Math.max(0, at - 40), at + query.length + 40),
       }
     })
 }

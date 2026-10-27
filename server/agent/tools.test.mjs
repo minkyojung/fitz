@@ -131,6 +131,7 @@ test("glossary and search", () => {
     { term: "Zemurray", translation: "제무레이", aliases: "샘 제무레이", kind: "person", occurrences: 1 },
   ] })
   assert.deepEqual(searchBook(db, { query: "banana" }).hits.map((h) => [h.segmentId, h.count]), [[3, 1]])
+  assert.deepEqual(searchBook(db, { query: "바나나", side: "target" }).hits.map((h) => [h.segmentId, h.count]), [[3, 1]])
 })
 
 test("annotations: a chapter's notes and open threads by paragraph, without the paragraphs' text", () => {
