@@ -861,3 +861,47 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 | 3 | 페이지 | `conversation.ts`(queue), `useClaude.ts`, `Composer.tsx`, `Thread.tsx` | 단위: `applyEvent`의 queued/에코/dropped. e2e: 일하는 중 보내면 "Queued" 말풍선, 에코 뒤 보통 말풍선, Stop 뒤 사라짐. HEAD에서 실패 확인 |
 
 **결과**(2026-10-25): 페이지의 `pending`(서버가 아직 받지 않은 하나)과 서버의 `queue`(받았지만 전달 전)를 나눠 둔다: 턴 중 보낸 말은 흐린 "Queued" 말풍선으로 진행 줄 아래, 서버가 `queued`로 받으면 그 목록으로, 에코가 오면 보통 말풍선, `dropped`면 사라진다. 진행 줄은 그대로 하나("Starting"은 턴이 없을 때만). 서버 279(+실제 2), 화면 단위 74, e2e 74 중 73(glossary는 책 데이터, §32). 검증 스크립트는 끊겨도 임시 작업 트리를 치운다.
+
+## 34. 주석·댓글을 끝까지, 번역은 고칠 만큼만 — 도구 다섯과 인자 하나 (2026-10-27 계획)
+
+번역자가 화면에서 하는 일과 Claude의 도구를 맞대 봤다. 주석·댓글에는 붙이는 도구만 있다(`add_comment`, `add_translator_note`). 붙인 뒤의 일 — 저자 미주 번역, 미주 번호 자리, 역주 고치기, 답글, 해결 — 은 번역자만 한다. 번역문을 쓰는 도구도 단락을 통째로 다시 쓰는 `set_translation` 하나뿐이다. 프롬프트는 "고칠 만큼만"(§20)이라고 하는데, 몇 단어를 고칠 도구가 없다.
+
+측정(2026-10-27, `out/book.db`; 개수와 길이만 셌고 내용은 읽지 않았다):
+
+| 사실 | 값 |
+|---|---|
+| 저자 미주 | 146개 중 **번역된 것 0**, 번역문에 번호 자리가 정해진 것 9. 번역된 단락(74)에 걸린 미주 13개 중 5개는 자리가 없다. 내보내기의 `untranslatedNote`·`unplaced` 경고가 이것이다(`export.mjs`) |
+| 장 하나의 미주 | 많은 장은 22개·원문 3,868자, 가장 긴 미주는 1,149자. `READ_BUDGET`(2만 자)의 5분의 1 |
+| 댓글 | 13개: 번역자 10(열림 8), Claude 3(열림 3), 답글 0 |
+| 번역문의 이탤릭 | 74단락 중 0. `set_translation`이 평문으로 다시 써서 이탤릭을 지우는 일은 아직 일어나지 않는다 |
+| Claude의 쓰기 | `updateSegment` 78, `setGlossaryTerm` 29, `addNote` 4, `addComment` 3 |
+
+| 도구 | → 명령 | 정한 것 | 왜 |
+|---|---|---|---|
+| `edit_translation(segmentId, quote, replacement, expectVersion)` | `updateSegment { targetDoc: replaceRange(…), status: "draft", expectVersion }` | `quote`는 번역문에 한 번, 한 블록 안. `replacement`는 비워도 되고(지우기) 줄바꿈은 안 된다. 블록 하나를 비우게 되거나 번역이 아직 없으면 거절하고 `set_translation`을 가리킨다. 버전 검사를 먼저 한다. draft로 쓰는 것은 `set_translation`과 같다(원칙 4). `wrote`로 턴 검사(§19)에 든다 | 단락을 다시 타이핑하면 다른 문장이 몰래 바뀔 수 있고, 주석·댓글이 걸린 단어가 사라진다. 제안 수락(`decideSuggestion`)이 이미 같은 방식(`replaceRange`)이다. Claude Code의 Edit과 Write 같은 짝 |
+| `set_note(noteId, body?, quote?)` | `setNote { id, body, targetAnchor }` | 저자 미주: `body`는 그 번역, `quote`는 번호가 붙을 번역문의 단어. 역주: 본문을 고치고 자리를 옮긴다. 둘 중 하나는 있어야 한다. 원문(`body_source`)은 바꾸지 못한다. 출판되는 글이라 카드에 그렇게 쓴다 | 미주 146개가 모두 미번역이다. 미주 번역은 책 번역의 일이다 |
+| `read`: 저자 미주에 `placedAfter` | — | 번역문에서 번호가 붙은 단어(지금 글에서 찾아질 때). 못 찾으면 null | 자리 없는 미주를 Claude가 알아야 `set_note`를 쓴다. 화면의 임시 자리(`overlays.ts`)·내보내기의 `unplaced`와 같은 판정 |
+| `reply_comment(commentId, body)` | `addComment { parentId: 스레드의 첫 댓글 }` | `add_comment`의 인자가 아니라 따로: 인자로 두면 필수인 `segmentId`·`side`를 부모와 맞춰 보내야 한다. 답글에 답하면 스레드에 붙는다. 해결된 스레드에는 답하지 않는다(화면과 같다). 앵커는 없다 | 번역자가 댓글로 물은 것에 그 자리에서 답한다 |
+| `resolve_comment(commentId)` | `setComment { resolved: true }` | Claude가 연 스레드만. 번역자의 스레드에는 답글로 반영했다고 쓰고, 닫는 것은 번역자다(번역자 확인, 2026-10-27) | 원칙 5: 결정은 사람이 |
+| `annotations(chapterId, from?)` 읽기 | `listAnnotations`와 같은 것 | 장의 주석 전부와 열린 댓글 스레드(답글 포함)를 단락별로. `read`와 같은 모양, 같은 예산, 같은 `next` | "이 장 미주를 번역해 줘", "내 댓글에 답해 줘"를 본문을 다 읽지 않고 |
+| `search`에 `side` | `search { side }` | 기본은 원문(화면의 찾기 그대로). `target`이면 번역문에서 찾는다 | "다른 데서는 어떻게 옮겼지"를 단락마다 다시 읽지 않고 |
+
+하지 않는 것:
+- `set_translation` 카드에 "이탤릭이 사라진다"는 경고: 번역문 이탤릭이 0이다. 생기면 넣는다.
+- 주석·댓글을 지우는 도구: ⌘Z와 "Claude 변경 되돌리기"로 된다.
+- 번역 안 된 미주나 자리 없는 미주를 턴 검사(§19)의 실패로 삼기: 자리는 번역자의 선택일 수 있고, 검사가 턴을 되돌려 보내면 비용이 든다. 지금처럼 있던 자리를 잃은 것만 실패다.
+- 번역 이력 도구(Claude 초안을 번역자가 어떻게 고쳤는지): 필요가 드러나면.
+
+모든 쓰기 도구는 함께 고칠 곳이 같다: `tools.mjs`(함수, `describeWrite`, 도구, `WRITE_TOOL_NAMES`), `session.mjs`의 `SYSTEM_PROMPT`(쓰기 도구 이름; `session.test`가 확인한다), 화면의 `trace.ts`(`WRITE_TOOLS` — 빠지면 대화에서 되돌릴 수 없다 —, 줄, `DOING`)와 `Thread.tsx`(아이콘), §3 표와 `README.md`. 읽기 도구는 `READ_TOOL_NAMES`(→ `allowedTools`)와 `THE_BOOK`이다. 쓰는 명령(`updateSegment`·`setNote`·`addComment`·`setComment`)은 모두 이미 있고, 되돌리기의 겹침 판정(`touches`)도 이미 그것들을 안다.
+
+### 34.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절 | `docs/agent.md` | |
+| 2 | `edit_translation` | `tools.mjs`(`editTranslation`, 인용 위치를 `quoteAnchor`와 함께 쓰기, `describeWrite`, `set_translation` 설명에 짝), `session.mjs`(쓰기 도구 이름, "고칠 만큼만"에 도구), `checks.mjs`(`reasonFor`: 고칠 때 이 도구), 화면 `trace.ts`·`Thread.tsx`, §3·README | 단위: 다른 블록·이탤릭·주석 자리 단어가 그대로; 한 번이 아님/두 블록/줄바꿈/블록 비움/번역 없음/버전 다름 거절(버전이 먼저); reviewed → draft; ⌘Z; `describeWrite`가 같은 검사와 전후; MCP 처리기가 `wrote`를 부름. `trace.test` |
+| 3 | `set_note`, `read`의 `placedAfter` | `tools.mjs`, `checks.mjs`(머리 주석, `reasonFor`: 다시 놓기), `session.mjs`, `trace.ts`·`Thread.tsx`, §3·README | 단위: 저자 미주 번역과 자리, 역주 고치기·옮기기, 원문은 그대로, 인자 없음·인용·번역 없음 거절, ⌘Z, `placedAfter`(있음/잃음/없음) |
+| 4 | `reply_comment`, `resolve_comment` | `tools.mjs`, `session.mjs`, `trace.ts`·`Thread.tsx`, §3·README | 단위: 답글은 스레드의 첫 댓글에 Claude의 것으로; 답글에 답하면 스레드에; 해결된 스레드에 답하기 거절; 번역자 스레드·답글·이미 해결 거절; ⌘Z |
+| 5 | `annotations` | `tools.mjs`(`read`와 같은 단락별 모양을 함께 쓰기), `session.mjs`(`THE_BOOK`), `trace.ts`·`Thread.tsx`, §3·README | 단위: 주석 전부, 열린 스레드만(답글 포함), 아무것도 없는 단락은 빠짐, 예산과 `next`, 없는 장 404, 쪽 이미지·경로 없음 |
+| 6 | `search`의 `side` | `commands.mjs`(`search`), `tools.mjs`, `trace.ts`, §3 | 단위: 번역문 검색, 기본은 원문, 화면 route 그대로(`commands.test`) |
+| 끝 | 전부 | | server·unit·types·lint·e2e |
