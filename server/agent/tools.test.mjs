@@ -265,6 +265,7 @@ test("edit_translation is refused, with nothing written, when it cannot change j
   assert.throws(edit("개.\n바나나", "개. 바나나"), { status: 400, message: /within one block/ })
   assert.throws(edit("한 개", "한\n개"), { status: 400, message: /line break/ })
   assert.throws(edit("바나나 한 개.", " "), { status: 400, message: /empty a block/ })
+  assert.throws(edit("한 개", "한 개"), { status: 400, message: /the same as the quoted words/ })
   assert.throws(edit("포도", "사과", v - 1), { status: 409, message: /¶3 changed since you read it/ }, "the version is checked first")
   assert.throws(edit("boat", "배", versionOf(db, 2), 2), { status: 400, message: /no translation yet; write it with set_translation/ })
   assert.throws(edit("x", "y", 0, 99), { status: 404 })
@@ -375,6 +376,16 @@ test("set_note is refused, with nothing written, when there is nothing to change
   assert.throws(() => setNote(db, { noteId: 2, quote: "사과" }), { status: 400, message: /"사과" is not in the paragraph's translation/ })
   assert.throws(() => setNote(db, { noteId: 99, body: "x" }), { status: 404 })
   assert.equal(db.prepare("SELECT count(*) n FROM ops").get().n, 0)
+})
+
+test("set_note does not place an author's note not yet linked to its paragraph; its translation it takes", () => {
+  const db = fixture()
+  setTranslation(db, { segmentId: 2, text: "제무레이의 배", expectVersion: versionOf(db, 2) })
+  db.prepare("UPDATE note SET anchored = 0 WHERE id = 1").run()  // the build could not match it: its paragraph is a guess
+  assert.throws(() => setNote(db, { noteId: 1, quote: "배" }), { status: 400, message: /not linked to its paragraph yet; the translator links it/ })
+  assert.throws(() => describeWrite(db, "set_note", { noteId: 1, body: "x", quote: "배" }), { status: 400 })
+  setNote(db, { noteId: 1, body: "1903년 구입." })
+  assert.deepEqual([read(db, { ids: [2] }).segments[0].notes[0].translation, read(db, { ids: [2] }).segments[0].notes[0].placedAfter], ["1903년 구입.", null])
 })
 
 test("each write is described for the translator before it happens", () => {

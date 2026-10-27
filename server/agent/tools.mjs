@@ -153,6 +153,7 @@ function editedDoc(cur, quote, replacement) {
   if (!text.trim()) throw httpError(400, `¶${cur.id} has no translation yet; write it with set_translation`)
   if (quote.includes("\n")) throw httpError(400, "quote words within one block of the translation")
   if (replacement.includes("\n")) throw httpError(400, "the replacement cannot hold a line break; to change the blocks, use set_translation")
+  if (replacement === quote) throw httpError(400, "the replacement is the same as the quoted words")
   const at = quoteAt(text, quote, "translation")
   const end = text.indexOf("\n", at)
   const block = text.slice(text.lastIndexOf("\n", at) + 1, at) + replacement + text.slice(at + quote.length, end === -1 ? text.length : end)
@@ -247,11 +248,13 @@ function noteAt(db, id) {
   return row
 }
 /** What set_note would change, checked: something to change, a body with words in it, and the quote once in the
- *  paragraph's translation. */
+ *  paragraph's translation. An author's note the build could not match to the book's text sits on a guessed paragraph
+ *  until the translator links it (Notes → Link): it is not placed before that. */
 function noteChange(db, { noteId, body, quote }) {
   const note = noteAt(db, noteId)
   if (body === undefined && quote === undefined) throw httpError(400, "give the note's body, a quote to place it at, or both")
   if (body !== undefined && !body.trim()) throw httpError(400, "the note's body is empty")
+  if (quote !== undefined && note.kind === "author" && !note.anchored) throw httpError(400, `the author's note ${noteId} is not linked to its paragraph yet; the translator links it (Notes → Link) before it is placed`)
   const cur = segmentAt(db, note.segment_id)
   if (quote !== undefined && !cur.target_text) throw httpError(400, `¶${cur.id} has no translation yet to place the note in`)
   return { note, cur, targetAnchor: quote === undefined ? undefined : quoteAnchor(cur.target_text, quote, "translation") }
