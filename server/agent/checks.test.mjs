@@ -64,7 +64,7 @@ test("the failures as Claude is told them: where, what, and what makes it right 
   assert.equal(reason, [
     "fitz checked the translations you wrote this turn and found:",
     "- ¶3: the source has “Zemurray”; the glossary's agreed form is “제머리” (also accepted: 샘 제머리), and the translation has none of them.",
-    "- ¶4: the author's note 7 was placed after “유보하는” in the translation, and those words are gone. Keep them, so the note keeps its place.",
+    "- ¶4: the author's note 7 was placed after “유보하는” in the translation, and those words are gone. Keep them, or place the note again with set_note, so it keeps its place.",
     "Fix these with edit_translation, or set_translation where more must change (read the paragraph again for its version), then stop. If one is right as it is (a term used in another sense, or the wording the translator asked you for), leave it, say why in one line and stop.",
   ].join("\n"))
 })

@@ -51,7 +51,7 @@ server/
   live.mjs              WebSocket /live: 대화와 책 변경 알림. agent/protocol.mjs로 검사하고 host에 넘긴다(§15)
   commands.mjs          COMMANDS · execute · undo · redo  — 그대로. 에이전트의 모든 쓰기가 지난다
   agent/
-    tools.mjs           MCP 도구 9개(읽기 4, 쓰기 5) = 기존 commands의 얇은 포장
+    tools.mjs           MCP 도구 10개(읽기 4, 쓰기 6) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
     host.mjs            서버의 대화들: 대화마다 세션 하나, 접은 상태, 따라가는 쪽. 소켓을 모른다
@@ -67,14 +67,14 @@ app/src/
 
 ## 3. 도구 (MCP 서버 `fitz`)
 
-도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 9개: 읽기 4, 쓰기 5(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
+도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 10개: 읽기 4, 쓰기 6(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
 
 읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음, 병렬로 돈다:
 
 | 도구 | 하는 일 | 인자 | 돌려주는 것 | 기존 코드 |
 |---|---|---|---|---|
 | `book` | 책과 차례 | — | `{ id, title, author, chapters: [{ id, idx, title, startPage, segmentCount, confirmedCount }] }` | `getBook`, `listChapters` |
-| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다 | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, version, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
+| `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다. 저자 미주에는 번역문에서 번호가 붙은 단어(`placedAfter`, 없으면 null) | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, version, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
 | `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
 | `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로) | `query` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
 
@@ -92,6 +92,7 @@ app/src/
 | `set_glossary_term(term, translation, aliases?, kind?)` | `setGlossaryTerm` | |
 | `add_comment(segmentId, side, body, quote?)` | `addComment` | `quote`가 있으면 `makeAnchor`로 앵커 |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
+| `set_note(noteId, body?, quote?)` | `setNote { id, body, targetAnchor }` | 저자 미주의 번역, 또는 역주 본문 고치기. `quote`는 번호를 그 번역문 단어 바로 뒤에 놓는다(옮기기). 원문은 바꾸지 못한다(§34) |
 
 - `set_translation`·`edit_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.
 - 쓴 쪽은 들어온 문으로 정해진다(§16): fitz 도구의 쓰기는 `ops.actor = agent`와 그 도구 호출 id로 기록되고, Claude의 댓글은 `comment.author = agent`(화면에 "Claude" 표시). 역주는 출판될 글이라 표시하지 않지만 출처는 `ops`에 남는다.

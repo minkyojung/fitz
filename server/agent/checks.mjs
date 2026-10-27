@@ -2,7 +2,7 @@
 // reading — nothing here writes — so the same book gives the same verdict. Two rules, both ones Claude can act on:
 //   term  the source has a glossary term; the translation has none of its agreed forms (the editor's own rule)
 //   note  an author's or translator's note had its place in the translation; the words it was placed at are gone
-// An author's note never placed yet is not Claude's to place (it has no tool for that), so it is not a failure here.
+// An author's note never placed yet is not a failure here: Claude places one (set_note) when asked to, as the translator does.
 import { anchorOf } from "../commands.mjs"
 import { locateAnchor } from "../anchor.mjs"
 import { acceptedForms, missingForms, termPattern } from "./glossaryRule.mjs"
@@ -33,7 +33,7 @@ export function checkSegments(db, ids) {
 export function reasonFor(failures) {
   const line = (f) => f.kind === "term"
     ? `- ¶${f.segmentId}: the source has “${f.term}”; the glossary's agreed form is “${f.forms[0]}”${f.forms.length > 1 ? ` (also accepted: ${f.forms.slice(1).join(", ")})` : ""}, and the translation has none of them.`
-    : `- ¶${f.segmentId}: the ${f.noteKind === "author" ? "author's" : "translator's"} note ${f.noteId} was placed after “${f.quote}” in the translation, and those words are gone. Keep them, so the note keeps its place.`
+    : `- ¶${f.segmentId}: the ${f.noteKind === "author" ? "author's" : "translator's"} note ${f.noteId} was placed after “${f.quote}” in the translation, and those words are gone. Keep them, or place the note again with set_note, so it keeps its place.`
   return [
     "fitz checked the translations you wrote this turn and found:",
     ...failures.map(line),

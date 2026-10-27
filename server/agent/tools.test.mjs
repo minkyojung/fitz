@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo, watchChanges } from "../commands.mjs"
 import { checkSegments } from "./checks.mjs"
-import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, searchBook, setGlossaryTerm, setNote, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -53,7 +53,7 @@ test("read: a paragraph carries its notes, comments and the terms it mentions", 
   assert.deepEqual(s, {
     id: 2, chapterId: 1, idx: 1, kind: "paragraph", pageStart: 3, pageEnd: 4, status: "untranslated",
     sourceText: "Zemurray's boat", targetText: "",
-    notes: [{ id: 1, kind: "author", text: "Bought in 1903.", translation: "1903년에 샀다.", quote: "boat" }],
+    notes: [{ id: 1, kind: "author", text: "Bought in 1903.", translation: "1903년에 샀다.", quote: "boat", placedAfter: null }],
     comments: [{ id: 1, parentId: null, side: "source", author: "translator", body: "which boat?", resolved: false, quote: "boat" }],
     terms: [
       { term: "Zemurray", translation: "제무레이", aliases: "샘 제무레이", kind: "person" },
@@ -163,7 +163,7 @@ test("MCP: four read-only tools whose results are the functions' results as JSON
 test("a task's server offers the read tools only; a free conversation's, the writes too", () => {
   const db = fixture()
   assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search"])
-  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note"])
+  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"])
 })
 
 test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {
@@ -272,6 +272,46 @@ test("add_translator_note is pinned in the translation, and needs one to be ther
   assert.throws(() => addTranslatorNote(db, { segmentId: 2, body: "x", quote: "boat" }), { status: 400, message: /no translation yet/ })
 })
 
+test("set_note translates an author's note and places its number; the book's own text of it stays, and undoing takes it back", () => {
+  const db = fixture()
+  setTranslation(db, { segmentId: 2, text: "제무레이의 배", expectVersion: versionOf(db, 2) })
+  const note = () => plain(read(db, { ids: [2] }).segments[0].notes[0])
+  assert.equal(note().placedAfter, null)
+  const out = setNote(db, { noteId: 1, body: "1903년에 샀다고 한다.", quote: "배" })
+  assert.deepEqual(out, { id: 1, segmentId: 2, kind: "author", quote: "배" })
+  assert.deepEqual(note(), { id: 1, kind: "author", text: "Bought in 1903.", translation: "1903년에 샀다고 한다.", quote: "boat", placedAfter: "배" })
+  assert.deepEqual(plain(db.prepare("SELECT body_source, tgt_start, tgt_end FROM note WHERE id = 1").get()), { body_source: "Bought in 1903.", tgt_start: 6, tgt_end: 7 })
+  assert.deepEqual(plain(db.prepare("SELECT name, actor FROM ops ORDER BY id DESC LIMIT 1").get()), { name: "setNote", actor: "agent" })
+  undo(db, { actor: "agent" })
+  assert.deepEqual([note().translation, note().placedAfter], ["1903년에 샀다.", null])
+})
+
+test("set_note places a note on its own, and read says when the words it followed are gone", () => {
+  const db = fixture()
+  setTranslation(db, { segmentId: 2, text: "제무레이의 배", expectVersion: versionOf(db, 2) })
+  setNote(db, { noteId: 1, quote: "배" })
+  assert.deepEqual([read(db, { ids: [2] }).segments[0].notes[0].placedAfter, read(db, { ids: [2] }).segments[0].notes[0].translation], ["배", "1903년에 샀다."])
+  setTranslation(db, { segmentId: 2, text: "제무레이의 보트", expectVersion: versionOf(db, 2) })
+  assert.equal(read(db, { ids: [2] }).segments[0].notes[0].placedAfter, null)
+})
+
+test("set_note changes a translator's note and moves it", () => {
+  const db = fixture()
+  setTranslation(db, { segmentId: 3, text: "바나나와 사과", expectVersion: versionOf(db, 3) })
+  setNote(db, { noteId: 2, body: "열대 과일의 하나.", quote: "사과" })
+  assert.deepEqual(plain(read(db, { ids: [3] }).segments[0].notes), [{ id: 2, kind: "translator", text: "열대 과일의 하나.", quote: "사과" }])
+})
+
+test("set_note is refused, with nothing written, when there is nothing to change or nowhere to put it", () => {
+  const db = fixture()
+  assert.throws(() => setNote(db, { noteId: 1 }), { status: 400, message: /give the note's body, a quote to place it at, or both/ })
+  assert.throws(() => setNote(db, { noteId: 1, body: "  " }), { status: 400, message: /body is empty/ })
+  assert.throws(() => setNote(db, { noteId: 1, quote: "boat" }), { status: 400, message: /¶2 has no translation yet to place the note in/ })
+  assert.throws(() => setNote(db, { noteId: 2, quote: "사과" }), { status: 400, message: /"사과" is not in the paragraph's translation/ })
+  assert.throws(() => setNote(db, { noteId: 99, body: "x" }), { status: 404 })
+  assert.equal(db.prepare("SELECT count(*) n FROM ops").get().n, 0)
+})
+
 test("each write is described for the translator before it happens", () => {
   const db = fixture()
   assert.deepEqual(describeWrite(db, "set_translation", { segmentId: 1, text: "제1장", expectVersion: versionOf(db, 1) }),
@@ -282,6 +322,15 @@ test("each write is described for the translator before it happens", () => {
   assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
   assert.deepEqual(describeWrite(db, "edit_translation", { segmentId: 1, quote: "하나", replacement: "제1장", expectVersion: versionOf(db, 1) }),
     { summary: "Edit the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
+  assert.deepEqual(describeWrite(db, "set_note", { noteId: 2, body: "열대 과일의 하나." }),
+    { summary: "Change the translator's note 2 on ¶3 — it will be printed", segmentId: 3, before: "열대 과일.", after: "열대 과일의 하나." })
+  assert.deepEqual(describeWrite(db, "set_note", { noteId: 2, quote: "바나나" }),
+    { summary: "Move the translator's note 2 after \"바나나\" in ¶3", segmentId: 3, before: null, after: null })
+  setTranslation(db, { segmentId: 2, text: "제무레이의 배", expectVersion: versionOf(db, 2) })
+  assert.deepEqual(describeWrite(db, "set_note", { noteId: 1, body: "1903년 구입.", quote: "배" }),
+    { summary: "Translate the author's note 1 on ¶2 and place it after \"배\" — it will be printed", segmentId: 2, before: "1903년에 샀다.", after: "1903년 구입." })
+  assert.deepEqual(describeWrite(db, "set_note", { noteId: 1, quote: "배" }),
+    { summary: "Place the author's note 1 after \"배\" in ¶2", segmentId: 2, before: null, after: null })
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 99, text: "x" }), { status: 404 })
 })
 
@@ -293,11 +342,14 @@ test("a write that would fail is caught before the translator is asked", () => {
   assert.throws(() => describeWrite(db, "add_translator_note", { segmentId: 2, body: "b", quote: "boat" }), { message: /no translation yet/ })
   assert.throws(() => describeWrite(db, "edit_translation", { segmentId: 3, quote: "바나나", replacement: "x", expectVersion: versionOf(db, 3) - 1 }), { status: 409 })
   assert.throws(() => describeWrite(db, "edit_translation", { segmentId: 3, quote: "사과", replacement: "x", expectVersion: versionOf(db, 3) }), { status: 400 })
+  assert.throws(() => describeWrite(db, "set_note", { noteId: 1, quote: "boat" }), { message: /no translation yet/ })
+  assert.throws(() => describeWrite(db, "set_note", { noteId: 1 }), { status: 400 })
+  assert.throws(() => describeWrite(db, "set_note", { noteId: 99, body: "x" }), { status: 404 })
 })
 
 test("MCP: the write tools beside the read tools, none of them marked read-only", () => {
   const db = fixture()
-  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note"])
+  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"])
   for (const t of writeTools(db)) assert.notEqual(t.annotations?.readOnlyHint, true, t.name)
 })
 

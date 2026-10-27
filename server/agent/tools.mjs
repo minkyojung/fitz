@@ -5,13 +5,20 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 
-import { makeAnchor } from "../anchor.mjs"
+import { locateAnchor, makeAnchor } from "../anchor.mjs"
 import { anchorOf, docText, execute, getBook, httpError, listChapters, listGlossary, replaceRange, search } from "../commands.mjs"
 import { termPattern } from "./glossaryRule.mjs"
 
 /** Characters of text one `read` returns before it stops and hands back `next`. Claude Code moves an MCP
  *  result over 25,000 tokens or 50,000 characters into a file, which this agent has no tool to open. */
 export const READ_BUDGET = 20000
+
+/** The words of the translation an author's note's number follows, while they are there; null: no place in it. */
+function placedAfter(n, target) {
+  const a = anchorOf(n, "tgt")
+  const at = a && target ? locateAnchor(target, a) : null
+  return at ? target.slice(at.start, at.end) : null
+}
 
 /** Glossary terms a source paragraph mentions, by the glossary rule the editor uses too (glossaryRule.mjs). */
 const termsIn = (text, entries) =>
@@ -51,7 +58,7 @@ export function read(db, { ids, chapterId, around, from } = {}) {
   let used = 0
   for (const r of rows) {
     const notes = notesOf.all(r.id).map((n) => n.kind === "author"
-      ? { id: n.id, kind: "author", text: n.body_source ?? "", translation: n.body_target ?? "", quote: anchorOf(n, "src")?.exact ?? n.orig_quote ?? null }
+      ? { id: n.id, kind: "author", text: n.body_source ?? "", translation: n.body_target ?? "", quote: anchorOf(n, "src")?.exact ?? n.orig_quote ?? null, placedAfter: placedAfter(n, r.target_text) }
       : { id: n.id, kind: "translator", text: n.body_target ?? "", quote: anchorOf(n, "tgt")?.exact ?? null })
     const comments = commentsOf.all(r.id).map((c) => ({ id: c.id, parentId: c.parent_id ?? null, side: c.side, author: c.author, body: c.body, resolved: c.resolved === 1, quote: anchorOf(c, "src")?.exact ?? null }))
     const seg = {
@@ -167,6 +174,30 @@ export function addTranslatorNote(db, { segmentId, body, quote }, by = AGENT) {
   return { id: n.id, segmentId, quote: quote ?? null }
 }
 
+function noteAt(db, id) {
+  const row = db.prepare("SELECT * FROM note WHERE id = ?").get(id)
+  if (!row) throw httpError(404, `note ${id} not found`)
+  return row
+}
+/** What set_note would change, checked: something to change, a body with words in it, and the quote once in the
+ *  paragraph's translation. */
+function noteChange(db, { noteId, body, quote }) {
+  const note = noteAt(db, noteId)
+  if (body === undefined && quote === undefined) throw httpError(400, "give the note's body, a quote to place it at, or both")
+  if (body !== undefined && !body.trim()) throw httpError(400, "the note's body is empty")
+  const cur = segmentAt(db, note.segment_id)
+  if (quote !== undefined && !cur.target_text) throw httpError(400, `¶${cur.id} has no translation yet to place the note in`)
+  return { note, cur, targetAnchor: quote === undefined ? undefined : quoteAnchor(cur.target_text, quote, "translation") }
+}
+
+/** An author's note translated (the book's own text of it stays), or a translator's note changed; with `quote`, its
+ *  number placed right after those words of the translation. */
+export function setNote(db, { noteId, body, quote }, by = AGENT) {
+  const { targetAnchor } = noteChange(db, { noteId, body, quote })
+  const n = execute(db, "setNote", { id: noteId, body, targetAnchor }, by)
+  return { id: n.id, segmentId: n.segmentId, kind: n.kind, quote: quote ?? null }
+}
+
 /** What a write would do, for the translator to approve: a line saying what, and the text before and after.
  *  It checks what the write will check, so the translator is never asked about a write that would then fail. */
 export function describeWrite(db, tool, input) {
@@ -197,6 +228,16 @@ export function describeWrite(db, tool, input) {
       quoteAnchor(cur.target_text ?? "", input.quote, "translation")
       return { summary: `Translator's note on ¶${cur.id}${input.quote ? ` after "${input.quote}"` : ""} — it will be printed`, segmentId: input.segmentId, before: null, after: input.body }
     }
+    case "set_note": {
+      const { note, cur } = noteChange(db, input)
+      const author = note.kind === "author"
+      const what = `the ${author ? "author's" : "translator's"} note ${note.id}`
+      const place = `${author ? "place" : "move"} it after "${input.quote}"`
+      const summary = input.body === undefined
+        ? `${author ? "Place" : "Move"} ${what} after "${input.quote}" in ¶${cur.id}`
+        : `${author ? "Translate" : "Change"} ${what} on ¶${cur.id}${input.quote === undefined ? "" : ` and ${place}`} — it will be printed`
+      return { summary, segmentId: cur.id, before: input.body === undefined ? null : note.body_target || null, after: input.body ?? null }
+    }
     default:
       throw httpError(400, `${tool} is not a write tool`)
   }
@@ -211,7 +252,7 @@ export const readTools = (db) => [
   tool("book", "The book being translated: title, author, and its chapters in order with how many paragraphs each has and how many are confirmed.",
     {}, async () => result(book(db)), READ_ONLY),
   tool("read",
-    "Read paragraphs: the English source, the Korean translation so far (empty if none), status, and what is attached — author's notes, translator's notes, comments, and the glossary terms the paragraph mentions with their agreed Korean form. " +
+    "Read paragraphs: the English source, the Korean translation so far (empty if none), status, and what is attached — author's notes (placedAfter: the words of the translation its number follows; null if it has no place there yet), translator's notes, comments, and the glossary terms the paragraph mentions with their agreed Korean form. " +
     "Give `ids`, or `chapterId` for a whole chapter. With one id, `around: n` adds n paragraphs before and after it in the same chapter. " +
     "Long reads stop part way and return `next`: call read again with exactly those arguments to continue.",
     {
@@ -289,10 +330,19 @@ export const writeTools = (db, { wrote } = {}) => [
       quote: z.string().optional().describe("Exact words of the translation, found once"),
     },
     async (args, extra) => result(addTranslatorNote(db, args, agentBy(extra)))),
+  tool("set_note",
+    "Translate an author's note, or change a translator's note (역주); both are printed in the book. `body` is the note's text in Korean. " +
+    "`quote` puts the note's number right after exact words of the paragraph's translation: for an author's note whose placedAfter is null, or to move a note. Give either or both. The translator is asked first.",
+    {
+      noteId: z.number().int(),
+      body: z.string().min(1).optional().describe("The note in Korean: an author's note's translation, or a translator's note's new text"),
+      quote: z.string().optional().describe("Exact words of the translation, found once, that the number goes after"),
+    },
+    async (args, extra) => result(setNote(db, args, agentBy(extra)))),
 ]
 
 export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
-export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note"]
+export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"]
 
 /** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */
 export const fitzTools = (db, { write = true, wrote } = {}) => (write ? [...readTools(db), ...writeTools(db, { wrote })] : readTools(db))
