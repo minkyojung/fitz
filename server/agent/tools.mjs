@@ -166,6 +166,42 @@ export function addComment(db, { segmentId, side, body, quote }, by = AGENT) {
   return { id: c.id, segmentId, side, quote: quote ?? null }
 }
 
+function commentAt(db, id) {
+  const row = db.prepare("SELECT * FROM comment WHERE id = ?").get(id)
+  if (!row) throw httpError(404, `comment ${id} not found`)
+  return row
+}
+/** The thread a comment is in, as its first comment: a reply goes to the thread, as the editor's reply box does. */
+function threadOf(db, id) {
+  const c = commentAt(db, id)
+  return c.parent_id == null ? c : commentAt(db, c.parent_id)
+}
+function replyTo(db, { commentId, body }) {
+  const root = threadOf(db, commentId)
+  if (!body?.trim()) throw httpError(400, "the reply is empty")
+  if (root.resolved) throw httpError(400, `the thread of comment ${commentId} is resolved`)
+  return root
+}
+/** Claude closes only a thread it opened: one the translator opened is theirs to close. */
+function toResolve(db, { commentId }) {
+  const root = threadOf(db, commentId)
+  if (root.author !== "agent") throw httpError(400, `the thread of comment ${commentId} is the translator's to resolve; reply to say what you did`)
+  if (root.resolved) throw httpError(400, `the thread of comment ${commentId} is already resolved`)
+  return root
+}
+
+export function replyComment(db, { commentId, body }, by = AGENT) {
+  const root = replyTo(db, { commentId, body })
+  const c = execute(db, "addComment", { segmentId: root.segment_id, side: root.side, anchor: null, body, parentId: root.id, author: by.actor }, by)
+  return { id: c.id, segmentId: root.segment_id, threadId: root.id }
+}
+
+export function resolveComment(db, { commentId }, by = AGENT) {
+  const root = toResolve(db, { commentId })
+  execute(db, "setComment", { id: root.id, resolved: true }, by)
+  return { threadId: root.id, segmentId: root.segment_id, resolved: true }
+}
+
 /** A translator's note sits in the translation: its quote is found there. */
 export function addTranslatorNote(db, { segmentId, body, quote }, by = AGENT) {
   const cur = segmentAt(db, segmentId)
@@ -198,6 +234,12 @@ export function setNote(db, { noteId, body, quote }, by = AGENT) {
   return { id: n.id, segmentId: n.segmentId, kind: n.kind, quote: quote ?? null }
 }
 
+/** A comment in a few words, for a line that names it. */
+const gist = (text) => {
+  const t = text.replace(/\s+/g, " ").trim()
+  return t.length > 40 ? `${t.slice(0, 39)}…` : t
+}
+
 /** What a write would do, for the translator to approve: a line saying what, and the text before and after.
  *  It checks what the write will check, so the translator is never asked about a write that would then fail. */
 export function describeWrite(db, tool, input) {
@@ -221,6 +263,14 @@ export function describeWrite(db, tool, input) {
       const cur = segmentAt(db, input.segmentId)
       quoteAnchor(input.side === "source" ? cur.source_text : cur.target_text ?? "", input.quote, input.side === "source" ? "source" : "translation")
       return { summary: `Comment by Claude on ¶${cur.id}${input.quote ? ` at "${input.quote}"` : ""}`, segmentId: input.segmentId, before: null, after: input.body }
+    }
+    case "reply_comment": {
+      const root = replyTo(db, input)
+      return { summary: `Reply by Claude on ¶${root.segment_id} to "${gist(root.body)}"`, segmentId: root.segment_id, before: null, after: input.body }
+    }
+    case "resolve_comment": {
+      const root = toResolve(db, input)
+      return { summary: `Resolve Claude's comment on ¶${root.segment_id}`, segmentId: root.segment_id, before: null, after: root.body }
     }
     case "add_translator_note": {
       const cur = segmentAt(db, input.segmentId)
@@ -322,6 +372,17 @@ export const writeTools = (db, { wrote } = {}) => [
       quote: z.string().optional().describe("Exact words from that side, found once"),
     },
     async (args, extra) => result(addComment(db, args, agentBy(extra)))),
+  tool("reply_comment",
+    "Reply in a comment's thread, as the translator does under a comment (never printed). `commentId` is any comment of the thread, as read gives it; a resolved thread takes no replies. The translator is asked first.",
+    {
+      commentId: z.number().int(),
+      body: z.string().min(1),
+    },
+    async (args, extra) => result(replyComment(db, args, agentBy(extra)))),
+  tool("resolve_comment",
+    "Resolve a thread you opened (its first comment's author is \"agent\") once what it raised is settled. A thread the translator opened is theirs to resolve: reply in it to say what you did. The translator is asked first.",
+    { commentId: z.number().int().describe("Any comment of the thread") },
+    async (args, extra) => result(resolveComment(db, args, agentBy(extra)))),
   tool("add_translator_note",
     "Add a translator's note (역주) to a paragraph; it is printed in the book. `quote` places its mark right after exact words of the translation. The translator is asked first.",
     {
@@ -342,7 +403,7 @@ export const writeTools = (db, { wrote } = {}) => [
 ]
 
 export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
-export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"]
+export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"]
 
 /** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */
 export const fitzTools = (db, { write = true, wrote } = {}) => (write ? [...readTools(db), ...writeTools(db, { wrote })] : readTools(db))

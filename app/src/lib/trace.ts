@@ -6,7 +6,7 @@ type Tool = Extract<Item, { kind: "tool" }>
 type Turn = Extract<Item, { kind: "turn" }>
 
 /** The fitz tools that change the book: what Claude did with them can be taken back from the conversation. */
-export const WRITE_TOOLS = new Set(["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"])
+export const WRITE_TOOLS = new Set(["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
 
 const paras = (ids: number[]) => (ids.length > 4 ? `${ids.length} paragraphs` : ids.map((id) => `¶${id}`).join(", "))
 
@@ -31,6 +31,8 @@ export function toolLine(t: Tool): { title: string; note?: string } | null {
     case "edit_translation": return write(`Editing the translation of ${p}`, `Edited the translation of ${p}`, `Did not edit the translation of ${p}`)
     case "set_glossary_term": return write(`Glossary: ${i.term} → ${i.translation}`, `Glossary: ${i.term} → ${i.translation}`, `Did not change the glossary for ${i.term}`)
     case "add_comment": return write(`Commenting on ${p}`, `Commented on ${p}`, `Did not comment on ${p}`)
+    case "reply_comment": return write("Replying to a comment", "Replied to a comment", "Did not reply to a comment")
+    case "resolve_comment": return write("Resolving a comment", "Resolved a comment", "Did not resolve a comment")
     case "add_translator_note": return write(`Adding a translator's note to ${p}`, `Added a translator's note to ${p}`, `Did not add a translator's note to ${p}`)
     case "set_note": {
       const n = `note ${i.noteId}`
@@ -52,7 +54,7 @@ function why(result: unknown): string {
 /** The block being written now, while it streams: a tool's arguments are not readable until it is done. */
 const DOING: Record<string, string> = {
   read: "Reading", book: "Looking at the book", glossary: "Reading the glossary", search: "Searching", WebSearch: "Searching the web",
-  set_translation: "Writing a translation", edit_translation: "Editing a translation", set_glossary_term: "Changing the glossary", add_comment: "Writing a comment", add_translator_note: "Writing a translator's note", set_note: "Writing a note",
+  set_translation: "Writing a translation", edit_translation: "Editing a translation", set_glossary_term: "Changing the glossary", add_comment: "Writing a comment", reply_comment: "Writing a reply", resolve_comment: "Resolving a comment", add_translator_note: "Writing a translator's note", set_note: "Writing a note",
 }
 export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? "Working"
 

@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo, watchChanges } from "../commands.mjs"
 import { checkSegments } from "./checks.mjs"
-import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, searchBook, setGlossaryTerm, setNote, setTranslation, writeTools } from "./tools.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, replyComment, resolveComment, searchBook, setGlossaryTerm, setNote, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -163,7 +163,7 @@ test("MCP: four read-only tools whose results are the functions' results as JSON
 test("a task's server offers the read tools only; a free conversation's, the writes too", () => {
   const db = fixture()
   assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search"])
-  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"])
+  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
 })
 
 test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {
@@ -265,6 +265,41 @@ test("add_comment is the agent's and pinned to the quoted words; read shows who 
   assert.throws(() => addComment(db, { segmentId: 3, side: "target", body: "x", quote: "나" }), { status: 400, message: /more than once/ })
 })
 
+test("reply_comment answers in the thread, as Claude's; a reply to a reply joins the same thread", () => {
+  const db = fixture()
+  const out = replyComment(db, { commentId: 1, body: "1903년에 산 배입니다." })
+  assert.deepEqual(out, { id: 2, segmentId: 2, threadId: 1 })
+  replyComment(db, { commentId: 2, body: "¶40에도 나옵니다." })
+  assert.deepEqual(plain(read(db, { ids: [2] }).segments[0].comments), [
+    { id: 1, parentId: null, side: "source", author: "translator", body: "which boat?", resolved: false, quote: "boat" },
+    { id: 2, parentId: 1, side: "source", author: "agent", body: "1903년에 산 배입니다.", resolved: false, quote: null },
+    { id: 3, parentId: 1, side: "source", author: "agent", body: "¶40에도 나옵니다.", resolved: false, quote: null },
+  ])
+  undo(db, { actor: "agent" })
+  assert.equal(read(db, { ids: [2] }).segments[0].comments.length, 2)
+})
+
+test("resolve_comment closes a thread Claude opened, from any comment of it; the translator's threads are theirs", () => {
+  const db = fixture()
+  const { id } = addComment(db, { segmentId: 3, side: "target", body: "용어집 확인" })
+  const { id: reply } = replyComment(db, { commentId: id, body: "확인했습니다." })
+  assert.deepEqual(resolveComment(db, { commentId: reply }), { threadId: id, segmentId: 3, resolved: true })
+  assert.equal(read(db, { ids: [3] }).segments[0].comments.find((c) => c.id === id).resolved, true)
+  assert.throws(() => resolveComment(db, { commentId: id }), { status: 400, message: /already resolved/ })
+  assert.throws(() => replyComment(db, { commentId: id, body: "x" }), { status: 400, message: /is resolved/ })
+  undo(db, { actor: "agent" })
+  assert.equal(read(db, { ids: [3] }).segments[0].comments.find((c) => c.id === id).resolved, false)
+})
+
+test("comment writes are refused, with nothing written, when they are not Claude's to make", () => {
+  const db = fixture()
+  assert.throws(() => resolveComment(db, { commentId: 1 }), { status: 400, message: /the translator's to resolve; reply to say what you did/ })
+  assert.throws(() => replyComment(db, { commentId: 1, body: "  " }), { status: 400, message: /the reply is empty/ })
+  assert.throws(() => replyComment(db, { commentId: 99, body: "x" }), { status: 404 })
+  assert.throws(() => resolveComment(db, { commentId: 99 }), { status: 404 })
+  assert.equal(db.prepare("SELECT count(*) n FROM ops").get().n, 0)
+})
+
 test("add_translator_note is pinned in the translation, and needs one to be there", () => {
   const db = fixture()
   addTranslatorNote(db, { segmentId: 3, body: "남미산 품종.", quote: "바나나" })
@@ -322,6 +357,11 @@ test("each write is described for the translator before it happens", () => {
   assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
   assert.deepEqual(describeWrite(db, "edit_translation", { segmentId: 1, quote: "하나", replacement: "제1장", expectVersion: versionOf(db, 1) }),
     { summary: "Edit the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
+  assert.deepEqual(describeWrite(db, "reply_comment", { commentId: 1, body: "1903년 배." }),
+    { summary: "Reply by Claude on ¶2 to \"which boat?\"", segmentId: 2, before: null, after: "1903년 배." })
+  const { id: mine } = addComment(db, { segmentId: 3, side: "target", body: "용어집 확인" })
+  assert.deepEqual(describeWrite(db, "resolve_comment", { commentId: mine }),
+    { summary: "Resolve Claude's comment on ¶3", segmentId: 3, before: null, after: "용어집 확인" })
   assert.deepEqual(describeWrite(db, "set_note", { noteId: 2, body: "열대 과일의 하나." }),
     { summary: "Change the translator's note 2 on ¶3 — it will be printed", segmentId: 3, before: "열대 과일.", after: "열대 과일의 하나." })
   assert.deepEqual(describeWrite(db, "set_note", { noteId: 2, quote: "바나나" }),
@@ -345,11 +385,13 @@ test("a write that would fail is caught before the translator is asked", () => {
   assert.throws(() => describeWrite(db, "set_note", { noteId: 1, quote: "boat" }), { message: /no translation yet/ })
   assert.throws(() => describeWrite(db, "set_note", { noteId: 1 }), { status: 400 })
   assert.throws(() => describeWrite(db, "set_note", { noteId: 99, body: "x" }), { status: 404 })
+  assert.throws(() => describeWrite(db, "resolve_comment", { commentId: 1 }), { message: /translator's to resolve/ })
+  assert.throws(() => describeWrite(db, "reply_comment", { commentId: 1, body: " " }), { message: /empty/ })
 })
 
 test("MCP: the write tools beside the read tools, none of them marked read-only", () => {
   const db = fixture()
-  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note", "set_note"])
+  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
   for (const t of writeTools(db)) assert.notEqual(t.annotations?.readOnlyHint, true, t.name)
 })
 

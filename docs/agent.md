@@ -51,7 +51,7 @@ server/
   live.mjs              WebSocket /live: 대화와 책 변경 알림. agent/protocol.mjs로 검사하고 host에 넘긴다(§15)
   commands.mjs          COMMANDS · execute · undo · redo  — 그대로. 에이전트의 모든 쓰기가 지난다
   agent/
-    tools.mjs           MCP 도구 10개(읽기 4, 쓰기 6) = 기존 commands의 얇은 포장
+    tools.mjs           MCP 도구 12개(읽기 4, 쓰기 8) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
     host.mjs            서버의 대화들: 대화마다 세션 하나, 접은 상태, 따라가는 쪽. 소켓을 모른다
@@ -67,7 +67,7 @@ app/src/
 
 ## 3. 도구 (MCP 서버 `fitz`)
 
-도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 10개: 읽기 4, 쓰기 6(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
+도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 12개: 읽기 4, 쓰기 8(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
 
 읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음, 병렬로 돈다:
 
@@ -91,6 +91,8 @@ app/src/
 | `edit_translation(segmentId, quote, replacement, expectVersion)` | `updateSegment { targetDoc: replaceRange(…), status: "draft", expectVersion }` | 인용한 단어만 바꾸고 나머지(다른 블록, 이탤릭, 주석·댓글이 걸린 단어)는 그대로. 인용은 한 번, 한 블록 안. 블록을 비우거나 번역이 없으면 거절하고 `set_translation`을 가리킨다(§34) |
 | `set_glossary_term(term, translation, aliases?, kind?)` | `setGlossaryTerm` | |
 | `add_comment(segmentId, side, body, quote?)` | `addComment` | `quote`가 있으면 `makeAnchor`로 앵커 |
+| `reply_comment(commentId, body)` | `addComment { parentId }` | 스레드의 첫 댓글에 Claude의 답글. 답글에 답하면 스레드에 붙는다. 해결된 스레드에는 답하지 않는다(§34) |
+| `resolve_comment(commentId)` | `setComment { resolved: true }` | Claude가 연 스레드만. 번역자의 스레드는 번역자가 닫는다(§34) |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
 | `set_note(noteId, body?, quote?)` | `setNote { id, body, targetAnchor }` | 저자 미주의 번역, 또는 역주 본문 고치기. `quote`는 번호를 그 번역문 단어 바로 뒤에 놓는다(옮기기). 원문은 바꾸지 못한다(§34) |
 

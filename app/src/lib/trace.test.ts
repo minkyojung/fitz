@@ -25,6 +25,8 @@ test("a write: while it goes, once done, and when it did not go through and why"
   assert.deepEqual(toolLine(tool("add_comment", { segmentId: 4 })), { title: "Commented on ¶4" })
   assert.deepEqual(toolLine(tool("edit_translation", { segmentId: 4 })), { title: "Edited the translation of ¶4" })
   assert.deepEqual(toolLine(tool("set_note", { noteId: 7, body: "주" })), { title: "Wrote note 7" })
+  assert.deepEqual(toolLine(tool("reply_comment", { commentId: 5, body: "네" })), { title: "Replied to a comment" })
+  assert.deepEqual(toolLine(tool("resolve_comment", { commentId: 5 }, "running")), { title: "Resolving a comment" })
   assert.deepEqual(toolLine(tool("set_note", { noteId: 7, quote: "배" }, "running")), { title: "Placing note 7" })
   assert.equal(toolLine(tool("StructuredOutput", { suggestions: [] })), null, "a task's answer is not a line")
 })
