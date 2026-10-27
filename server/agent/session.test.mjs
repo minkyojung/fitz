@@ -41,7 +41,9 @@ for (const name of ["nuance", "translate"]) {
 test("the recorded websearch session offered the fitz tools and web search, and searching never asked", () => {
   const frames = readFileSync(new URL("./fixtures/websearch.jsonl", import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
   const init = frames.find((m) => m.type === "system" && m.subtype === "init")
-  assert.deepEqual([...init.tools].sort(), [...READ_TOOLS, ...WRITE_TOOLS, ...WEB_TOOLS].sort())
+  // what the tools were when it was recorded: none besides fitz's and web search (tools added since are not in it)
+  assert.ok(init.tools.every((t) => [...READ_TOOLS, ...WRITE_TOOLS, ...WEB_TOOLS].includes(t)), init.tools.join(", "))
+  assert.ok(init.tools.includes("WebSearch"))
   assert.ok(frames.some((m) => m.type === "assistant" && m.message.content.some((b) => b.type === "tool_use" && b.name === "WebSearch")))
   assert.ok(!frames.some((m) => m.type === "system" && m.subtype === "session_state_changed" && m.state === "requires_action"))
 })

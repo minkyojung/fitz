@@ -6,7 +6,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 
 import { makeAnchor } from "../anchor.mjs"
-import { anchorOf, execute, getBook, httpError, listChapters, listGlossary, search } from "../commands.mjs"
+import { anchorOf, docText, execute, getBook, httpError, listChapters, listGlossary, replaceRange, search } from "../commands.mjs"
 import { termPattern } from "./glossaryRule.mjs"
 
 /** Characters of text one `read` returns before it stops and hands back `next`. Claude Code moves an MCP
@@ -91,16 +91,36 @@ function segmentAt(db, id) {
 }
 /** Translation text as blocks: one per line, blank lines dropped. */
 const blocksOf = (text) => text.split("\n").map((l) => l.trim()).filter(Boolean)
-/** A quote must be found once, so the anchor points at one place. */
-function quoteAnchor(text, quote, where) {
-  if (quote === undefined) return null
+/** Where a quote is in the text. It must be found once, so it points at one place. */
+function quoteAt(text, quote, where) {
   const at = text.indexOf(quote)
   if (!quote || at === -1) throw httpError(400, `"${quote}" is not in the paragraph's ${where}`)
   if (text.indexOf(quote, at + 1) !== -1) throw httpError(400, `"${quote}" appears more than once in the paragraph's ${where}; quote more of it`)
+  return at
+}
+function quoteAnchor(text, quote, where) {
+  if (quote === undefined) return null
+  const at = quoteAt(text, quote, where)
   return makeAnchor(text, at, at + quote.length)
 }
 
 const CHANGED = (id) => `¶${id} changed since you read it; read it again before writing`
+const demotion = (cur) => (cur.status === "reviewed" || cur.status === "final" ? ` (it is ${cur.status}; it becomes draft)` : "")
+
+/** The translation with the quoted words replaced, and the rest of it — the other blocks, italics — as it was. Within
+ *  one block, never emptying one: changing the blocks is set_translation's. */
+function editedDoc(cur, quote, replacement) {
+  const doc = cur.target_doc ? JSON.parse(cur.target_doc) : null
+  const text = doc ? docText(doc) : ""
+  if (!text.trim()) throw httpError(400, `¶${cur.id} has no translation yet; write it with set_translation`)
+  if (quote.includes("\n")) throw httpError(400, "quote words within one block of the translation")
+  if (replacement.includes("\n")) throw httpError(400, "the replacement cannot hold a line break; to change the blocks, use set_translation")
+  const at = quoteAt(text, quote, "translation")
+  const end = text.indexOf("\n", at)
+  const block = text.slice(text.lastIndexOf("\n", at) + 1, at) + replacement + text.slice(at + quote.length, end === -1 ? text.length : end)
+  if (!block.trim()) throw httpError(400, "the edit would empty a block; to remove a block, use set_translation")
+  return replaceRange(doc, at, at + quote.length, replacement)
+}
 
 /** Write a paragraph's translation, always as draft: confirming is the translator's. expectVersion is the version
  *  read gave; updateSegment refuses the write if the paragraph changed since — the same check the editor's saves get. */
@@ -114,6 +134,15 @@ export function setTranslation(db, { segmentId, text, expectVersion }, by = AGEN
   } catch (e) {
     throw e.status === 409 ? httpError(409, CHANGED(segmentId)) : e
   }
+}
+
+/** Change some words of a paragraph's translation, the rest as it was. As draft and over the version read, like
+ *  set_translation; the version is checked first, so a changed paragraph is not reported as missing the words. */
+export function editTranslation(db, { segmentId, quote, replacement, expectVersion }, by = AGENT) {
+  const cur = segmentAt(db, segmentId)
+  if (cur.version !== expectVersion) throw httpError(409, CHANGED(segmentId))
+  const seg = execute(db, "updateSegment", { id: segmentId, targetDoc: editedDoc(cur, quote, replacement), status: "draft", expectVersion }, by)
+  return { segmentId, status: seg.status, version: seg.version, targetText: seg.targetText }
 }
 
 /** Agree a term's Korean form. Aliases and kind not given keep what the entry had. */
@@ -146,8 +175,12 @@ export function describeWrite(db, tool, input) {
       const cur = segmentAt(db, input.segmentId)
       if (cur.version !== input.expectVersion) throw httpError(409, CHANGED(cur.id))
       if (!blocksOf(input.text).length) throw httpError(400, "the translation is empty")
-      const demoted = cur.status === "reviewed" || cur.status === "final"
-      return { summary: `Write the translation of ¶${cur.id}${demoted ? ` (it is ${cur.status}; it becomes draft)` : ""}`, segmentId: cur.id, before: cur.target_text || null, after: blocksOf(input.text).join("\n") }
+      return { summary: `Write the translation of ¶${cur.id}${demotion(cur)}`, segmentId: cur.id, before: cur.target_text || null, after: blocksOf(input.text).join("\n") }
+    }
+    case "edit_translation": {
+      const cur = segmentAt(db, input.segmentId)
+      if (cur.version !== input.expectVersion) throw httpError(409, CHANGED(cur.id))
+      return { summary: `Edit the translation of ¶${cur.id}${demotion(cur)}`, segmentId: cur.id, before: cur.target_text, after: docText(editedDoc(cur, input.quote, input.replacement)) }
     }
     case "set_glossary_term": {
       const cur = db.prepare("SELECT * FROM glossary WHERE book_id = ? AND term = ?").get(getBook(db).id, input.term)
@@ -203,7 +236,7 @@ export const writeTools = (db, { wrote } = {}) => [
   tool("set_translation",
     "Write the Korean translation of one paragraph, replacing what is there. It is saved as a draft for the translator to confirm. " +
     "Pass the paragraph's `version` from your last read as `expectVersion`; if the paragraph changed since (the translator may be editing too), the write is refused and you should read it again. " +
-    "Separate blocks with a newline. The translator is asked before it is written.",
+    "Separate blocks with a newline. To change only some words, use edit_translation. The translator is asked before it is written.",
     {
       segmentId: z.number().int(),
       text: z.string().min(1).describe("The whole translation of the paragraph"),
@@ -211,6 +244,22 @@ export const writeTools = (db, { wrote } = {}) => [
     },
     async (args, extra) => {
       const out = setTranslation(db, args, agentBy(extra))
+      wrote?.(out.segmentId)
+      return result(out)
+    }),
+  tool("edit_translation",
+    "Change some words of one paragraph's translation and keep the rest as it is: its other sentences, and the words notes and comments are placed at. " +
+    "`quote` is the exact words to change, found once in the translation and within one block; `replacement` is what they become (empty deletes them). " +
+    "It is saved as a draft for the translator to confirm. Pass the paragraph's `version` from your last read as `expectVersion`; if the paragraph changed since, the write is refused and you should read it again. " +
+    "The translator is asked before it is written.",
+    {
+      segmentId: z.number().int(),
+      quote: z.string().min(1).describe("Exact words of the translation, found once, within one block"),
+      replacement: z.string().describe("What they become; empty to delete them"),
+      expectVersion: z.number().int().describe("version of the paragraph as read returned it"),
+    },
+    async (args, extra) => {
+      const out = editTranslation(db, args, agentBy(extra))
       wrote?.(out.segmentId)
       return result(out)
     }),
@@ -243,7 +292,7 @@ export const writeTools = (db, { wrote } = {}) => [
 ]
 
 export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
-export const WRITE_TOOL_NAMES = ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"]
+export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note"]
 
 /** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */
 export const fitzTools = (db, { write = true, wrote } = {}) => (write ? [...readTools(db), ...writeTools(db, { wrote })] : readTools(db))

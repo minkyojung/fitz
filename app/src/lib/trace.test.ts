@@ -23,6 +23,7 @@ test("a write: while it goes, once done, and when it did not go through and why"
   assert.deepEqual(toolLine(tool("set_translation", { segmentId: 4 }, "error", "The translator declined this. Do not try it another way.")),
     { title: "Did not write the translation of ¶4", note: "you declined" })
   assert.deepEqual(toolLine(tool("add_comment", { segmentId: 4 })), { title: "Commented on ¶4" })
+  assert.deepEqual(toolLine(tool("edit_translation", { segmentId: 4 })), { title: "Edited the translation of ¶4" })
   assert.equal(toolLine(tool("StructuredOutput", { suggestions: [] })), null, "a task's answer is not a line")
 })
 

@@ -51,7 +51,7 @@ server/
   live.mjs              WebSocket /live: 대화와 책 변경 알림. agent/protocol.mjs로 검사하고 host에 넘긴다(§15)
   commands.mjs          COMMANDS · execute · undo · redo  — 그대로. 에이전트의 모든 쓰기가 지난다
   agent/
-    tools.mjs           MCP 도구 8개(읽기 4, 쓰기 4) = 기존 commands의 얇은 포장
+    tools.mjs           MCP 도구 9개(읽기 4, 쓰기 5) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
     host.mjs            서버의 대화들: 대화마다 세션 하나, 접은 상태, 따라가는 쪽. 소켓을 모른다
@@ -67,7 +67,7 @@ app/src/
 
 ## 3. 도구 (MCP 서버 `fitz`)
 
-도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 8개: 읽기 4, 쓰기 4. Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
+도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 9개: 읽기 4, 쓰기 5(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
 
 읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음, 병렬로 돈다:
 
@@ -88,15 +88,16 @@ app/src/
 | 도구 | → 명령 | 메모 |
 |---|---|---|
 | `set_translation(segmentId, text, expectVersion)` | `updateSegment { targetDoc, status: "draft", expectVersion }` | 그사이 단락이 바뀌었으면(번역자가 편집 중일 수 있다) 409로 거절되고 다시 읽는다. 에디터의 저장과 같은 검사(§12) |
+| `edit_translation(segmentId, quote, replacement, expectVersion)` | `updateSegment { targetDoc: replaceRange(…), status: "draft", expectVersion }` | 인용한 단어만 바꾸고 나머지(다른 블록, 이탤릭, 주석·댓글이 걸린 단어)는 그대로. 인용은 한 번, 한 블록 안. 블록을 비우거나 번역이 없으면 거절하고 `set_translation`을 가리킨다(§34) |
 | `set_glossary_term(term, translation, aliases?, kind?)` | `setGlossaryTerm` | |
 | `add_comment(segmentId, side, body, quote?)` | `addComment` | `quote`가 있으면 `makeAnchor`로 앵커 |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
 
-- `set_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.
+- `set_translation`·`edit_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.
 - 쓴 쪽은 들어온 문으로 정해진다(§16): fitz 도구의 쓰기는 `ops.actor = agent`와 그 도구 호출 id로 기록되고, Claude의 댓글은 `comment.author = agent`(화면에 "Claude" 표시). 역주는 출판될 글이라 표시하지 않지만 출처는 `ops`에 남는다.
 - `quote`는 그 쪽 글에서 한 번만 나와야 한다. 없거나 두 번 이상이면 거절("더 길게 인용하라").
 - 미리보기(`describeWrite`): `{ summary, segmentId, before, after }`. 번역자는 무엇이 어떻게 바뀌는지 보고 답한다. 쓰기가 할 검사(버전, 인용구, 빈 글)를 먼저 하므로, 실패할 쓰기는 묻지 않고 바로 거절한다 — 번역자가 허락한 뒤에 실패하는 일이 없다.
-- 쓰기 넷을 하나로 합치지 않는다. 본문을 바꾸는 것, 책 전체 표기를 바꾸는 것, 출판되지 않는 메모, 출판되는 역주는 승인 카드에서 무게가 다르다.
+- 쓰기 도구들을 하나로 합치지 않는다. 본문을 바꾸는 것, 책 전체 표기를 바꾸는 것, 출판되지 않는 메모, 출판되는 역주는 승인 카드에서 무게가 다르다.
 - 결과는 `structuredContent`(객체)로 돌려준다. 모델은 그 JSON을 받는다.
 - 오류는 던지지 않고 `isError: true`로 모델이 읽을 문장을 준다.
 - `pmDoc`(평문 → 문단 1개 doc)은 이미 있다. 여러 블록은 줄바꿈으로 가른다(`docText`의 역).

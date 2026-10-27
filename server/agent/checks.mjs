@@ -37,6 +37,6 @@ export function reasonFor(failures) {
   return [
     "fitz checked the translations you wrote this turn and found:",
     ...failures.map(line),
-    "Fix these with set_translation (read the paragraph again for its version), then stop. If one is right as it is (a term used in another sense, or the wording the translator asked you for), leave it, say why in one line and stop.",
+    "Fix these with edit_translation, or set_translation where more must change (read the paragraph again for its version), then stop. If one is right as it is (a term used in another sense, or the wording the translator asked you for), leave it, say why in one line and stop.",
   ].join("\n")
 }

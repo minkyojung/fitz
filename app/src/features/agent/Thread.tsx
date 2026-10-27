@@ -45,7 +45,7 @@ const writesOf = (b: Block) =>
 
 const ICON: Record<string, React.ReactNode> = {
   read: <IconBook />, book: <IconBook />, glossary: <IconBook />, search: <IconSearch />, WebSearch: <IconWorldSearch />,
-  set_translation: <IconPencil />, set_glossary_term: <IconPencil />, add_comment: <IconMessage />, add_translator_note: <IconNote />,
+  set_translation: <IconPencil />, edit_translation: <IconPencil />, set_glossary_term: <IconPencil />, add_comment: <IconMessage />, add_translator_note: <IconNote />,
 }
 
 /** The conversation, laid out as shadcn AI Elements' Chat: the translator's turns in a muted bubble on the right;

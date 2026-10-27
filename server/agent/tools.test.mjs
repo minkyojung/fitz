@@ -4,7 +4,8 @@ import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo, watchChanges } from "../commands.mjs"
-import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, fitzServer, fitzTools, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
+import { checkSegments } from "./checks.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, searchBook, setGlossaryTerm, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -162,7 +163,7 @@ test("MCP: four read-only tools whose results are the functions' results as JSON
 test("a task's server offers the read tools only; a free conversation's, the writes too", () => {
   const db = fixture()
   assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search"])
-  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "set_glossary_term", "add_comment", "add_translator_note"])
+  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note"])
 })
 
 test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {
@@ -204,6 +205,43 @@ test("set_translation is refused when the paragraph changed since it was read, o
   assert.throws(() => setTranslation(db, { segmentId: 99, text: "x", expectVersion: 0 }), { status: 404 })
 })
 
+test("edit_translation changes the quoted words only: the other blocks, italics and the words a note is placed at stay", () => {
+  const db = fixture()
+  const doc = { type: "doc", content: [
+    { type: "paragraph", content: [{ type: "text", text: "노란 " }, { type: "text", text: "바나나", marks: [{ type: "italic" }] }, { type: "text", text: "를 샀다." }] },
+    { type: "paragraph", content: [{ type: "text", text: "두 번째 블록." }] },
+  ] }
+  db.prepare("UPDATE segment SET target_doc = ?, target_text = ?, status = 'reviewed' WHERE id = 3").run(JSON.stringify(doc), "노란 바나나를 샀다.\n두 번째 블록.")
+  const out = editTranslation(db, { segmentId: 3, quote: "노란", replacement: "초록", expectVersion: versionOf(db, 3) })
+  assert.deepEqual(out, { segmentId: 3, status: "draft", version: seg(db, 3).version, targetText: "초록 바나나를 샀다.\n두 번째 블록." })
+  const [first, second] = doc.content
+  assert.deepEqual(JSON.parse(seg(db, 3).target_doc), { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "초록 " }, ...first.content.slice(1)] }, second] })
+  assert.deepEqual(checkSegments(db, [3]), [], "the translator's note at 바나나 keeps its place")
+  editTranslation(db, { segmentId: 3, quote: " 블록", replacement: "", expectVersion: versionOf(db, 3) })
+  assert.equal(seg(db, 3).target_text, "초록 바나나를 샀다.\n두 번째.")
+  undo(db, { actor: "agent" })
+  undo(db, { actor: "agent" })
+  assert.deepEqual([seg(db, 3).target_text, seg(db, 3).status], ["노란 바나나를 샀다.\n두 번째 블록.", "reviewed"])
+})
+
+test("edit_translation is refused, with nothing written, when it cannot change just those words", () => {
+  const db = fixture()
+  const doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "바나나 한 개." }] }, { type: "paragraph", content: [{ type: "text", text: "바나나 두 개." }] }] }
+  db.prepare("UPDATE segment SET target_doc = ?, target_text = ? WHERE id = 3").run(JSON.stringify(doc), "바나나 한 개.\n바나나 두 개.")
+  const v = versionOf(db, 3)
+  const edit = (quote, replacement, expectVersion = v, segmentId = 3) => () => editTranslation(db, { segmentId, quote, replacement, expectVersion })
+  assert.throws(edit("바나나", "사과"), { status: 400, message: /more than once/ })
+  assert.throws(edit("포도", "사과"), { status: 400, message: /"포도" is not in the paragraph's translation/ })
+  assert.throws(edit("개.\n바나나", "개. 바나나"), { status: 400, message: /within one block/ })
+  assert.throws(edit("한 개", "한\n개"), { status: 400, message: /line break/ })
+  assert.throws(edit("바나나 한 개.", " "), { status: 400, message: /empty a block/ })
+  assert.throws(edit("포도", "사과", v - 1), { status: 409, message: /¶3 changed since you read it/ }, "the version is checked first")
+  assert.throws(edit("boat", "배", versionOf(db, 2), 2), { status: 400, message: /no translation yet; write it with set_translation/ })
+  assert.throws(edit("x", "y", 0, 99), { status: 404 })
+  assert.equal(seg(db, 3).version, v)
+  assert.equal(db.prepare("SELECT count(*) n FROM ops").get().n, 0)
+})
+
 test("set_glossary_term adds a term, changes one keeping what was not given, and undoing it takes it back", () => {
   const db = fixture()
   setGlossaryTerm(db, { term: "Selma", translation: "셀마", kind: "place" })
@@ -242,6 +280,8 @@ test("each write is described for the translator before it happens", () => {
     { summary: "Glossary: Zemurray → 제머리", segmentId: null, before: "Zemurray → 제무레이", after: "Zemurray → 제머리" })
   assert.deepEqual(describeWrite(db, "add_comment", { segmentId: 2, body: "b" }), { summary: "Comment by Claude on ¶2", segmentId: 2, before: null, after: "b" })
   assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
+  assert.deepEqual(describeWrite(db, "edit_translation", { segmentId: 1, quote: "하나", replacement: "제1장", expectVersion: versionOf(db, 1) }),
+    { summary: "Edit the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 99, text: "x" }), { status: 404 })
 })
 
@@ -251,11 +291,13 @@ test("a write that would fail is caught before the translator is asked", () => {
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 2, text: " ", expectVersion: versionOf(db, 2) }), { status: 400 })
   assert.throws(() => describeWrite(db, "add_comment", { segmentId: 2, side: "source", body: "b", quote: "ship" }), { status: 400 })
   assert.throws(() => describeWrite(db, "add_translator_note", { segmentId: 2, body: "b", quote: "boat" }), { message: /no translation yet/ })
+  assert.throws(() => describeWrite(db, "edit_translation", { segmentId: 3, quote: "바나나", replacement: "x", expectVersion: versionOf(db, 3) - 1 }), { status: 409 })
+  assert.throws(() => describeWrite(db, "edit_translation", { segmentId: 3, quote: "사과", replacement: "x", expectVersion: versionOf(db, 3) }), { status: 400 })
 })
 
-test("MCP: four write tools beside the four read tools, none of them marked read-only", () => {
+test("MCP: the write tools beside the read tools, none of them marked read-only", () => {
   const db = fixture()
-  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "set_glossary_term", "add_comment", "add_translator_note"])
+  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "add_translator_note"])
   for (const t of writeTools(db)) assert.notEqual(t.annotations?.readOnlyHint, true, t.name)
 })
 
@@ -267,6 +309,16 @@ test("a write that came through a fitz tool is the agent's, with the id of the t
   await call("add_comment", { segmentId: 2, side: "source", body: "확인" }, "toolu_B")
   assert.deepEqual(db.prepare("SELECT name, actor, tool_use_id FROM ops ORDER BY id").all().map((r) => [r.name, r.actor, r.tool_use_id]),
     [["updateSegment", "agent", "toolu_A"], ["addComment", "agent", "toolu_B"]])
+})
+
+test("the translations Claude writes are heard as they are written, for the turn's checks; other writes are not", async () => {
+  const db = fixture()
+  const heard = []
+  const tools = Object.fromEntries(writeTools(db, { wrote: (id) => heard.push(id) }).map((t) => [t.name, t]))
+  await tools.set_translation.handler({ segmentId: 2, text: "배", expectVersion: versionOf(db, 2) }, {})
+  await tools.edit_translation.handler({ segmentId: 3, quote: "바나나", replacement: "바나나 한 송이", expectVersion: versionOf(db, 3) }, {})
+  await tools.add_comment.handler({ segmentId: 2, side: "source", body: "확인" }, {})
+  assert.deepEqual(heard, [2, 3])
 })
 
 test("the agent's writes are announced like the translator's, as the agent's", () => {
