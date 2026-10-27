@@ -910,3 +910,5 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 | 5 | `annotations` | `tools.mjs`(`read`와 같은 단락별 모양을 함께 쓰기), `session.mjs`(`THE_BOOK`), `trace.ts`·`Thread.tsx`, §3·README | 단위: 주석 전부, 열린 스레드만(답글 포함), 아무것도 없는 단락은 빠짐, 예산과 `next`, 없는 장 404, 쪽 이미지·경로 없음 |
 | 6 | `search`의 `side` | `commands.mjs`(`search`), `tools.mjs`, `trace.ts`, §3 | 단위: 번역문 검색, 기본은 원문, 화면 route 그대로(`commands.test`) |
 | 끝 | 전부 | | server·unit·types·lint·e2e |
+
+**결과**(2026-10-27): 도구 13개(읽기 5, 쓰기 8). `edit_translation`은 제안 수락과 같은 `replaceRange`로 인용한 단어만 바꾸고, 바뀌는 것이 없으면 거절한다(reviewed가 이유 없이 draft로 내려가지 않게). `set_note`는 빌드가 책의 글과 잇지 못한 저자 미주(5개, 단락이 짐작)의 자리를 정하지 않는다. 번역은 한다. 녹화된 세션의 테스트 셋(websearch, nuance·translate, review·typos)은 녹화 때 있던 도구로 확인하게 바꿨다: 녹화는 그 뒤에 생긴 도구를 모른다. 대신 실제 테스트가 지금의 도구 전부를 확인한다. 서버 293(+실제 6: 실제 대화에 fitz 도구 13개와 웹 검색이 그대로, 작업에는 읽기 5개와 답 도구만 실린다), 화면 단위 74, e2e 74 중 73(glossary는 책 데이터, §32), pipeline 37.

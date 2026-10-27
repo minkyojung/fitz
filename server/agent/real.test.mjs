@@ -14,7 +14,7 @@ import { deleteSession } from "@anthropic-ai/claude-agent-sdk"
 
 import { createAgentHost } from "./host.mjs"
 import { turnsOf } from "./records.mjs"
-import { DEFAULTS, READ_TOOLS, closeWarming, knownModels, openSession, startWarming, warmthSoFar } from "./session.mjs"
+import { DEFAULTS, READ_TOOLS, WEB_TOOLS, WRITE_TOOLS, closeWarming, knownModels, openSession, startWarming, warmthSoFar } from "./session.mjs"
 
 const REAL = process.env.FITZ_REAL_CLAUDE === "1"
 const skip = !REAL && "set FITZ_REAL_CLAUDE=1 (pnpm test:real) to run against real Claude Code"
@@ -80,7 +80,8 @@ test("Claude searches the web without asking the translator", { skip, timeout: 2
   const { ask, seen } = realConversation(t, gatsby())
   const result = await ask("Use WebSearch exactly once to find the year The Great Gatsby was first published, then answer with the year only. Do not read the book.")
   assert.equal(result.subtype, "success", JSON.stringify(result))
-  assert.ok(seen.init.tools.includes("WebSearch"), seen.init.tools.join(", "))
+  // every fitz tool as this code has them, and web search: a tool whose schema Claude Code refused would be missing
+  assert.deepEqual([...seen.init.tools].sort(), [...READ_TOOLS, ...WRITE_TOOLS, ...WEB_TOOLS].sort())
   assert.ok(seen.toolUses.some((b) => b.name === "WebSearch"), `Claude called: ${seen.toolUses.map((b) => b.name).join(", ") || "nothing"}`)
   assert.deepEqual(seen.asks, [])
   assert.match(result.result, /1925/)
