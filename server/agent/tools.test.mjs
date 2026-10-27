@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo, watchChanges } from "../commands.mjs"
 import { checkSegments } from "./checks.mjs"
-import { READ_BUDGET, addComment, addTranslatorNote, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, replyComment, resolveComment, searchBook, setGlossaryTerm, setNote, setTranslation, writeTools } from "./tools.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, annotations, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, replyComment, resolveComment, searchBook, setGlossaryTerm, setNote, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -133,14 +133,43 @@ test("glossary and search", () => {
   assert.deepEqual(searchBook(db, { query: "banana" }).hits.map((h) => [h.segmentId, h.count]), [[3, 1]])
 })
 
+test("annotations: a chapter's notes and open threads by paragraph, without the paragraphs' text", () => {
+  const db = fixture()
+  const { id: done } = addComment(db, { segmentId: 3, side: "target", body: "끝난 일" })
+  replyComment(db, { commentId: done, body: "답" })
+  resolveComment(db, { commentId: done })
+  replyComment(db, { commentId: 1, body: "1903년 배." })
+  assert.deepEqual(plain(annotations(db, { chapterId: 1 })), { paragraphs: [
+    { segmentId: 2, idx: 1, status: "untranslated",
+      notes: [{ id: 1, kind: "author", text: "Bought in 1903.", translation: "1903년에 샀다.", quote: "boat", placedAfter: null }],
+      comments: [
+        { id: 1, parentId: null, side: "source", author: "translator", body: "which boat?", resolved: false, quote: "boat" },
+        { id: 4, parentId: 1, side: "source", author: "agent", body: "1903년 배.", resolved: false, quote: null },
+      ] },
+    { segmentId: 3, idx: 2, status: "draft", notes: [{ id: 2, kind: "translator", text: "열대 과일.", quote: "바나나" }], comments: [] },
+  ] })
+  assert.deepEqual(plain(annotations(db, { chapterId: 2 })), { paragraphs: [] })
+  assert.throws(() => annotations(db, { chapterId: 9 }), { status: 404 })
+})
+
+test("annotations: a long chapter stops at the budget and says where to go on; one paragraph always comes back", () => {
+  const db = fixture()
+  db.prepare("UPDATE note SET body_target = ? WHERE id = 2").run("가".repeat(READ_BUDGET - 10))
+  const first = annotations(db, { chapterId: 1 })
+  assert.deepEqual([first.paragraphs.map((p) => p.segmentId), first.next], [[2], { chapterId: 1, from: 2 }])
+  const rest = annotations(db, first.next)
+  assert.deepEqual([rest.paragraphs.map((p) => p.segmentId), rest.next], [[3], undefined])
+})
+
 // The contract: only text leaves. No page images, no PDF path, no page boxes, no OCR original, no editor JSON.
 const FORBIDDEN_KEYS = ["image_path", "imagePath", "imageUrl", "source_pdf", "sourcePdf", "boxes", "ocrText", "ocr_text", "sourceDoc", "targetDoc", "source_doc", "target_doc"]
 const keysDeep = (v) => (v && typeof v === "object" ? Object.entries(v).flatMap(([k, x]) => [k, ...keysDeep(x)]) : [])
 
 test("no read tool result carries a page image, the PDF, page boxes, the OCR original or editor JSON", async () => {
   const db = fixture()
-  const outputs = [book(db), read(db, { chapterId: 1 }), read(db, { chapterId: 2 }), read(db, { ids: [2], around: 3 }), glossary(db), searchBook(db, { query: "Zemurray" })]
-  for (const t of readTools(db)) outputs.push((await t.handler(t.name === "read" ? { chapterId: 1 } : t.name === "search" ? { query: "a" } : {}, {})).structuredContent)
+  const outputs = [book(db), read(db, { chapterId: 1 }), read(db, { chapterId: 2 }), read(db, { ids: [2], around: 3 }), glossary(db), searchBook(db, { query: "Zemurray" }), annotations(db, { chapterId: 1 })]
+  const args = { read: { chapterId: 1 }, search: { query: "a" }, annotations: { chapterId: 1 } }
+  for (const t of readTools(db)) outputs.push((await t.handler(args[t.name] ?? {}, {})).structuredContent)
   for (const out of outputs) {
     const keys = keysDeep(out)
     assert.deepEqual(keys.filter((k) => FORBIDDEN_KEYS.includes(k)), [])
@@ -149,10 +178,10 @@ test("no read tool result carries a page image, the PDF, page boxes, the OCR ori
   }
 })
 
-test("MCP: four read-only tools whose results are the functions' results as JSON", async () => {
+test("MCP: read-only tools whose results are the functions' results as JSON", async () => {
   const db = fixture()
   const tools = readTools(db)
-  assert.deepEqual(tools.map((t) => t.name), ["book", "read", "glossary", "search"])
+  assert.deepEqual(tools.map((t) => t.name), ["book", "read", "glossary", "search", "annotations"])
   for (const t of tools) assert.equal(t.annotations?.readOnlyHint, true, t.name)
   const r = await tools[1].handler({ ids: [3], around: 1 }, {})
   assert.deepEqual(plain(r.structuredContent), plain(read(db, { ids: [3], around: 1 })))
@@ -162,8 +191,8 @@ test("MCP: four read-only tools whose results are the functions' results as JSON
 
 test("a task's server offers the read tools only; a free conversation's, the writes too", () => {
   const db = fixture()
-  assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search"])
-  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
+  assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search", "annotations"])
+  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "annotations", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
 })
 
 test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {

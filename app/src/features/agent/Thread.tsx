@@ -44,7 +44,7 @@ const writesOf = (b: Block) =>
   b.kind === "claude" ? b.parts.flatMap((p) => (p.kind === "tool" && WRITE_TOOLS.has(p.name) && p.status === "done" ? [p.id] : [])) : []
 
 const ICON: Record<string, React.ReactNode> = {
-  read: <IconBook />, book: <IconBook />, glossary: <IconBook />, search: <IconSearch />, WebSearch: <IconWorldSearch />,
+  read: <IconBook />, book: <IconBook />, glossary: <IconBook />, search: <IconSearch />, annotations: <IconNote />, WebSearch: <IconWorldSearch />,
   set_translation: <IconPencil />, edit_translation: <IconPencil />, set_glossary_term: <IconPencil />, add_comment: <IconMessage />, reply_comment: <IconMessage />, resolve_comment: <IconCircleCheck />, add_translator_note: <IconNote />, set_note: <IconNote />,
 }
 

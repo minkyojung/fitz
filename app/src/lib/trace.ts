@@ -26,6 +26,7 @@ export function toolLine(t: Tool): { title: string; note?: string } | null {
     case "book": return { title: "Looked at the book's chapters" }
     case "glossary": return { title: "Read the glossary" }
     case "search": return { title: `Searched “${String(i.query ?? "")}”` }
+    case "annotations": return { title: "Looked at the chapter's notes and comments" }
     case "WebSearch": return { title: `Searched the web for “${String(i.query ?? "")}”` }
     case "set_translation": return write(`Writing the translation of ${p}`, `Wrote the translation of ${p}`, `Did not write the translation of ${p}`)
     case "edit_translation": return write(`Editing the translation of ${p}`, `Edited the translation of ${p}`, `Did not edit the translation of ${p}`)
@@ -53,7 +54,7 @@ function why(result: unknown): string {
 
 /** The block being written now, while it streams: a tool's arguments are not readable until it is done. */
 const DOING: Record<string, string> = {
-  read: "Reading", book: "Looking at the book", glossary: "Reading the glossary", search: "Searching", WebSearch: "Searching the web",
+  read: "Reading", book: "Looking at the book", glossary: "Reading the glossary", search: "Searching", annotations: "Looking at notes and comments", WebSearch: "Searching the web",
   set_translation: "Writing a translation", edit_translation: "Editing a translation", set_glossary_term: "Changing the glossary", add_comment: "Writing a comment", reply_comment: "Writing a reply", resolve_comment: "Resolving a comment", add_translator_note: "Writing a translator's note", set_note: "Writing a note",
 }
 export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? "Working"

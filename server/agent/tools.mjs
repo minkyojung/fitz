@@ -31,6 +31,17 @@ export function book(db) {
 }
 
 const BOOK_ORDER = "SELECT s.* FROM segment s JOIN chapter c ON c.id = s.chapter_id"
+const NOTES_OF = "SELECT * FROM note WHERE segment_id = ? ORDER BY tgt_start, id"
+
+/** A note as the tools give it: an author's note with its translation and its place in the translation `target`; a
+ *  translator's note with the words it follows. */
+const noteOut = (n, target) => n.kind === "author"
+  ? { id: n.id, kind: "author", text: n.body_source ?? "", translation: n.body_target ?? "", quote: anchorOf(n, "src")?.exact ?? n.orig_quote ?? null, placedAfter: placedAfter(n, target) }
+  : { id: n.id, kind: "translator", text: n.body_target ?? "", quote: anchorOf(n, "tgt")?.exact ?? null }
+const commentOut = (c) => ({ id: c.id, parentId: c.parent_id ?? null, side: c.side, author: c.author, body: c.body, resolved: c.resolved === 1, quote: anchorOf(c, "src")?.exact ?? null })
+/** Characters of notes and comments, as READ_BUDGET counts them. */
+const attachedSize = (notes, comments) =>
+  notes.reduce((n, x) => n + x.text.length + (x.translation?.length ?? 0), 0) + comments.reduce((n, x) => n + x.body.length, 0)
 
 /** Paragraphs with what is attached to them. Exactly one of `ids` / `chapterId`; `around` widens a single id
  *  to its neighbours in the chapter; `from` continues a chapter at that idx. Stops at READ_BUDGET. */
@@ -52,22 +63,19 @@ export function read(db, { ids, chapterId, around, from } = {}) {
 
   const terms = db.prepare("SELECT term, translation, aliases, kind FROM glossary WHERE book_id = ?").all(getBook(db).id)
     .map((r) => ({ term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind }))
-  const notesOf = db.prepare("SELECT * FROM note WHERE segment_id = ? ORDER BY tgt_start, id")
+  const notesOf = db.prepare(NOTES_OF)
   const commentsOf = db.prepare("SELECT * FROM comment WHERE segment_id = ? ORDER BY id")
   const segments = []
   let used = 0
   for (const r of rows) {
-    const notes = notesOf.all(r.id).map((n) => n.kind === "author"
-      ? { id: n.id, kind: "author", text: n.body_source ?? "", translation: n.body_target ?? "", quote: anchorOf(n, "src")?.exact ?? n.orig_quote ?? null, placedAfter: placedAfter(n, r.target_text) }
-      : { id: n.id, kind: "translator", text: n.body_target ?? "", quote: anchorOf(n, "tgt")?.exact ?? null })
-    const comments = commentsOf.all(r.id).map((c) => ({ id: c.id, parentId: c.parent_id ?? null, side: c.side, author: c.author, body: c.body, resolved: c.resolved === 1, quote: anchorOf(c, "src")?.exact ?? null }))
+    const notes = notesOf.all(r.id).map((n) => noteOut(n, r.target_text))
+    const comments = commentsOf.all(r.id).map(commentOut)
     const seg = {
       id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
       status: r.status, version: r.version, sourceText: r.source_text, targetText: r.target_text ?? "",
       notes, comments, terms: termsIn(r.source_text, terms),
     }
-    const size = seg.sourceText.length + seg.targetText.length
-      + notes.reduce((n, x) => n + x.text.length + (x.translation?.length ?? 0), 0) + comments.reduce((n, x) => n + x.body.length, 0)
+    const size = seg.sourceText.length + seg.targetText.length + attachedSize(notes, comments)
     if (segments.length && used + size > READ_BUDGET) {
       const rest = rows.slice(segments.length)
       return { segments, next: chapterId !== undefined ? { chapterId, from: rest[0].idx } : { ids: rest.map((x) => x.id) } }
@@ -76,6 +84,29 @@ export function read(db, { ids, chapterId, around, from } = {}) {
     used += size
   }
   return { segments }
+}
+
+/** What is attached to a chapter's paragraphs, without their text: every note, and the comment threads still open with
+ *  their replies. Paragraphs with neither are left out. `from` continues at that idx; stops at READ_BUDGET, like read. */
+export function annotations(db, { chapterId, from = 0 }) {
+  if (!db.prepare("SELECT 1 FROM chapter WHERE id = ?").get(chapterId)) throw httpError(404, `chapter ${chapterId} not found`)
+  const rows = db.prepare("SELECT id, idx, status, target_text FROM segment WHERE chapter_id = ? AND idx >= ? ORDER BY idx").all(chapterId, from)
+  const notesOf = db.prepare(NOTES_OF)
+  // a thread is open while its first comment is not resolved; a reply is open with its thread
+  const openOf = db.prepare(`SELECT c.* FROM comment c LEFT JOIN comment root ON root.id = c.parent_id
+                             WHERE c.segment_id = ? AND coalesce(root.resolved, c.resolved) = 0 ORDER BY c.id`)
+  const paragraphs = []
+  let used = 0
+  for (const r of rows) {
+    const notes = notesOf.all(r.id).map((n) => noteOut(n, r.target_text))
+    const comments = openOf.all(r.id).map(commentOut)
+    if (!notes.length && !comments.length) continue
+    const size = attachedSize(notes, comments)
+    if (paragraphs.length && used + size > READ_BUDGET) return { paragraphs, next: { chapterId, from: r.idx } }
+    paragraphs.push({ segmentId: r.id, idx: r.idx, status: r.status, notes, comments })
+    used += size
+  }
+  return { paragraphs }
 }
 
 export const glossary = (db) =>
@@ -317,6 +348,14 @@ export const readTools = (db) => [
   tool("search", "Find paragraphs whose English source contains the exact text (case-sensitive). Returns where, how many times, and a snippet.",
     { query: z.string().min(1).describe("Exact text to find") },
     async (args) => result(searchBook(db, args)), READ_ONLY),
+  tool("annotations",
+    "What is attached to a chapter's paragraphs, without their text: every note (author's notes with their translation and placedAfter, translator's notes) and the comment threads still open, with their replies. " +
+    "Paragraphs with neither are left out; read a paragraph for its text. Long results stop part way and return `next`: call again with exactly those arguments to continue.",
+    {
+      chapterId: z.number().int(),
+      from: z.number().int().min(0).optional().describe("Start at this paragraph idx (as given in `next`)"),
+    },
+    async (args) => result(annotations(db, args)), READ_ONLY),
 ]
 
 /** The in-process MCP server handed to query() as mcpServers.fitz. alwaysLoad keeps the schemas in the prompt,
@@ -402,7 +441,7 @@ export const writeTools = (db, { wrote } = {}) => [
     async (args, extra) => result(setNote(db, args, agentBy(extra)))),
 ]
 
-export const READ_TOOL_NAMES = ["book", "read", "glossary", "search"]
+export const READ_TOOL_NAMES = ["book", "read", "glossary", "search", "annotations"]
 export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"]
 
 /** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */

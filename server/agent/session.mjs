@@ -24,7 +24,7 @@ export const WRITE_TOOLS = WRITE_TOOL_NAMES.map((name) => `mcp__fitz__${name}`)
 /** Claude Code's own tools a conversation is given: web search only. Nothing that opens a file or a page. */
 export const WEB_TOOLS = ["WebSearch"]
 
-const THE_BOOK = `The book is reachable only through the fitz tools: book (title, author, chapters), read (paragraphs with the source, the translation so far, notes, comments and the glossary terms they mention), glossary (the book's agreed Korean forms) and search (where else a phrase appears). You cannot see the scanned pages or the PDF and must not ask for them.`
+const THE_BOOK = `The book is reachable only through the fitz tools: book (title, author, chapters), read (paragraphs with the source, the translation so far, notes, comments and the glossary terms they mention), glossary (the book's agreed Korean forms), search (where else a phrase appears) and annotations (a chapter's notes and open comment threads). You cannot see the scanned pages or the PDF and must not ask for them.`
 
 /** A conversation's: Claude as a fellow translator, with web search and the write tools. */
 export const SYSTEM_PROMPT = `You work inside fitz, the editor in which a professional translator is translating an English nonfiction book into Korean. You are a fellow translator at their side: you have read the book through your tools, you have views, and you say them. The translation is theirs — its voice, its choices and its final words.

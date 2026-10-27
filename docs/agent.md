@@ -20,7 +20,7 @@ fitz는 번역 중인 책에 대해 일하는 Claude Code의 하네스다. Octav
 |---|---|---|
 | `tools` | `["WebSearch"]`, 작업 대화는 `[]` | 내장 도구는 웹 검색만. 원칙 2. 리뷰·오탈자는 책 안에서 찾는 일이라 웹이 없다 |
 | `mcpServers` | `{ fitz: createSdkMcpServer({ name: "fitz", tools }) }` | 앱 프로세스 안에서 도는 MCP. 도구 이름은 `mcp__fitz__<name>` |
-| `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search`, `WebSearch`(대화만) | 읽기와 웹 검색은 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
+| `allowedTools` | `mcp__fitz__book`, `__read`, `__glossary`, `__search`, `__annotations`, `WebSearch`(대화만) | 읽기와 웹 검색은 묻지 않는다. 쓰기는 `canUseTool`로 온다 |
 | `canUseTool` | 쓰기 도구 → host의 `ask`(번역자에게 묻는다), 그 밖 → 거절 | 답: 허락 / 이 세션 동안 항상(`addRules` + `destination: "session"`) / 거절. Claude Code가 제안하는 "항상" 규칙은 `localSettings` 파일에 적혀 대화가 끝나도 남으므로 쓰지 않는다 |
 | `permissionMode` | `"default"` | bypass가 아니다. 쓰기는 물어야 한다 |
 | `systemPrompt` | 문자열, 대화는 `SYSTEM_PROMPT`, 작업은 `TASK_SYSTEM_PROMPT` | 코딩용 preset 불필요. 번역 하네스 프롬프트로 교체. 작업에는 웹·쓰기 도구가 없어 그 말도 없다(§20) |
@@ -51,7 +51,7 @@ server/
   live.mjs              WebSocket /live: 대화와 책 변경 알림. agent/protocol.mjs로 검사하고 host에 넘긴다(§15)
   commands.mjs          COMMANDS · execute · undo · redo  — 그대로. 에이전트의 모든 쓰기가 지난다
   agent/
-    tools.mjs           MCP 도구 12개(읽기 4, 쓰기 8) = 기존 commands의 얇은 포장
+    tools.mjs           MCP 도구 13개(읽기 5, 쓰기 8) = 기존 commands의 얇은 포장
     session.mjs         query() 옵션 전부 명시. claude를 띄우는 유일한 파일
     fold.mjs            SDK 프레임 → 대화 상태. 순수 함수. 페이지도 같은 함수를 쓴다
     host.mjs            서버의 대화들: 대화마다 세션 하나, 접은 상태, 따라가는 쪽. 소켓을 모른다
@@ -67,7 +67,7 @@ app/src/
 
 ## 3. 도구 (MCP 서버 `fitz`)
 
-도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 12개: 읽기 4, 쓰기 8(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
+도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 13개: 읽기 5, 쓰기 8(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
 
 읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음, 병렬로 돈다:
 
@@ -77,6 +77,7 @@ app/src/
 | `read` | 단락 읽기. 주석·댓글·걸린 용어를 함께 싣는다. 저자 미주에는 번역문에서 번호가 붙은 단어(`placedAfter`, 없으면 null) | `ids[]` 또는 `chapterId` 중 하나, `around`(ids가 하나일 때 앞뒤 n단락), `from`(chapterId와 함께, `next`로 받은 값) | `{ segments: [{ id, chapterId, idx, kind, pageStart, pageEnd, status, version, sourceText, targetText, notes, comments, terms }] }` | `segRow`, `noteRow`, `commentRow`, 앱의 `findTerms` 규칙 |
 | `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
 | `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로) | `query` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
+| `annotations` | 장의 주석 전부와 열린 댓글 스레드(답글 포함), 단락의 글 없이. 둘 다 없는 단락은 빠진다 | `chapterId`, `from`(`next`로 받은 값) | `{ paragraphs: [{ segmentId, idx, status, notes, comments }], next? }` — `notes`·`comments`는 `read`와 같은 모양, 같은 예산 | `listAnnotations`와 같은 것 |
 
 - `read`가 주석·용어를 동봉하므로 단락 하나를 번역하는 데 읽기 호출은 1번이다.
 - `read`는 한 번에 글 2만 자(`READ_BUDGET`, 원문+번역+주석+댓글)까지 돌려주고, 남으면 `next`(다음 호출의 인자 그대로)를 준다. 단락 하나는 예산을 넘어도 돌려준다. 이유는 §8의 출력 한도.

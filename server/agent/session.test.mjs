@@ -28,7 +28,8 @@ for (const name of ["nuance", "translate"]) {
     const frames = readFileSync(new URL(`./fixtures/${name}.jsonl`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
     const init = frames.find((m) => m.type === "system" && m.subtype === "init")
     assert.ok(init.tools.every((t) => [...READ_TOOLS, ...WRITE_TOOLS].includes(t)), init.tools.join(", "))
-    assert.ok(READ_TOOLS.every((t) => init.tools.includes(t)))
+    // the read tools there were when it was recorded, all loaded (annotations came after, docs/agent.md §34)
+    assert.ok(["book", "read", "glossary", "search"].every((t) => init.tools.includes(`mcp__fitz__${t}`)))
     assert.deepEqual(init.mcp_servers.map((s) => s.name), ["fitz"])
     assert.equal(init.memory_paths?.auto, undefined)
     // every model request stayed small: no connector tools joined later (they once added 28,000 tokens)
@@ -52,7 +53,9 @@ for (const name of ["review", "typos"]) {
   test(`the recorded ${name} session was offered the read tools and the tool its answer goes in, nothing that writes`, () => {
     const frames = readFileSync(new URL(`./fixtures/${name}.jsonl`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l))
     const init = frames.find((m) => m.type === "system" && m.subtype === "init")
-    assert.deepEqual([...init.tools].sort(), [...READ_TOOLS, "StructuredOutput"].sort())
+    // what the tools were when it was recorded: read tools and the answer's, nothing that writes (tools added since are not in it)
+    assert.ok(init.tools.every((t) => [...READ_TOOLS, "StructuredOutput"].includes(t)), init.tools.join(", "))
+    assert.ok(init.tools.includes("StructuredOutput"))
     assert.ok(frames.find((m) => m.type === "result").structured_output)
   })
 }
