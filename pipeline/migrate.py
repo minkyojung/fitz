@@ -196,6 +196,22 @@ def migrate(path: Path) -> list[str]:
     if dcols and "decided_on" not in dcols:
         conn.execute("ALTER TABLE drill_card ADD COLUMN decided_on TEXT")
         done.append("drill_card.decided_on column")
+    if "relation" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+        # the same table as db/schema.sql (relations, docs/relations.md)
+        conn.executescript("""
+          CREATE TABLE relation (
+            id          INTEGER PRIMARY KEY,
+            book_id     INTEGER NOT NULL REFERENCES book(id),
+            from_term   TEXT NOT NULL,
+            to_term     TEXT NOT NULL,
+            label       TEXT NOT NULL,
+            segment_id  INTEGER NOT NULL REFERENCES segment(id),
+            quote       TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE INDEX idx_relation_segment ON relation(segment_id);
+        """)
+        done.append("relation table")
     triggers ={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     if "segment_version_on_update" not in triggers:
         # the same triggers as db/schema.sql

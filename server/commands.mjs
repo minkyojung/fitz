@@ -436,6 +436,45 @@ export const COMMANDS = {
     return { result: null, forward: { bookId, term }, inverse, segmentIds: [] }
   },
 
+  // ---- relations (docs/relations.md): two glossary terms joined by a label, resting on a paragraph of the source
+  addRelation(db, { id, bookId, fromTerm, toTerm, label, segmentId, quote = null, createdAt }) {
+    if (!label?.trim()) throw httpError(400, "label is required")
+    for (const term of [fromTerm, toTerm]) {
+      if (!term?.trim()) throw httpError(400, "both terms are required")
+      if (!db.prepare("SELECT 1 FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)) throw httpError(400, `“${term}” is not in the glossary; add it first`)
+    }
+    if (fromTerm === toTerm) throw httpError(400, "a relation joins two different terms")
+    const seg = getSegment(db, segmentId)
+    if (quote != null) {
+      if (!quote.trim()) throw httpError(400, "quote is empty")
+      const n = seg.source_text.split(quote).length - 1
+      if (n === 0) throw httpError(400, `“${quote}” is not in ¶${segmentId}'s source`)
+      if (n > 1) throw httpError(400, `“${quote}” occurs ${n} times in ¶${segmentId}; quote more of it`)
+    }
+    if (db.prepare("SELECT 1 FROM relation WHERE book_id = ? AND from_term = ? AND to_term = ? AND label = ? AND segment_id = ?").get(bookId, fromTerm, toTerm, label, segmentId))
+      throw httpError(400, "this relation is already recorded on this paragraph")
+    const newId = db.prepare(
+      "INSERT INTO relation(id, book_id, from_term, to_term, label, segment_id, quote, created_at) VALUES (?,?,?,?,?,?,?, coalesce(?, datetime('now')))",
+    ).run(id ?? null, bookId, fromTerm, toTerm, label, segmentId, quote, createdAt ?? null).lastInsertRowid
+    const row = getRelation(db, newId)
+    return {
+      result: relationRow(row),
+      forward: { id: Number(newId), bookId, fromTerm, toTerm, label, segmentId, quote, createdAt: row.created_at },
+      inverse: { name: "removeRelation", params: { id: Number(newId) } },
+      segmentIds: [segmentId],
+    }
+  },
+  removeRelation(db, { id }) {
+    const cur = getRelation(db, id)
+    db.prepare("DELETE FROM relation WHERE id = ?").run(id)
+    return {
+      result: null,
+      forward: { id },
+      inverse: { name: "addRelation", params: { id, bookId: cur.book_id, fromTerm: cur.from_term, toTerm: cur.to_term, label: cur.label, segmentId: cur.segment_id, quote: cur.quote, createdAt: cur.created_at } },
+      segmentIds: [cur.segment_id],
+    }
+  },
+
   // ---- comments (work notes, never exported). Replies carry parentId.
   // author: "translator" (the editor's route) or "agent" (the fitz tool); a comment keeps it through undo and redo
   addComment(db, { id, segmentId, side, anchor, body, parentId = null, resolved = false, author = "translator", createdAt }) {
@@ -640,6 +679,8 @@ export function touches({ name, params: p, segmentIds }) {
       return p.rows.map((r) => `comment:${r.id}`)
     case "addNote": case "setNote": case "deleteNote":
       return [`note:${p.id}`]
+    case "addRelation": case "removeRelation":
+      return [`relation:${p.id}`]
     case "setNoteAnchor":
       return [`note:${p.noteId}`]
     case "decideSuggestion":
@@ -838,6 +879,28 @@ export const listGlossary = (db, { bookId }) => {
     for (const t of texts) if (re.test(t.source_text)) { occurrences++; first ??= { segmentId: t.id, chapterId: t.chapter_id } }
     return { id: r.id, term: r.term, translation: r.translation, aliases: r.aliases ?? "", kind: r.kind, occurrences, first }
   })
+}
+
+const getRelation = (db, id) => {
+  const r = db.prepare("SELECT r.*, s.chapter_id FROM relation r JOIN segment s ON s.id = r.segment_id WHERE r.id = ?").get(id)
+  if (!r) throw httpError(404, `relation ${id} not found`)
+  return r
+}
+export const relationRow = (r) => ({ id: r.id, from: r.from_term, to: r.to_term, label: r.label, segmentId: r.segment_id, chapterId: r.chapter_id, quote: r.quote, createdAt: r.created_at })
+
+/** The book's relations in book order (docs/relations.md). `chapterId`: only those resting on a paragraph of that chapter
+ *  or an earlier one (the book as read so far). `term`: only those with the term at either end. */
+export const listRelations = (db, { bookId, chapterId, term } = {}) => {
+  const where = ["r.book_id = ?"]
+  const args = [bookId]
+  if (chapterId != null) {
+    const ch = db.prepare("SELECT idx FROM chapter WHERE id = ?").get(chapterId)
+    if (!ch) throw httpError(404, `chapter ${chapterId} not found`)
+    where.push("c.idx <= ?"); args.push(ch.idx)
+  }
+  if (term != null) { where.push("(r.from_term = ? OR r.to_term = ?)"); args.push(term, term) }
+  return db.prepare(`SELECT r.*, s.chapter_id FROM relation r JOIN segment s ON s.id = r.segment_id JOIN chapter c ON c.id = s.chapter_id
+                     WHERE ${where.join(" AND ")} ORDER BY c.idx, s.idx, r.id`).all(...args).map(relationRow)
 }
 
 /** Everything attached to a chapter's segments: comments (with replies) and notes of both kinds. */

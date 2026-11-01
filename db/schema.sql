@@ -120,6 +120,19 @@ CREATE TABLE glossary (
 );
 -- 용어 출현 위치는 저장하지 않고 source_text 검색으로 파생
 
+-- 관계(docs/relations.md): 용어집의 두 용어를 잇는 선과, 그 선이 기대는 단락. 노드는 glossary, 선만 여기.
+CREATE TABLE relation (
+  id          INTEGER PRIMARY KEY,
+  book_id     INTEGER NOT NULL REFERENCES book(id),
+  from_term   TEXT NOT NULL,                             -- glossary.term
+  to_term     TEXT NOT NULL,                             -- glossary.term
+  label       TEXT NOT NULL,                             -- "경영권을 잡았다". 자유 문자열
+  segment_id  INTEGER NOT NULL REFERENCES segment(id),   -- 근거 단락. 필수
+  quote       TEXT,                                      -- 그 단락 원문에 정확히 한 번 나오는 구절. NULL = 단락 단위로만
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_relation_segment ON relation(segment_id);
+
 -- 명령 기록. 모든 쓰기는 한 행을 남기고, undo는 inverse를, redo는 정방향을 재실행한다.
 CREATE TABLE ops (
   id             INTEGER PRIMARY KEY,          -- 실행 순서

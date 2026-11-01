@@ -35,7 +35,7 @@ def test_migration_adds_ocr_text_and_keeps_originals(tmp_path: Path):
     """)
     conn.commit(); conn.close()
     steps = migrate(p)
-    assert len(steps) == 11
+    assert len(steps) == 12
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=1").fetchone()[0] == "untouched"
     assert conn.execute("SELECT ocr_text FROM segment WHERE id=2").fetchone()[0] is None
@@ -264,5 +264,17 @@ def test_migration_adds_decided_on_to_session_cards_made_before_it(tmp_path: Pat
     assert "drill_card.decided_on column" in migrate(p)
     conn = sqlite3.connect(p)
     assert conn.execute("SELECT status, decided_on FROM drill_card").fetchone() == ("active", None)
+    conn.close()
+    assert migrate(p) == []
+
+
+def test_migration_adds_relation_table(tmp_path: Path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.executescript("CREATE TABLE segment (id INTEGER PRIMARY KEY, idx INTEGER, source_text TEXT, target_text TEXT, updated_at TEXT, version INTEGER);")
+    conn.commit(); conn.close()
+    assert "relation table" in migrate(p)
+    conn = sqlite3.connect(p)
+    assert {"from_term", "to_term", "label", "segment_id", "quote"} <= {r[1] for r in conn.execute("PRAGMA table_info(relation)")}
     conn.close()
     assert migrate(p) == []

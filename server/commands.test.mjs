@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 
-import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, touches, undo, undoAgent, agentOps, watchChanges } from "./commands.mjs"
+import { COMMANDS, docText, execute, listAnnotations, listGlossary, listOps, listRelations, listSuggestions, mergeDocs, pmDoc, redo, replaceAll, replaceInDoc, replaceRange, search, splitDoc, touches, undo, undoAgent, agentOps, watchChanges } from "./commands.mjs"
 
 const CLAUDE = { actor: "agent" }
 const SCHEMA = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8")
@@ -39,6 +39,7 @@ const snapshot = (db) => ({
   notes: db.prepare("SELECT id, segment_id, kind, src_start, src_end, tgt_exact, tgt_start, body_target, anchored FROM note ORDER BY id").all(),
   comments: db.prepare("SELECT id, segment_id, side, parent_id, src_exact, src_start, body, resolved FROM comment ORDER BY id").all(),
   glossary: db.prepare("SELECT book_id, term, translation, aliases, kind FROM glossary ORDER BY term").all(),
+  relations: db.prepare("SELECT id, book_id, from_term, to_term, label, segment_id, quote FROM relation ORDER BY id").all(),
   boxes: db.prepare("SELECT * FROM segment_box ORDER BY segment_id, page_no").all(),
 })
 const opsCount = (db, undone) => db.prepare("SELECT count(*) n FROM ops WHERE undone = ?").get(undone ? 1 : 0).n
@@ -596,7 +597,7 @@ test("listSuggestions: a chapter's open suggestions, in book order", () => {
 
 // --- two writers, two ways back: what each change touched (docs/agent.md §18)
 
-test("every command says what it touched, read back from the log, both ways: paragraphs, terms, comments, notes, suggestions", () => {
+test("every command says what it touched, read back from the log, both ways: paragraphs, terms, comments, notes, relations, suggestions", () => {
   const db = fixture()
   const doc = (text) => JSON.parse(pmDoc(text))
   execute(db, "updateSegment", { id: 2, text: "alpha beta gamma" })
@@ -616,6 +617,10 @@ test("every command says what it touched, read back from the log, both ways: par
   execute(db, "setNote", { id: n.id, body: "n2" })
   execute(db, "deleteNote", { id: n.id })
   execute(db, "setNoteAnchor", { noteId: 3, segmentId: 4, anchored: true })
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "alpha", translation: "알파" })
+  execute(db, "setGlossaryTerm", { bookId: 1, term: "gamma", translation: "감마" })
+  const rel = execute(db, "addRelation", { bookId: 1, fromTerm: "alpha", toTerm: "gamma", label: "beside", segmentId: 4 })
+  execute(db, "removeRelation", { id: rel.id })
   const sid = Number(db.prepare(`INSERT INTO agent_suggestion(conversation_id, task, segment_id, side, quote, replacement, why, base_version)
     VALUES ('c', 'typos', 4, 'source', 'last', 'least', '-', 1)`).run().lastInsertRowid)
   execute(db, "decideSuggestion", { id: sid, decision: "accept" })
@@ -744,4 +749,66 @@ test("a change of Claude's in another conversation, after these and on the same 
   execute(db, "updateSegment", { id: 2, text: "this conversation" }, claude("toolu_1"))
   execute(db, "updateSegment", { id: 2, text: "another conversation" }, claude("toolu_9"))
   assert.throws(() => undoAgent(db, ["toolu_1"]), { status: 409, message: "Claude changed ¶2 after this" })
+})
+
+// ---- relations (docs/relations.md)
+
+const withTerms = (db) => {
+  for (const term of ["alpha", "gamma", "zeta"]) execute(db, "setGlossaryTerm", { bookId: 1, term, translation: term, kind: "person" })
+  return db
+}
+
+test("addRelation: execute → undo restores, redo reapplies under the same id; the log names the paragraph", () => {
+  const db = withTerms(fixture())
+  const before = snapshot(db)
+  const made = execute(db, "addRelation", { bookId: 1, fromTerm: "alpha", toTerm: "gamma", label: "beside", segmentId: 2, quote: "beta" })
+  const { createdAt, ...fields } = plain(made)
+  assert.ok(createdAt)
+  assert.deepEqual(fields, { id: made.id, from: "alpha", to: "gamma", label: "beside", segmentId: 2, chapterId: 1, quote: "beta" })
+  const after = snapshot(db)
+  assert.notDeepEqual(after, before)
+  assert.deepEqual(JSON.parse(db.prepare("SELECT segment_ids FROM ops ORDER BY id DESC LIMIT 1").get().segment_ids), [2])
+  assert.ok(undo(db))
+  assert.deepEqual(snapshot(db), before)
+  assert.ok(redo(db))
+  assert.deepEqual(snapshot(db), after)
+  execute(db, "removeRelation", { id: made.id })
+  assert.deepEqual(snapshot(db), before)
+  assert.ok(undo(db))
+  assert.deepEqual(snapshot(db), after, "removed, undo brings it back under its id")
+  assert.deepEqual(touches({ name: "addRelation", params: { id: 7 }, segmentIds: [2] }), ["relation:7"])
+  assert.deepEqual(touches({ name: "removeRelation", params: { id: 7 }, segmentIds: [2] }), ["relation:7"])
+})
+
+test("addRelation refuses what would not hold: a term not in the glossary, the same term twice, no label, no paragraph, a quote absent or ambiguous, a repeat", () => {
+  const db = withTerms(fixture())
+  const ok = { bookId: 1, fromTerm: "alpha", toTerm: "gamma", label: "beside", segmentId: 2 }
+  assert.throws(() => execute(db, "addRelation", { ...ok, toTerm: "omega" }), { status: 400, message: /“omega” is not in the glossary/ })
+  assert.throws(() => execute(db, "addRelation", { ...ok, toTerm: "alpha" }), { status: 400, message: /two different terms/ })
+  assert.throws(() => execute(db, "addRelation", { ...ok, label: " " }), { status: 400, message: /label is required/ })
+  assert.throws(() => execute(db, "addRelation", { ...ok, segmentId: 99 }), { status: 404 })
+  assert.throws(() => execute(db, "addRelation", { ...ok, quote: "omega" }), { status: 400, message: /not in ¶2/ })
+  db.prepare("UPDATE segment SET source_text = 'beta beta' WHERE id = 2").run()
+  assert.throws(() => execute(db, "addRelation", { ...ok, quote: "beta" }), { status: 400, message: /occurs 2 times/ })
+  execute(db, "addRelation", ok)
+  assert.throws(() => execute(db, "addRelation", ok), { status: 400, message: /already recorded/ })
+  assert.equal(db.prepare("SELECT count(*) n FROM relation").get().n, 1)
+  assert.throws(() => execute(db, "removeRelation", { id: 99 }), { status: 404 })
+})
+
+test("listRelations: book order; up to a chapter; those with a term at either end", () => {
+  const db = withTerms(fixture())
+  db.exec(`INSERT INTO chapter(id, book_id, idx, title) VALUES (2, 1, 1, 'Two');
+           INSERT INTO segment(id, chapter_id, idx, kind, page_start, page_end, source_doc, source_text) VALUES (5, 2, 0, 'paragraph', 9, 9, '${pmDoc("later alpha")}', 'later alpha')`)
+  execute(db, "addRelation", { bookId: 1, fromTerm: "gamma", toTerm: "zeta", label: "then", segmentId: 3 })
+  execute(db, "addRelation", { bookId: 1, fromTerm: "alpha", toTerm: "zeta", label: "later", segmentId: 5 })
+  execute(db, "addRelation", { bookId: 1, fromTerm: "alpha", toTerm: "gamma", label: "first", segmentId: 2 })
+  const labels = (q) => listRelations(db, { bookId: 1, ...q }).map((r) => r.label)
+  assert.deepEqual(labels({}), ["first", "then", "later"])
+  assert.deepEqual(labels({ chapterId: 1 }), ["first", "then"])
+  assert.deepEqual(labels({ chapterId: 2 }), ["first", "then", "later"])
+  assert.deepEqual(labels({ term: "alpha" }), ["first", "later"])
+  assert.deepEqual(labels({ chapterId: 1, term: "zeta" }), ["then"])
+  assert.deepEqual(plain(listRelations(db, { bookId: 1, term: "alpha" })[1]).chapterId, 2)
+  assert.throws(() => listRelations(db, { bookId: 1, chapterId: 9 }), { status: 404 })
 })
