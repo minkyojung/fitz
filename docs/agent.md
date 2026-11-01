@@ -953,3 +953,5 @@ Glossary·관계·Find는 종류가 같다 — 책 전체를 훑어 단락 하�
 | 3 | Glossary → 탭 | `features/reference/GlossaryList.tsx`(`GlossaryPage` 대신), `App.tsx`·`AppShell.tsx`(모드·항목 제거) | e2e glossary: 탭에서 같은 일(미정 먼저, 필터, 배지, 첫 등장으로) |
 | 4 | Export → 대화상자 | `features/export/ExportDialog.tsx`(`ExportView`를 감쌈), `App.tsx`·`AppShell.tsx` | e2e export·sidebar: 버튼으로 열어 같은 일 |
 | 5 | 관계 탭 | `docs/relations.md` §7 | |
+
+**결과**(2026-11-01): `Mode`는 review·translate·session. 참조 칸은 `features/reference/`(`ReferenceColumn`·`GlossaryList`·`RelationsGraph`), 모드별 `reference` 상태 하나, 머리줄의 버튼과 ⌘I(`toggleReference`). Export는 `ExportDialog`가 `ExportView`를 그대로 감싼다. 갤러리는 진입점에서 lazy로 실어 에디터 번들에서 React Flow·ELK가 빠졌다(3.66MB → 1.70MB). e2e 76 중 72: 실패 넷(review 둘, glossary의 첫 것, claude의 Ask Claude)은 이 작업 전 커밋(5267f81)에서도 같은 자리에서 실패한다 — 책 데이터가 테스트가 쓰인 때와 다르다(§34의 "glossary는 책 데이터"와 같은 것).

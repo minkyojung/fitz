@@ -117,6 +117,8 @@ CREATE INDEX idx_relation_segment ON relation(segment_id);
 | 6 | 선택 툴바의 Add relation, 선 우클릭 Remove | `FloatingToolbar.tsx`, `RelationsGraph.tsx` | e2e: 구절 긋고 만들기, 지우기, ⌘Z |
 | 끝 | 전부 | | server·unit·types·lint·e2e |
 
+**결과**(2026-11-01): 2–6행 전부. 명령의 검사는 `checkRelation` 하나에 있어 `addRelation`과 승인 카드(`describeWrite`)가 같은 것을 본다. 선택 툴바의 Add relation은 고른 글자가 단락에 한 번이면 그것을 `quote`로, 두 번 이상이면 단락만 근거로 보낸다(거절 대신). 그래프는 Relations 탭을 처음 열 때 실린다(lazy). 서버 304(+실제 6 건너뜀), 화면 단위 74, pipeline 38, e2e 76 중 72(실패 넷은 이 작업 전부터, §35 결과). 마이그레이션은 `pipeline.migrate`가 `relation` 테이블을 만든다; 이 작업 폴더의 `out/book.db`에는 적용했다(백업 `out/book.db.bak-2026-11-01-before-relation`).
+
 ## 8. 참고 — 왜 React Flow이고 왜 Arky를 봤나
 
 **tldraw가 아닌 이유.** tldraw는 좌표가 진실인 화이트보드다(자유 도형, 손그림, 화살표는 도형에 바인딩되는 별도 도형). 자동 배치가 없고,
