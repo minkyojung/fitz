@@ -9,7 +9,6 @@ import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
 import { FindInput, FindResults } from "@/features/review/Find"
 import { ExportView } from "@/features/export/ExportView"
-import { GlossaryPage } from "@/features/review/GlossaryPage"
 import { SessionPage } from "@/features/session/SessionPage"
 import { useSession } from "@/features/session/useSession"
 import { ClaudeTab } from "@/features/agent/ClaudeTab"
@@ -27,6 +26,7 @@ import { useReview } from "@/features/review/ReviewView"
 import { useTranslate } from "@/features/translate/TranslateView"
 import { Toggle } from "@/components/ui/toggle"
 import { ReferenceColumn, type Reference } from "@/features/reference/ReferenceColumn"
+import { GlossaryList } from "@/features/reference/GlossaryList"
 import { formatSheets, sheets } from "@/lib/manuscript"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useClaude } from "@/data/useClaude"
@@ -78,15 +78,15 @@ export function App() {
   )
   // the reference column (§35): open on the scan while reviewing, folded while translating (the source sits right beside
   // the translation); ⌘I or the header's button brings it back, on the tab last looked at
-  const [reference, setReference] = useState<Record<Mode, Reference | null>>({ review: "scan", translate: null, export: null, glossary: null, session: null })
+  const [reference, setReference] = useState<Record<Mode, Reference | null>>({ review: "scan", translate: null, export: null, session: null })
   const [lastTab, setLastTab] = useState<Reference>("scan")
   const showTab = useCallback((tab: Reference | null) => { setReference((m) => ({ ...m, [mode]: tab })); if (tab) setLastTab(tab) }, [mode])
   const toggleReference = () => showTab(reference[mode] ? null : lastTab)
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes, onSelectChapter: book.setChapterId })
   const translating = mode === "translate"
   const exporting = mode === "export"
-  // Export, the glossary and Session are pages of the whole book, in the panels' place: no chapter, no paragraph to act on
-  const wholeBook = exporting || mode === "glossary" || mode === "session"
+  // Export and Session are pages of the whole book, in the panels' place: no chapter, no paragraph to act on
+  const wholeBook = exporting || mode === "session"
   const session = useSession()
   const commands = wholeBook ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
@@ -124,6 +124,7 @@ export function App() {
     [speller, userWords, book.segments],
   )
   const openFind = () => setFindFocusToken((n) => n + 1)
+  const pendingTerms = book.spell.glossary.filter((t) => !t.translation).length
   // a paragraph from Find or the glossary opens in the stage you are in; from a page of the whole book, in Review (both
   // find it in the source)
   const jumpTo = (segmentId: number, chapterId: number) => {
@@ -144,7 +145,7 @@ export function App() {
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleReference, askClaude: askAboutSelection }), [commands, book.undo, book.redo, askClaude])) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
-  const place = exporting ? "Export" : mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : book.chapter?.title ?? "—"
+  const place = exporting ? "Export" : mode === "session" ? "Session" : book.chapter?.title ?? "—"
 
   return (
     <DraftContext value={book.drafts}>
@@ -159,7 +160,7 @@ export function App() {
       book={book.book}
       find={<FindInput query={findQuery} onQuery={setFindQuery} focusToken={findFocusToken} />}
       stageProgress={stageProgress}
-      pendingTerms={book.spell.glossary.filter((t) => !t.translation).length}
+      pendingTerms={pendingTerms}
       sessionLeft={session.left}
       referenceOpen={reference[mode] !== null}
       onReferenceToggle={toggleReference}
@@ -168,10 +169,10 @@ export function App() {
         <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpTo} onReplaceAll={book.replaceAll} />
       ) : wholeBook ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       crumb={wholeBook ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
-      main={exporting ? <ExportView chapters={book.chapters} /> : mode === "glossary" ? <GlossaryPage onJump={jumpTo} />
+      main={exporting ? <ExportView chapters={book.chapters} />
         : mode === "session" ? <SessionPage day={session.day} error={session.error} chapters={book.chapters} reload={session.reload} onJump={openInTranslate} onDiscuss={discussInTranslate} />
         : undefined}
-      left={reference[mode] && <ReferenceColumn tab={reference[mode]} onTab={showTab} scan={review.left} />}
+      left={reference[mode] && <ReferenceColumn tab={reference[mode]} onTab={showTab} scan={review.left} glossary={<GlossaryList onJump={jumpTo} />} pendingTerms={pendingTerms} />}
       right={translating ? translate.view : review.right}
       panel={
         <ClaudeTab

@@ -66,7 +66,7 @@ test("glossary: add a term from a selection, set its translation, see it marked,
   await expect(pair.locator("[data-term-missing]")).toHaveCount(0)
 })
 
-test("the glossary is a page: untranslated first, set in place, its badges count down; a term opens at its first mention", async ({ page }) => {
+test("the glossary is a tab of the reference column: untranslated first, set in place, its badges count down; a term opens at its first mention", async ({ page }) => {
   {
     const db = new DatabaseSync("/tmp/fitz-e2e.db", { timeout: 5000 })
     try {
@@ -75,33 +75,45 @@ test("the glossary is a page: untranslated first, set in place, its badges count
     } finally { db.close() }
   }
   await page.goto("/")
-  const glossary = page.getByRole("button", { name: "Glossary", exact: true })
-  const badge = page.locator("[data-sidebar=menu-item]", { has: glossary }).locator("[data-sidebar=menu-badge]")
+  // Review opens the column on the scan; the glossary is the tab beside it, its badge the terms without a translation
+  const reference = page.getByRole("button", { name: "Reference", exact: true })
+  await expect(reference).toHaveAttribute("aria-pressed", "true")
+  const tab = page.getByRole("tab", { name: /^Glossary/ })
+  const badge = tab.locator("[data-slot=badge]")
   const pending = Number(await badge.innerText())
   expect(pending).toBeGreaterThan(0)
-  await glossary.click()
-  await expect(glossary).toHaveAttribute("aria-current", "page")
-  await expect(page.locator("header")).toContainText("Glossary")
-  await expect(page.getByRole("navigation", { name: "Chapters" })).toHaveCount(0)
+  await tab.click()
+  await expect(tab).toHaveAttribute("aria-selected", "true")
+  await expect(page.getByRole("navigation", { name: "Chapters" })).toBeVisible()  // the paragraph never leaves: the chapters stay
 
-  const translations = page.getByRole("table", { name: "Glossary" }).getByRole("textbox", { name: /^Translation of / })
-  const values = await translations.evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))
-  expect(values).toEqual([...values].sort((a, b) => Number(!!a) - Number(!!b)))  // untranslated first
+  const rows = page.locator("li[data-glossary-term]")
+  const translated = await rows.evaluateAll((els) => els.map((e) => (e.querySelector("[lang=ko]") ? 1 : 0)))
+  expect(translated).toEqual([...translated].sort())  // untranslated first
   await page.getByRole("button", { name: /Without translation/ }).click()
-  await expect(translations).toHaveCount(pending)
+  await expect(rows).toHaveCount(pending)
   await page.getByRole("textbox", { name: "Filter terms" }).fill("Zemurray")
-  await expect(translations).toHaveCount(1)
+  await expect(rows).toHaveCount(1)
+  await page.getByRole("button", { name: "Zemurray", exact: true }).click()
   const tr = page.getByRole("textbox", { name: "Translation of Zemurray" })
   await tr.fill("제머레이")
   await tr.press("Enter")
   await expect(page.locator("footer [role=status]")).toHaveText("Saved")
-  await expect(translations).toHaveCount(0)  // translated, it leaves the untranslated
+  await expect(rows).toHaveCount(0)  // translated, it leaves the untranslated
   await expect(page.locator("[data-pending-terms]")).toHaveText(String(pending - 1))
   if (pending > 1) await expect(badge).toHaveText(String(pending - 1))
   else await expect(badge).toHaveCount(0)
 
   await page.getByRole("button", { name: /Without translation/ }).click()
-  await page.getByRole("button", { name: "Zemurray", exact: true }).click()
+  const row = page.locator('li[data-glossary-term="Zemurray"]')  // the filter also finds the terms that contain the name
+  await expect(row).toBeVisible()
+  const first = row.getByRole("button", { name: "First mention" })
+  if (!(await first.isVisible())) await row.getByRole("button", { name: "Zemurray", exact: true }).click()
+  await first.click()
   await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveAttribute("aria-current", "page")
   await expect(page.locator("[data-segment][data-selected]")).toContainText("Zemurray")
+
+  // closed, the column's button wears a dot while terms wait for a translation
+  await page.keyboard.press("Meta+i")
+  await expect(reference).toHaveAttribute("aria-pressed", "false")
+  if (pending > 1) await expect(reference.locator("[data-attention]")).toBeVisible()
 })

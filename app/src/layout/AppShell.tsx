@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react"
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels"
-import { IconBook, IconBook2, IconCards, IconFileExport, IconLanguage, IconLayoutSidebar, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
+import { IconBook, IconCards, IconFileExport, IconLanguage, IconLayoutSidebar, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -13,9 +13,9 @@ import {
 } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
-/** The stages of the work; and, at the sidebar's foot, the pages of the whole book: Session (the day's quiz,
- *  docs/session.md) and the glossary. */
-export type Mode = "review" | "translate" | "export" | "glossary" | "session"
+/** The stages of the work; and, at the sidebar's foot, the page of the whole book: Session (the day's quiz,
+ *  docs/session.md). */
+export type Mode = "review" | "translate" | "export" | "session"
 
 const STAGES: { value: Mode; label: string; icon: Icon }[] = [
   { value: "review", label: "Review", icon: IconScan },
@@ -32,7 +32,8 @@ interface AppShellProps {
   find: ReactNode
   /** How far the book is in a stage, in percent: the stage's badge. */
   stageProgress: Partial<Record<Mode, number>>
-  /** Glossary terms without a translation: the glossary's badge. */
+  /** Glossary terms without a translation: a dot on the reference button while the column is closed (the glossary's tab
+   *  has the count). */
   pendingTerms: number
   /** Today's cards and challenges not yet done: Session's badge, and a dot when the sidebar is folded to icons. */
   sessionLeft: number
@@ -55,7 +56,7 @@ interface AppShellProps {
    *  closed, saying this. */
   claudeWaiting: string | null
   status: ReactNode
-  /** A full-width page that replaces the three panels (Export, Glossary, Session). */
+  /** A full-width page that replaces the three panels (Export, Session). */
   main?: ReactNode
 }
 
@@ -73,7 +74,7 @@ export function AppShell({
   const layout = useDefaultLayout({
     id: "fitz-panels", panelIds: referenceOpen ? ["reference", "main", "panel"] : ["main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
   })
-  const label = mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : STAGES.find((m) => m.value === mode)!.label
+  const label = mode === "session" ? "Session" : STAGES.find((m) => m.value === mode)!.label
   // The panel is what is open or not (its edge can be dragged shut, its layout is remembered), and says so on resize;
   // the header's button asks it to change. Only a change is acted on: a page opening keeps the panel as it was left.
   const claudePanel = usePanelRef()
@@ -136,14 +137,6 @@ export function AppShell({
                 {/* folded to icons the badge is gone: a dot says something is waiting */}
                 {sessionLeft > 0 && <span aria-hidden className="pointer-events-none absolute top-1.5 left-6 hidden size-1.5 rounded-full bg-primary group-data-[collapsible=icon]:block" />}
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={mode === "glossary"} aria-current={mode === "glossary" ? "page" : undefined} tooltip="Glossary"
-                  onClick={() => onModeChange("glossary")}>
-                  <IconBook2 />
-                  <span>Glossary</span>
-                </SidebarMenuButton>
-                {pendingTerms > 0 && <SidebarMenuBadge title="Terms without a translation">{pendingTerms}</SidebarMenuBadge>}
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
@@ -156,11 +149,12 @@ export function AppShell({
           {!main && (
             <Tooltip>
               <TooltipTrigger
-                render={<Button size="icon-sm" variant={referenceOpen ? "secondary" : "ghost"} aria-label="Reference" aria-pressed={referenceOpen} onClick={onReferenceToggle} />}
+                render={<Button size="icon-sm" variant={referenceOpen ? "secondary" : "ghost"} aria-label="Reference" aria-pressed={referenceOpen} className="relative" onClick={onReferenceToggle} />}
               >
                 <IconLayoutSidebar />
+                {!referenceOpen && pendingTerms > 0 && <span data-attention aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />}
               </TooltipTrigger>
-              <TooltipContent side="bottom">Scan <Kbd>⌘I</Kbd></TooltipContent>
+              <TooltipContent side="bottom">Scan · Glossary{!referenceOpen && pendingTerms > 0 ? ` · ${pendingTerms} terms without a translation` : ""} <Kbd>⌘I</Kbd></TooltipContent>
             </Tooltip>
           )}
           <Breadcrumb className="min-w-0">
