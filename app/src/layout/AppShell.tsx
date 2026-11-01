@@ -15,12 +15,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 /** The stages of the work; and, at the sidebar's foot, the page of the whole book: Session (the day's quiz,
  *  docs/session.md). */
-export type Mode = "review" | "translate" | "export" | "session"
+export type Mode = "review" | "translate" | "session"
 
 const STAGES: { value: Mode; label: string; icon: Icon }[] = [
   { value: "review", label: "Review", icon: IconScan },
   { value: "translate", label: "Translate", icon: IconLanguage },
-  { value: "export", label: "Export", icon: IconFileExport },
 ]
 
 interface AppShellProps {
@@ -37,7 +36,7 @@ interface AppShellProps {
   pendingTerms: number
   /** Today's cards and challenges not yet done: Session's badge, and a dot when the sidebar is folded to icons. */
   sessionLeft: number
-  /** The chapters, under the stages (or what Find found); none in a stage of the whole book (Export). */
+  /** The chapters, under the stages (or what Find found); none on a page of the whole book (Session). */
   sidebar: ReactNode
   /** The breadcrumb after the stage: the chapter, as a menu. None in a stage of the whole book. */
   crumb: ReactNode
@@ -46,6 +45,8 @@ interface AppShellProps {
   /** The reference column is open: the header's button and ⌘I toggle it. Closed, it is not rendered. */
   referenceOpen: boolean
   onReferenceToggle: () => void
+  /** Export: the header's button opens its dialog (§35). */
+  onExport: () => void
   right: ReactNode
   /** Claude's panel, the right one. */
   panel: ReactNode
@@ -56,7 +57,7 @@ interface AppShellProps {
    *  closed, saying this. */
   claudeWaiting: string | null
   status: ReactNode
-  /** A full-width page that replaces the three panels (Export, Session). */
+  /** A full-width page that replaces the three panels (Session). */
   main?: ReactNode
 }
 
@@ -66,8 +67,8 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 /** Fixed frame: sidebar (sidebar-07: the book, the stages, the chapters; folds to icons) | [breadcrumb /
  *  left+right+panel / status]. Content is injected per mode. */
 export function AppShell({
-  mode, onModeChange, book, find, stageProgress, pendingTerms, sessionLeft, sidebar, crumb, left, referenceOpen, onReferenceToggle, right, panel, claudeOpen, onClaudeOpenChange,
-  claudeWaiting, status, main,
+  mode, onModeChange, book, find, stageProgress, pendingTerms, sessionLeft, sidebar, crumb, left, referenceOpen, onReferenceToggle, onExport, right, panel, claudeOpen,
+  onClaudeOpenChange, claudeWaiting, status, main,
 }: AppShellProps) {
   // The widths the translator dragged the panels to, kept across reloads: one layout with the reference column, one
   // without. A closed column is not rendered, so the library keeps the two apart (panelIds).
@@ -170,11 +171,15 @@ export function AppShell({
               )}
             </BreadcrumbList>
           </Breadcrumb>
+          <Tooltip>
+            <TooltipTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Export" className="ml-auto" onClick={onExport} />}><IconFileExport /></TooltipTrigger>
+            <TooltipContent side="bottom">Export…</TooltipContent>
+          </Tooltip>
           {!main && (
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button size="icon-sm" variant={claudeOpen ? "secondary" : "ghost"} aria-label="Claude" aria-pressed={claudeOpen} className="relative ml-auto"
+                  <Button size="icon-sm" variant={claudeOpen ? "secondary" : "ghost"} aria-label="Claude" aria-pressed={claudeOpen} className="relative"
                     onClick={() => onClaudeOpenChange(!claudeOpen)} />
                 }
               >

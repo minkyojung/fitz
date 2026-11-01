@@ -35,19 +35,21 @@ test("the sidebar folds to icons and opens again, by button and by ⌘B, and rem
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
 })
 
-test("Export picks its own chapters: the sidebar's list and the header's chapter make way", async ({ page }) => {
+test("Export is a dialog from the header: the chapters and the chapter stay where they are", async ({ page }) => {
   await page.goto("/")
   const chapters = page.getByRole("navigation", { name: "Chapters" })
   await expect(chapters).toBeVisible()
   await page.getByRole("button", { name: "Export", exact: true }).click()
-  await expect(chapters).toHaveCount(0)
-  await expect(page.locator("header [data-slot=dropdown-menu-trigger]")).toHaveCount(0)
-  await expect(page.locator("header")).toContainText("Export")
-  await page.getByRole("button", { name: "Review", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Export" })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "Download .docx" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(dialog).toHaveCount(0)
   await expect(chapters).toBeVisible()
+  await expect(page.locator("header [data-slot=dropdown-menu-trigger]")).toBeVisible()
 })
 
-test("Find lives in the sidebar: what it finds takes the chapters' place until Esc; folded, ⌘F or its button opens the sidebar first; a hit found in Export opens in Review", async ({ page }) => {
+test("Find lives in the sidebar: what it finds takes the chapters' place until Esc; folded, ⌘F or its button opens the sidebar first; a hit found from Session opens in Review", async ({ page }) => {
   await page.goto("/")
   const chapters = page.getByRole("navigation", { name: "Chapters" })
   const results = page.getByRole("region", { name: "Find results" })
@@ -72,7 +74,7 @@ test("Find lives in the sidebar: what it finds takes the chapters' place until E
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded")
   await expect(find).toBeFocused()
 
-  await page.getByRole("button", { name: "Export", exact: true }).click()
+  await page.getByRole("button", { name: "Session", exact: true }).click()
   await find.fill("Zemurray")
   await results.getByRole("button", { name: /13: King Fish/ }).first().click()
   await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveAttribute("aria-current", "page")

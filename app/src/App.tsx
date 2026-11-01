@@ -8,7 +8,7 @@ import { Kbd } from "@/components/ui/kbd"
 import { AppShell, type Mode } from "@/layout/AppShell"
 import { ChapterList, ChapterMenu } from "@/features/review/ChapterList"
 import { FindInput, FindResults } from "@/features/review/Find"
-import { ExportView } from "@/features/export/ExportView"
+import { ExportDialog } from "@/features/export/ExportDialog"
 import { SessionPage } from "@/features/session/SessionPage"
 import { useSession } from "@/features/session/useSession"
 import { ClaudeTab } from "@/features/agent/ClaudeTab"
@@ -78,15 +78,15 @@ export function App() {
   )
   // the reference column (§35): open on the scan while reviewing, folded while translating (the source sits right beside
   // the translation); ⌘I or the header's button brings it back, on the tab last looked at
-  const [reference, setReference] = useState<Record<Mode, Reference | null>>({ review: "scan", translate: null, export: null, session: null })
+  const [reference, setReference] = useState<Record<Mode, Reference | null>>({ review: "scan", translate: null, session: null })
   const [lastTab, setLastTab] = useState<Reference>("scan")
   const showTab = useCallback((tab: Reference | null) => { setReference((m) => ({ ...m, [mode]: tab })); if (tab) setLastTab(tab) }, [mode])
   const toggleReference = () => showTab(reference[mode] ? null : lastTab)
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes, onSelectChapter: book.setChapterId })
   const translating = mode === "translate"
-  const exporting = mode === "export"
-  // Export and Session are pages of the whole book, in the panels' place: no chapter, no paragraph to act on
-  const wholeBook = exporting || mode === "session"
+  // Session is a page of the whole book, in the panels' place: no chapter, no paragraph to act on
+  const wholeBook = mode === "session"
+  const [exportOpen, setExportOpen] = useState(false)
   const session = useSession()
   const commands = wholeBook ? {} : translating ? translate.commands : review.commands
   const panelSelected = translating ? translate.selected : review.selected
@@ -145,7 +145,7 @@ export function App() {
   useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleReference, askClaude: askAboutSelection }), [commands, book.undo, book.redo, askClaude])) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
-  const place = exporting ? "Export" : mode === "session" ? "Session" : book.chapter?.title ?? "—"
+  const place = mode === "session" ? "Session" : book.chapter?.title ?? "—"
 
   return (
     <DraftContext value={book.drafts}>
@@ -164,13 +164,13 @@ export function App() {
       sessionLeft={session.left}
       referenceOpen={reference[mode] !== null}
       onReferenceToggle={toggleReference}
-      // what Find found takes the chapters' place; a page of the whole book has none (Export picks its own)
+      onExport={() => setExportOpen(true)}
+      // what Find found takes the chapters' place; a page of the whole book has none
       sidebar={findQuery ? (
         <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpTo} onReplaceAll={book.replaceAll} />
       ) : wholeBook ? null : <ChapterList chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       crumb={wholeBook ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
-      main={exporting ? <ExportView chapters={book.chapters} />
-        : mode === "session" ? <SessionPage day={session.day} error={session.error} chapters={book.chapters} reload={session.reload} onJump={openInTranslate} onDiscuss={discussInTranslate} />
+      main={mode === "session" ? <SessionPage day={session.day} error={session.error} chapters={book.chapters} reload={session.reload} onJump={openInTranslate} onDiscuss={discussInTranslate} />
         : undefined}
       left={reference[mode] && <ReferenceColumn tab={reference[mode]} onTab={showTab} scan={review.left} glossary={<GlossaryList onJump={jumpTo} />} pendingTerms={pendingTerms} />}
       right={translating ? translate.view : review.right}
@@ -232,6 +232,7 @@ export function App() {
         </>
       }
     />
+    <ExportDialog open={exportOpen} onOpenChange={setExportOpen} chapters={book.chapters} />
     </SelectionContext>
     </SuggestionsContext>
     </AnnotationsContext>
