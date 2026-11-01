@@ -6,7 +6,7 @@ type Tool = Extract<Item, { kind: "tool" }>
 type Turn = Extract<Item, { kind: "turn" }>
 
 /** The fitz tools that change the book: what Claude did with them can be taken back from the conversation. */
-export const WRITE_TOOLS = new Set(["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
+export const WRITE_TOOLS = new Set(["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_relation", "set_note"])
 
 const paras = (ids: number[]) => (ids.length > 4 ? `${ids.length} paragraphs` : ids.map((id) => `¶${id}`).join(", "))
 
@@ -27,6 +27,7 @@ export function toolLine(t: Tool): { title: string; note?: string } | null {
     case "glossary": return { title: "Read the glossary" }
     case "search": return { title: `Searched ${i.side === "target" ? "the translation for " : ""}“${String(i.query ?? "")}”` }
     case "annotations": return { title: "Looked at the chapter's notes and comments" }
+    case "relations": return { title: typeof i.term === "string" ? `Read the relations of ${i.term}` : "Read the relations" }
     case "WebSearch": return { title: `Searched the web for “${String(i.query ?? "")}”` }
     case "set_translation": return write(`Writing the translation of ${p}`, `Wrote the translation of ${p}`, `Did not write the translation of ${p}`)
     case "edit_translation": return write(`Editing the translation of ${p}`, `Edited the translation of ${p}`, `Did not edit the translation of ${p}`)
@@ -34,6 +35,7 @@ export function toolLine(t: Tool): { title: string; note?: string } | null {
     case "add_comment": return write(`Commenting on ${p}`, `Commented on ${p}`, `Did not comment on ${p}`)
     case "reply_comment": return write("Replying to a comment", "Replied to a comment", "Did not reply to a comment")
     case "resolve_comment": return write("Resolving a comment", "Resolved a comment", "Did not resolve a comment")
+    case "set_relation": return write(`Relation: ${i.fromTerm} → ${i.toTerm}`, `Relation: ${i.fromTerm} → ${i.toTerm}`, `Did not record ${i.fromTerm} → ${i.toTerm}`)
     case "add_translator_note": return write(`Adding a translator's note to ${p}`, `Added a translator's note to ${p}`, `Did not add a translator's note to ${p}`)
     case "set_note": {
       const n = `note ${i.noteId}`
@@ -54,8 +56,8 @@ function why(result: unknown): string {
 
 /** The block being written now, while it streams: a tool's arguments are not readable until it is done. */
 const DOING: Record<string, string> = {
-  read: "Reading", book: "Looking at the book", glossary: "Reading the glossary", search: "Searching", annotations: "Looking at notes and comments", WebSearch: "Searching the web",
-  set_translation: "Writing a translation", edit_translation: "Editing a translation", set_glossary_term: "Changing the glossary", add_comment: "Writing a comment", reply_comment: "Writing a reply", resolve_comment: "Resolving a comment", add_translator_note: "Writing a translator's note", set_note: "Writing a note",
+  read: "Reading", book: "Looking at the book", glossary: "Reading the glossary", search: "Searching", annotations: "Looking at notes and comments", relations: "Reading the relations", WebSearch: "Searching the web",
+  set_translation: "Writing a translation", edit_translation: "Editing a translation", set_glossary_term: "Changing the glossary", add_comment: "Writing a comment", reply_comment: "Writing a reply", resolve_comment: "Resolving a comment", add_translator_note: "Writing a translator's note", set_relation: "Recording a relation", set_note: "Writing a note",
 }
 export const doingLine = (name: string | undefined) => (name && DOING[name]) ?? "Working"
 

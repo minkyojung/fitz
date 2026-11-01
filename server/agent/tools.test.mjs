@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { pmDoc, undo, watchChanges } from "../commands.mjs"
 import { checkSegments } from "./checks.mjs"
-import { READ_BUDGET, addComment, addTranslatorNote, annotations, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, replyComment, resolveComment, searchBook, setGlossaryTerm, setNote, setTranslation, writeTools } from "./tools.mjs"
+import { READ_BUDGET, addComment, addTranslatorNote, annotations, book, describeWrite, editTranslation, fitzServer, fitzTools, glossary, read, readTools, relations, replyComment, resolveComment, searchBook, setGlossaryTerm, setNote, setRelation, setTranslation, writeTools } from "./tools.mjs"
 
 const SCHEMA = readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8")
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -168,7 +168,8 @@ const keysDeep = (v) => (v && typeof v === "object" ? Object.entries(v).flatMap(
 
 test("no read tool result carries a page image, the PDF, page boxes, the OCR original or editor JSON", async () => {
   const db = fixture()
-  const outputs = [book(db), read(db, { chapterId: 1 }), read(db, { chapterId: 2 }), read(db, { ids: [2], around: 3 }), glossary(db), searchBook(db, { query: "Zemurray" }), annotations(db, { chapterId: 1 })]
+  setRelation(db, { fromTerm: "Zemurray", toTerm: "boat", label: "샀다", segmentId: 2, quote: "boat" })
+  const outputs = [book(db), read(db, { chapterId: 1 }), read(db, { chapterId: 2 }), read(db, { ids: [2], around: 3 }), glossary(db), searchBook(db, { query: "Zemurray" }), annotations(db, { chapterId: 1 }), relations(db, {})]
   const args = { read: { chapterId: 1 }, search: { query: "a" }, annotations: { chapterId: 1 } }
   for (const t of readTools(db)) outputs.push((await t.handler(args[t.name] ?? {}, {})).structuredContent)
   for (const out of outputs) {
@@ -182,7 +183,7 @@ test("no read tool result carries a page image, the PDF, page boxes, the OCR ori
 test("MCP: read-only tools whose results are the functions' results as JSON", async () => {
   const db = fixture()
   const tools = readTools(db)
-  assert.deepEqual(tools.map((t) => t.name), ["book", "read", "glossary", "search", "annotations"])
+  assert.deepEqual(tools.map((t) => t.name), ["book", "read", "glossary", "search", "annotations", "relations"])
   for (const t of tools) assert.equal(t.annotations?.readOnlyHint, true, t.name)
   const r = await tools[1].handler({ ids: [3], around: 1 }, {})
   assert.deepEqual(plain(r.structuredContent), plain(read(db, { ids: [3], around: 1 })))
@@ -192,8 +193,8 @@ test("MCP: read-only tools whose results are the functions' results as JSON", as
 
 test("a task's server offers the read tools only; a free conversation's, the writes too", () => {
   const db = fixture()
-  assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search", "annotations"])
-  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "annotations", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
+  assert.deepEqual(fitzTools(db, { write: false }).map((t) => t.name), ["book", "read", "glossary", "search", "annotations", "relations"])
+  assert.deepEqual(fitzTools(db).map((t) => t.name), ["book", "read", "glossary", "search", "annotations", "relations", "set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_relation", "set_note"])
 })
 
 test("MCP: the server is in-process, named fitz, and keeps its tools loaded", () => {
@@ -396,6 +397,8 @@ test("each write is described for the translator before it happens", () => {
     { summary: "Glossary: Zemurray → 제머리", segmentId: null, before: "Zemurray → 제무레이", after: "Zemurray → 제머리" })
   assert.deepEqual(describeWrite(db, "add_comment", { segmentId: 2, body: "b" }), { summary: "Comment by Claude on ¶2", segmentId: 2, before: null, after: "b" })
   assert.match(describeWrite(db, "add_translator_note", { segmentId: 3, body: "b", quote: "바나나" }).summary, /it will be printed/)
+  assert.deepEqual(describeWrite(db, "set_relation", { fromTerm: "Zemurray", toTerm: "boat", label: "샀다", segmentId: 2, quote: "boat" }),
+    { summary: "Relation: Zemurray → boat, “샀다”, from ¶2", segmentId: 2, before: null, after: "boat" })
   assert.deepEqual(describeWrite(db, "edit_translation", { segmentId: 1, quote: "하나", replacement: "제1장", expectVersion: versionOf(db, 1) }),
     { summary: "Edit the translation of ¶1 (it is reviewed; it becomes draft)", segmentId: 1, before: "하나", after: "제1장" })
   assert.deepEqual(describeWrite(db, "reply_comment", { commentId: 1, body: "1903년 배." }),
@@ -415,8 +418,28 @@ test("each write is described for the translator before it happens", () => {
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 99, text: "x" }), { status: 404 })
 })
 
+test("set_relation records a relation between two glossary terms on the paragraph that states it, as the agent's; relations reads them back, by chapter and by term", () => {
+  const db = fixture()
+  const made = setRelation(db, { fromTerm: "Zemurray", toTerm: "boat", label: "샀다", segmentId: 2, quote: "boat" })
+  assert.deepEqual(plain(made), { id: made.id, from: "Zemurray", to: "boat", label: "샀다", segmentId: 2 })
+  assert.deepEqual(plain(relations(db, {})), { relations: [{ id: made.id, from: "Zemurray", to: "boat", label: "샀다", segmentId: 2, chapterId: 1, quote: "boat" }] })
+  assert.equal(db.prepare("SELECT actor FROM ops ORDER BY id DESC LIMIT 1").get().actor, "agent")
+  setRelation(db, { fromTerm: "boat", toTerm: "Zemurray", label: "주인", segmentId: 5 })
+  assert.deepEqual(relations(db, { chapterId: 1 }).relations.map((r) => r.label), ["샀다"])
+  assert.deepEqual(relations(db, { chapterId: 2 }).relations.map((r) => r.label), ["샀다", "주인"])
+  assert.deepEqual(relations(db, { term: "boat" }).relations.map((r) => r.label), ["샀다", "주인"])
+  assert.deepEqual(relations(db, { term: "nobody" }).relations, [])
+  assert.throws(() => setRelation(db, { fromTerm: "Zemurray", toTerm: "boat", label: "샀다", segmentId: 2 }), { message: /already recorded/ })
+  assert.throws(() => setRelation(db, { fromTerm: "Zemurray", toTerm: "ship", label: "샀다", segmentId: 2 }), { message: /“ship” is not in the glossary/ })
+  assert.throws(() => setRelation(db, { fromTerm: "Zemurray", toTerm: "boat", label: "x", segmentId: 2, quote: "ship" }), { message: /not in ¶2/ })
+  assert.equal(db.prepare("SELECT count(*) n FROM relation").get().n, 2)
+})
+
 test("a write that would fail is caught before the translator is asked", () => {
   const db = fixture()
+  assert.throws(() => describeWrite(db, "set_relation", { fromTerm: "Zemurray", toTerm: "ship", label: "x", segmentId: 2 }), { status: 400 })
+  assert.throws(() => describeWrite(db, "set_relation", { fromTerm: "Zemurray", toTerm: "boat", label: "x", segmentId: 2, quote: "ship" }), { status: 400 })
+  assert.throws(() => describeWrite(db, "set_relation", { fromTerm: "Zemurray", toTerm: "boat", label: "x", segmentId: 99 }), { status: 404 })
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 2, text: "x", expectVersion: versionOf(db, 2) - 1 }), { status: 409 })
   assert.throws(() => describeWrite(db, "set_translation", { segmentId: 2, text: " ", expectVersion: versionOf(db, 2) }), { status: 400 })
   assert.throws(() => describeWrite(db, "add_comment", { segmentId: 2, side: "source", body: "b", quote: "ship" }), { status: 400 })
@@ -432,7 +455,7 @@ test("a write that would fail is caught before the translator is asked", () => {
 
 test("MCP: the write tools beside the read tools, none of them marked read-only", () => {
   const db = fixture()
-  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"])
+  assert.deepEqual(writeTools(db).map((t) => t.name), ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_relation", "set_note"])
   for (const t of writeTools(db)) assert.notEqual(t.annotations?.readOnlyHint, true, t.name)
 })
 

@@ -67,7 +67,7 @@ app/src/
 
 ## 3. 도구 (MCP 서버 `fitz`)
 
-도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 13개: 읽기 5, 쓰기 8(§34). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
+도구는 라우트 하나에 하나가 아니라 **모델이 묻는 질문 하나에 하나**다. 15개: 읽기 6, 쓰기 9(§34, 관계는 `docs/relations.md`). Claude Code에 빗대면 `book` = `ls`, `read` = `Read`, `search` = `Grep`, `glossary` = 프로젝트의 규칙 파일.
 
 읽기 — `readOnlyHint`, `allowedTools`, 묻지 않음, 병렬로 돈다:
 
@@ -78,6 +78,7 @@ app/src/
 | `glossary` | 책 전체 표기 규칙 | — | `{ terms: [{ term, translation, aliases, kind, occurrences }] }` | `listGlossary` |
 | `search` | 책 전체 원문 검색(대소문자 구분, 글자 그대로). `side: "target"`이면 번역문에서(§34) | `query`, `side` | `{ hits: [{ segmentId, chapterId, chapterTitle, pageStart, count, snippet }] }` | `search` |
 | `annotations` | 장의 주석 전부와 열린 댓글 스레드(답글 포함), 단락의 글 없이. 둘 다 없는 단락은 빠진다 | `chapterId`, `from`(`next`로 받은 값) | `{ paragraphs: [{ segmentId, idx, status, notes, comments }], next? }` — `notes`·`comments`는 `read`와 같은 모양, 같은 예산 | `listAnnotations`와 같은 것 |
+| `relations` | 기록된 관계(용어집의 두 용어, 라벨, 근거 단락). `chapterId`면 그 장까지, `term`이면 그 용어가 한쪽 끝인 것만 | `chapterId?`, `term?` | `{ relations: [{ id, from, to, label, segmentId, chapterId, quote }] }` | `listRelations` |
 
 - `read`가 주석·용어를 동봉하므로 단락 하나를 번역하는 데 읽기 호출은 1번이다.
 - `read`는 한 번에 글 2만 자(`READ_BUDGET`, 원문+번역+주석+댓글)까지 돌려주고, 남으면 `next`(다음 호출의 인자 그대로)를 준다. 단락 하나는 예산을 넘어도 돌려준다. 이유는 §8의 출력 한도.
@@ -95,6 +96,7 @@ app/src/
 | `reply_comment(commentId, body)` | `addComment { parentId }` | 스레드의 첫 댓글에 Claude의 답글. 답글에 답하면 스레드에 붙는다. 해결된 스레드에는 답하지 않는다(§34) |
 | `resolve_comment(commentId)` | `setComment { resolved: true }` | Claude가 연 스레드만. 번역자의 스레드는 번역자가 닫는다(§34) |
 | `add_translator_note(segmentId, body, quote?)` | `addNote` | |
+| `set_relation(fromTerm, toTerm, label, segmentId, quote?)` | `addRelation` | 양 끝은 용어집의 용어, 근거 단락은 필수, `quote`는 그 단락 원문에 한 번. 이미 있는 것은 거절. 지우는 도구는 없다(⌘Z) |
 | `set_note(noteId, body?, quote?)` | `setNote { id, body, targetAnchor }` | 저자 미주의 번역, 또는 역주 본문 고치기. `quote`는 번호를 그 번역문 단어 바로 뒤에 놓는다(옮기기). 원문은 바꾸지 못한다(§34) |
 
 - `set_translation`·`edit_translation`은 늘 `status: "draft"`로 쓴다. reviewed·final이던 단락도 draft로 내려간다(미리보기가 그렇게 말한다). 확정은 사람만.

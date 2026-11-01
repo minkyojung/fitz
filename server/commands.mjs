@@ -438,21 +438,7 @@ export const COMMANDS = {
 
   // ---- relations (docs/relations.md): two glossary terms joined by a label, resting on a paragraph of the source
   addRelation(db, { id, bookId, fromTerm, toTerm, label, segmentId, quote = null, createdAt }) {
-    if (!label?.trim()) throw httpError(400, "label is required")
-    for (const term of [fromTerm, toTerm]) {
-      if (!term?.trim()) throw httpError(400, "both terms are required")
-      if (!db.prepare("SELECT 1 FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)) throw httpError(400, `“${term}” is not in the glossary; add it first`)
-    }
-    if (fromTerm === toTerm) throw httpError(400, "a relation joins two different terms")
-    const seg = getSegment(db, segmentId)
-    if (quote != null) {
-      if (!quote.trim()) throw httpError(400, "quote is empty")
-      const n = seg.source_text.split(quote).length - 1
-      if (n === 0) throw httpError(400, `“${quote}” is not in ¶${segmentId}'s source`)
-      if (n > 1) throw httpError(400, `“${quote}” occurs ${n} times in ¶${segmentId}; quote more of it`)
-    }
-    if (db.prepare("SELECT 1 FROM relation WHERE book_id = ? AND from_term = ? AND to_term = ? AND label = ? AND segment_id = ?").get(bookId, fromTerm, toTerm, label, segmentId))
-      throw httpError(400, "this relation is already recorded on this paragraph")
+    checkRelation(db, { bookId, fromTerm, toTerm, label, segmentId, quote })
     const newId = db.prepare(
       "INSERT INTO relation(id, book_id, from_term, to_term, label, segment_id, quote, created_at) VALUES (?,?,?,?,?,?,?, coalesce(?, datetime('now')))",
     ).run(id ?? null, bookId, fromTerm, toTerm, label, segmentId, quote, createdAt ?? null).lastInsertRowid
@@ -881,6 +867,26 @@ export const listGlossary = (db, { bookId }) => {
   })
 }
 
+/** What addRelation refuses, checked without writing: both terms in the glossary and different, a label, the paragraph,
+ *  the quote once in its source, and not recorded already. Returns the paragraph. */
+export function checkRelation(db, { bookId, fromTerm, toTerm, label, segmentId, quote = null }) {
+  if (!label?.trim()) throw httpError(400, "label is required")
+  for (const term of [fromTerm, toTerm]) {
+    if (!term?.trim()) throw httpError(400, "both terms are required")
+    if (!db.prepare("SELECT 1 FROM glossary WHERE book_id = ? AND term = ?").get(bookId, term)) throw httpError(400, `“${term}” is not in the glossary; add it first`)
+  }
+  if (fromTerm === toTerm) throw httpError(400, "a relation joins two different terms")
+  const seg = getSegment(db, segmentId)
+  if (quote != null) {
+    if (!quote.trim()) throw httpError(400, "quote is empty")
+    const n = seg.source_text.split(quote).length - 1
+    if (n === 0) throw httpError(400, `“${quote}” is not in ¶${segmentId}'s source`)
+    if (n > 1) throw httpError(400, `“${quote}” occurs ${n} times in ¶${segmentId}; quote more of it`)
+  }
+  if (db.prepare("SELECT 1 FROM relation WHERE book_id = ? AND from_term = ? AND to_term = ? AND label = ? AND segment_id = ?").get(bookId, fromTerm, toTerm, label, segmentId))
+    throw httpError(400, "this relation is already recorded on this paragraph")
+  return seg
+}
 const getRelation = (db, id) => {
   const r = db.prepare("SELECT r.*, s.chapter_id FROM relation r JOIN segment s ON s.id = r.segment_id WHERE r.id = ?").get(id)
   if (!r) throw httpError(404, `relation ${id} not found`)

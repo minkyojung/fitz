@@ -27,6 +27,8 @@ test("a write: while it goes, once done, and when it did not go through and why"
   assert.deepEqual(toolLine(tool("annotations", { chapterId: 2 })), { title: "Looked at the chapter's notes and comments" })
   assert.deepEqual(toolLine(tool("search", { query: "감마", side: "target" })), { title: "Searched the translation for “감마”" })
   assert.deepEqual(toolLine(tool("set_note", { noteId: 7, body: "주" })), { title: "Wrote note 7" })
+  assert.deepEqual(toolLine(tool("set_relation", { fromTerm: "Zemurray", toTerm: "United Fruit", label: "사장" })), { title: "Relation: Zemurray → United Fruit" })
+  assert.deepEqual(toolLine(tool("relations", { term: "Zemurray" })), { title: "Read the relations of Zemurray" })
   assert.deepEqual(toolLine(tool("reply_comment", { commentId: 5, body: "네" })), { title: "Replied to a comment" })
   assert.deepEqual(toolLine(tool("resolve_comment", { commentId: 5 }, "running")), { title: "Resolving a comment" })
   assert.deepEqual(toolLine(tool("set_note", { noteId: 7, quote: "배" }, "running")), { title: "Placing note 7" })

@@ -6,7 +6,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 
 import { locateAnchor, makeAnchor } from "../anchor.mjs"
-import { anchorOf, docText, execute, getBook, httpError, listChapters, listGlossary, replaceRange, search } from "../commands.mjs"
+import { anchorOf, checkRelation, docText, execute, getBook, httpError, listChapters, listGlossary, listRelations, replaceRange, search } from "../commands.mjs"
 import { termPattern } from "./glossaryRule.mjs"
 
 /** Characters of text one `read` returns before it stops and hands back `next`. Claude Code moves an MCP
@@ -113,6 +113,10 @@ export const glossary = (db) =>
   ({ terms: listGlossary(db, { bookId: getBook(db).id }).map(({ term, translation, aliases, kind, occurrences }) => ({ term, translation, aliases, kind, occurrences })) })
 
 export const searchBook = (db, { query, side }) => ({ hits: search(db, { query, side }) })
+
+/** The relations recorded so far (docs/relations.md): two glossary terms, a label, the paragraph each rests on. */
+export const relations = (db, { chapterId, term } = {}) =>
+  ({ relations: listRelations(db, { bookId: getBook(db).id, chapterId, term }).map(({ id, from, to, label, segmentId, chapterId, quote }) => ({ id, from, to, label, segmentId, chapterId, quote })) })
 
 // --- writes: the agent's door. Each is recorded as the agent's, with the id of the tool call that made it.
 
@@ -268,6 +272,12 @@ export function setNote(db, { noteId, body, quote }, by = AGENT) {
   return { id: n.id, segmentId: n.segmentId, kind: n.kind, quote: quote ?? null }
 }
 
+/** A relation between two glossary terms, resting on a paragraph of the source. */
+export function setRelation(db, { fromTerm, toTerm, label, segmentId, quote }, by = AGENT) {
+  const r = execute(db, "addRelation", { bookId: getBook(db).id, fromTerm, toTerm, label, segmentId, quote: quote ?? null }, by)
+  return { id: r.id, from: r.from, to: r.to, label: r.label, segmentId: r.segmentId }
+}
+
 /** A comment in a few words, for a line that names it. */
 const gist = (text) => {
   const t = text.replace(/\s+/g, " ").trim()
@@ -311,6 +321,10 @@ export function describeWrite(db, tool, input) {
       if (input.quote !== undefined && !cur.target_text) throw httpError(400, `¶${cur.id} has no translation yet to place the note in`)
       quoteAnchor(cur.target_text ?? "", input.quote, "translation")
       return { summary: `Translator's note on ¶${cur.id}${input.quote ? ` after "${input.quote}"` : ""} — it will be printed`, segmentId: input.segmentId, before: null, after: input.body }
+    }
+    case "set_relation": {
+      const seg = checkRelation(db, { bookId: getBook(db).id, ...input, quote: input.quote ?? null })
+      return { summary: `Relation: ${input.fromTerm} → ${input.toTerm}, “${input.label}”, from ¶${seg.id}`, segmentId: seg.id, before: null, after: input.quote ?? seg.source_text }
     }
     case "set_note": {
       const { note, cur } = noteChange(db, input)
@@ -362,6 +376,14 @@ export const readTools = (db) => [
       from: z.number().int().min(0).optional().describe("Start at this paragraph idx (as given in `next`)"),
     },
     async (args) => result(annotations(db, args)), READ_ONLY),
+  tool("relations",
+    "The relations recorded between the book's people, places, organizations and works (glossary terms): from, to, a label in Korean, and the paragraph each rests on. " +
+    "`chapterId` keeps those resting on that chapter or an earlier one (the book as read so far); `term` keeps those with the term at either end. Read it before recording relations, so none is recorded twice.",
+    {
+      chapterId: z.number().int().optional().describe("Only relations resting on this chapter or an earlier one"),
+      term: z.string().min(1).optional().describe("Only relations with this glossary term at either end"),
+    },
+    async (args) => result(relations(db, args)), READ_ONLY),
 ]
 
 /** The in-process MCP server handed to query() as mcpServers.fitz. alwaysLoad keeps the schemas in the prompt,
@@ -436,6 +458,17 @@ export const writeTools = (db, { wrote } = {}) => [
       quote: z.string().optional().describe("Exact words of the translation, found once"),
     },
     async (args, extra) => result(addTranslatorNote(db, args, agentBy(extra)))),
+  tool("set_relation",
+    "Record a relation between two glossary terms — a person, place, organization or work — as the text states it: `fromTerm` and `toTerm` exactly as in the glossary (add a term first if it is not there), `label` in Korean (“사장이 되었다”, “형제”), " +
+    "and `segmentId`, the paragraph whose English states it, with `quote`, the exact words there that say so (found once). Record what the text says, not what you infer. The translator is asked first.",
+    {
+      fromTerm: z.string().min(1).describe("A glossary term, as the glossary gives it"),
+      toTerm: z.string().min(1).describe("A glossary term, as the glossary gives it"),
+      label: z.string().min(1).describe("The relation in Korean, from the first term to the second"),
+      segmentId: z.number().int().describe("The paragraph whose source states the relation"),
+      quote: z.string().optional().describe("Exact words of that paragraph's English that state it, found once"),
+    },
+    async (args, extra) => result(setRelation(db, args, agentBy(extra)))),
   tool("set_note",
     "Translate an author's note, or change a translator's note (역주); both are printed in the book. `body` is the note's text in Korean. " +
     "`quote` puts the note's number right after exact words of the paragraph's translation: for an author's note whose placedAfter is null, or to move a note. Give either or both. The translator is asked first.",
@@ -447,8 +480,8 @@ export const writeTools = (db, { wrote } = {}) => [
     async (args, extra) => result(setNote(db, args, agentBy(extra)))),
 ]
 
-export const READ_TOOL_NAMES = ["book", "read", "glossary", "search", "annotations"]
-export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_note"]
+export const READ_TOOL_NAMES = ["book", "read", "glossary", "search", "annotations", "relations"]
+export const WRITE_TOOL_NAMES = ["set_translation", "edit_translation", "set_glossary_term", "add_comment", "reply_comment", "resolve_comment", "add_translator_note", "set_relation", "set_note"]
 
 /** `write: false` for the tasks, which only find: Claude is not even offered the write tools. */
 export const fitzTools = (db, { write = true, wrote } = {}) => (write ? [...readTools(db), ...writeTools(db, { wrote })] : readTools(db))
