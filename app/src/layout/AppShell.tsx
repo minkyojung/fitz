@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react"
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels"
-import { IconBook, IconBook2, IconCards, IconFileExport, IconLanguage, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
+import { IconBook, IconBook2, IconCards, IconFileExport, IconLanguage, IconLayoutSidebar, IconScan, IconSparkles, type Icon } from "@tabler/icons-react"
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -40,7 +40,11 @@ interface AppShellProps {
   sidebar: ReactNode
   /** The breadcrumb after the stage: the chapter, as a menu. None in a stage of the whole book. */
   crumb: ReactNode
+  /** The reference column (§35), the left one: the scan, the glossary, the relations, as tabs. */
   left: ReactNode
+  /** The reference column is open: the header's button and ⌘I toggle it. Closed, it is not rendered. */
+  referenceOpen: boolean
+  onReferenceToggle: () => void
   right: ReactNode
   /** Claude's panel, the right one. */
   panel: ReactNode
@@ -51,8 +55,6 @@ interface AppShellProps {
    *  closed, saying this. */
   claudeWaiting: string | null
   status: ReactNode
-  /** Hide the scan (left) panel, e.g. while translating. */
-  leftCollapsed?: boolean
   /** A full-width page that replaces the three panels (Export, Glossary, Session). */
   main?: ReactNode
 }
@@ -63,13 +65,13 @@ const sidebarDefaultOpen = () => !/(?:^|; )sidebar_state=false/.test(document.co
 /** Fixed frame: sidebar (sidebar-07: the book, the stages, the chapters; folds to icons) | [breadcrumb /
  *  left+right+panel / status]. Content is injected per mode. */
 export function AppShell({
-  mode, onModeChange, book, find, stageProgress, pendingTerms, sessionLeft, sidebar, crumb, left, right, panel, claudeOpen, onClaudeOpenChange, claudeWaiting, status,
-  leftCollapsed = false, main,
+  mode, onModeChange, book, find, stageProgress, pendingTerms, sessionLeft, sidebar, crumb, left, referenceOpen, onReferenceToggle, right, panel, claudeOpen, onClaudeOpenChange,
+  claudeWaiting, status, main,
 }: AppShellProps) {
-  // The widths the translator dragged the panels to, kept across reloads: one layout with the scan, one without. A
-  // hidden scan is not rendered, so the library keeps the two apart (panelIds).
+  // The widths the translator dragged the panels to, kept across reloads: one layout with the reference column, one
+  // without. A closed column is not rendered, so the library keeps the two apart (panelIds).
   const layout = useDefaultLayout({
-    id: "fitz-panels", panelIds: leftCollapsed ? ["main", "panel"] : ["scan", "main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
+    id: "fitz-panels", panelIds: referenceOpen ? ["reference", "main", "panel"] : ["main", "panel"], storage: localStorage, onlySaveAfterUserInteractions: true,
   })
   const label = mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : STAGES.find((m) => m.value === mode)!.label
   // The panel is what is open or not (its edge can be dragged shut, its layout is remembered), and says so on resize;
@@ -151,6 +153,16 @@ export function AppShell({
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
           <SidebarTrigger className="-ml-1" aria-label="Toggle sidebar" title="Toggle sidebar (⌘B)" />
           <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-auto" />
+          {!main && (
+            <Tooltip>
+              <TooltipTrigger
+                render={<Button size="icon-sm" variant={referenceOpen ? "secondary" : "ghost"} aria-label="Reference" aria-pressed={referenceOpen} onClick={onReferenceToggle} />}
+              >
+                <IconLayoutSidebar />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Scan <Kbd>⌘I</Kbd></TooltipContent>
+            </Tooltip>
+          )}
           <Breadcrumb className="min-w-0">
             <BreadcrumbList className="flex-nowrap">
               {crumb ? (
@@ -185,15 +197,15 @@ export function AppShell({
             layout.onLayoutChanged(next, byButton.current ? { ...meta, isUserInteraction: true } : meta)
             byButton.current = false
           }}>
-          {!leftCollapsed && (
+          {referenceOpen && (
             <>
-              <ResizablePanel id="scan" defaultSize="42" minSize={240} collapsible collapsedSize={0}>
+              <ResizablePanel id="reference" defaultSize="42" minSize={240} collapsible collapsedSize={0}>
                 {left}
               </ResizablePanel>
               <ResizableHandle />
             </>
           )}
-          <ResizablePanel id="main" defaultSize={leftCollapsed ? "80" : "38"} minSize={320}>
+          <ResizablePanel id="main" defaultSize={referenceOpen ? "38" : "80"} minSize={320}>
             {right}
           </ResizablePanel>
           <ResizableHandle />

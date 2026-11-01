@@ -26,6 +26,7 @@ import { findSuspects } from "@/lib/spell"
 import { useReview } from "@/features/review/ReviewView"
 import { useTranslate } from "@/features/translate/TranslateView"
 import { Toggle } from "@/components/ui/toggle"
+import { ReferenceColumn, type Reference } from "@/features/reference/ReferenceColumn"
 import { formatSheets, sheets } from "@/lib/manuscript"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useClaude } from "@/data/useClaude"
@@ -75,9 +76,12 @@ export function App() {
     (segmentId: number, side: "source" | "target") => { const sg = book.segments.find((x) => x.id === segmentId); return side === "source" ? sg?.sourceText ?? "" : sg?.targetText ?? "" },
     [book.segments],
   )
-  // the scan is folded away while translating (the source sits right beside the translation); ⌘I or the toggle brings it back
-  const [scanShown, setScanShown] = useState<Record<Mode, boolean>>({ review: true, translate: false, export: false, glossary: false, session: false })
-  const toggleScan = () => setScanShown((m) => ({ ...m, [mode]: !m[mode] }))
+  // the reference column (§35): open on the scan while reviewing, folded while translating (the source sits right beside
+  // the translation); ⌘I or the header's button brings it back, on the tab last looked at
+  const [reference, setReference] = useState<Record<Mode, Reference | null>>({ review: "scan", translate: null, export: null, glossary: null, session: null })
+  const [lastTab, setLastTab] = useState<Reference>("scan")
+  const showTab = useCallback((tab: Reference | null) => { setReference((m) => ({ ...m, [mode]: tab })); if (tab) setLastTab(tab) }, [mode])
+  const toggleReference = () => showTab(reference[mode] ? null : lastTab)
   const translate = useTranslate({ segments: book.segments, onPatch: book.updateSegment, focusMode, notes: book.annotations.notes, onSelectChapter: book.setChapterId })
   const translating = mode === "translate"
   const exporting = mode === "export"
@@ -137,7 +141,7 @@ export function App() {
     if (sel?.origin === "dom") window.getSelection()?.removeAllRanges()
     publishSelection(null)
   }
-  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleScan, askClaude: askAboutSelection }), [commands, book.undo, book.redo, askClaude])) // eslint-disable-line react-hooks/exhaustive-deps
+  useKeymap(useMemo(() => ({ ...commands, undo: book.undo, redo: book.redo, find: openFind, toggleReference, askClaude: askAboutSelection }), [commands, book.undo, book.redo, askClaude])) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (book.error) return <div className="p-8 text-destructive">API connection failed: {book.error}</div>
   const place = exporting ? "Export" : mode === "glossary" ? "Glossary" : mode === "session" ? "Session" : book.chapter?.title ?? "—"
@@ -157,7 +161,8 @@ export function App() {
       stageProgress={stageProgress}
       pendingTerms={book.spell.glossary.filter((t) => !t.translation).length}
       sessionLeft={session.left}
-      leftCollapsed={!scanShown[mode]}
+      referenceOpen={reference[mode] !== null}
+      onReferenceToggle={toggleReference}
       // what Find found takes the chapters' place; a page of the whole book has none (Export picks its own)
       sidebar={findQuery ? (
         <FindResults query={findQuery} refreshKey={book.segments} selectedId={panelSelected?.id ?? null} onJump={jumpTo} onReplaceAll={book.replaceAll} />
@@ -166,7 +171,7 @@ export function App() {
       main={exporting ? <ExportView chapters={book.chapters} /> : mode === "glossary" ? <GlossaryPage onJump={jumpTo} />
         : mode === "session" ? <SessionPage day={session.day} error={session.error} chapters={book.chapters} reload={session.reload} onJump={openInTranslate} onDiscuss={discussInTranslate} />
         : undefined}
-      left={review.left}
+      left={reference[mode] && <ReferenceColumn tab={reference[mode]} onTab={showTab} scan={review.left} />}
       right={translating ? translate.view : review.right}
       panel={
         <ClaudeTab
@@ -194,7 +199,6 @@ export function App() {
               <span>Confirmed {book.chapter?.confirmedCount ?? 0} / {book.chapter?.segmentCount ?? 0}</span>
               <span data-sheets>{formatSheets(chapterSheets)}</span>
               <Toggle size="sm" variant="outline" className="text-xs" pressed={focusMode} onPressedChange={setFocusMode} aria-label="Focus mode">Focus</Toggle>
-              <Toggle size="sm" variant="outline" className="text-xs" pressed={scanShown[mode]} onPressedChange={toggleScan} aria-label="Show scan">Scan</Toggle>
             </>
           ) : (
             <span>
