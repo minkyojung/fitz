@@ -96,6 +96,26 @@ test("Claude's suggestions: listed by chapter, accepted by the translator, and t
   assert.equal((await api("decideSuggestion", { id: 1, decision: "maybe" })).status, 400)
 })
 
+test("relations over HTTP: recorded by the translator between glossary terms, listed, removed, and taken back with undo", async () => {
+  const api = async (name, body = {}) => { const r = await send({ path: `/api/${name}`, body: JSON.stringify(body) }); return { status: r.status, body: JSON.parse(r.text) } }
+  const { id: bookId } = (await api("getBook")).body
+  assert.equal((await api("setGlossaryTerm", { bookId, term: "Nick", translation: "닉", aliases: "", kind: "person" })).status, 200)
+  const made = await api("addRelation", { bookId, fromTerm: "Nick", toTerm: "Gatsby", label: "이웃", segmentId: 5, quote: "privy" })
+  assert.equal(made.status, 200)
+  assert.deepEqual([made.body.from, made.body.to, made.body.label, made.body.segmentId, made.body.chapterId], ["Nick", "Gatsby", "이웃", 5, 1])
+  assert.deepEqual((await api("listRelations", { bookId })).body.map((r) => r.id), [made.body.id])
+  assert.deepEqual((await api("listRelations", { bookId, term: "Nick" })).body.length, 1)
+  assert.deepEqual((await api("listRelations", { bookId, term: "Daisy" })).body, [])
+  assert.equal((await api("addRelation", { bookId, fromTerm: "Nick", toTerm: "Daisy", label: "육촌", segmentId: 5 })).status, 400, "not a glossary term")
+  assert.equal((await api("removeRelation", { id: made.body.id })).status, 200)
+  assert.deepEqual((await api("listRelations", { bookId })).body, [])
+  assert.equal((await api("undo")).body.name, "removeRelation")
+  assert.deepEqual((await api("listRelations", { bookId })).body.map((r) => r.id), [made.body.id])
+  assert.equal((await api("undo")).body.name, "addRelation")
+  assert.deepEqual((await api("listRelations", { bookId })).body, [])
+  assert.equal((await api("undo")).body.name, "setGlossaryTerm")  // the book as the next test expects it
+})
+
 test("Claude's changes are taken back from the conversation by their tool calls; ⌘Z (undo) leaves them", async () => {
   const api = async (name, body = {}) => { const r = await send({ path: `/api/${name}`, body: JSON.stringify(body) }); return { status: r.status, body: JSON.parse(r.text) } }
   const { execute, openDb } = await import("./commands.mjs")

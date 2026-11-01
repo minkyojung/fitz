@@ -15,7 +15,7 @@ import { dayOf } from "./drill/schedule.mjs"
 import { answerCard, closeChallenge, moreToday, pickWords, sessionToday, setCardAside } from "./drill/today.mjs"
 import { attachLive } from "./live.mjs"
 import { corsHeaders, fromThisMachine } from "./origin.mjs"
-import { agentOps, execute, getBook, httpError, listAnnotations, listChapters, listGlossary, listOps, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo, undoAgent } from "./commands.mjs"
+import { agentOps, execute, getBook, httpError, listAnnotations, listChapters, listGlossary, listOps, listRelations, listSuggestions, noteRow, openDb, redo, replaceAll, search, segOut, segRow, undo, undoAgent } from "./commands.mjs"
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -53,6 +53,8 @@ const routes = {
   listSuggestions: ({ chapterId }) => listSuggestions(db, { chapterId }),
   /** Words the person marked as correct (the book's dictionary / glossary terms). */
   listGlossary: ({ bookId }) => listGlossary(db, { bookId }),
+  /** The book's relations (docs/relations.md): two glossary terms, a label, the paragraph each rests on. */
+  listRelations: ({ bookId, chapterId, term }) => listRelations(db, { bookId, chapterId, term }),
   listGlossaryWords: ({ bookId }) => db.prepare("SELECT term FROM glossary WHERE book_id = ? ORDER BY term").all(bookId).map((r) => r.term),
   /** Every segment's text, for the client-side language model. */
   listSourceTexts: () => db.prepare("SELECT id, source_text FROM segment").all().map((r) => ({ id: r.id, text: r.source_text })),
@@ -81,6 +83,8 @@ const routes = {
   replaceAll: ({ query, replacement }) => replaceAll(db, { query, replacement }),
   addGlossaryWord: ({ bookId, term }) => execute(db, "addGlossaryWord", { bookId, term }),
   setGlossaryTerm: ({ bookId, term, translation, aliases, kind }) => execute(db, "setGlossaryTerm", { bookId, term, translation, aliases, kind }),
+  addRelation: ({ bookId, fromTerm, toTerm, label, segmentId, quote }) => execute(db, "addRelation", { bookId, fromTerm, toTerm, label, segmentId, quote }),
+  removeRelation: ({ id }) => execute(db, "removeRelation", { id }),
   addComment: ({ segmentId, side, anchor, body, parentId }) => execute(db, "addComment", { segmentId, side, anchor, body, parentId }),
   setComment: ({ id, body, resolved }) => execute(db, "setComment", { id, body, resolved }),
   deleteComment: ({ id }) => execute(db, "deleteComment", { id }),

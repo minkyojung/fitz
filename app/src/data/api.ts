@@ -118,6 +118,18 @@ export interface GlossaryTerm {
   first: { segmentId: number; chapterId: number } | null
 }
 
+/** A relation between two glossary terms, resting on a paragraph of the source (docs/relations.md). */
+export interface Relation {
+  id: number
+  from: string
+  to: string
+  label: string
+  segmentId: number
+  chapterId: number
+  quote: string | null
+  createdAt: string
+}
+
 export interface SearchHit {
   segmentId: number
   chapterId: number
@@ -336,6 +348,10 @@ export interface Api {
   addGlossaryWord(bookId: number, term: string): Promise<{ id: number; term: string }>
   listGlossary(bookId: number): Promise<GlossaryTerm[]>
   setGlossaryTerm(input: { bookId: number; term: string; translation: string; aliases: string; kind: GlossaryTerm["kind"] }): Promise<GlossaryTerm>
+  /** The book's relations in book order. */
+  listRelations(bookId: number): Promise<Relation[]>
+  addRelation(input: { bookId: number; fromTerm: string; toTerm: string; label: string; segmentId: number; quote: string | null }): Promise<Relation>
+  removeRelation(id: number): Promise<null>
   /** Every segment's plain text (for the client-side language model). */
   listSourceTexts(): Promise<{ id: number; text: string }[]>
   /** Literal, case-sensitive search across the whole book. */

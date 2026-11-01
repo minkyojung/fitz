@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "./http"
-import type { Annotations, Book, Chapter, GlossaryTerm, Note, Page, Segment, SegmentPatch, Suggestion, SuggestionDecision, TaskName, TaskRun, TextAnchor } from "./api"
+import type { Annotations, Book, Chapter, GlossaryTerm, Note, Page, Relation, Segment, SegmentPatch, Suggestion, SuggestionDecision, TaskName, TaskRun, TextAnchor } from "./api"
 import { createDraftStore } from "@/lib/draftStore"
 import { buildCorpus, type Corpus } from "@/lib/corpus"
 import { loadEnglishSpeller, type Speller } from "@/lib/spell"
@@ -26,6 +26,8 @@ export const OP_LABEL: Record<string, string> = {
   addNote: "Translator's note",
   setNote: "Note",
   deleteNote: "Delete note",
+  addRelation: "Relation",
+  removeRelation: "Remove relation",
   decideSuggestion: "Claude's suggestion",
 }
 const DECISION_LABEL: Record<SuggestionDecision, string> = { accept: "Accept", dismiss: "Dismiss", comment: "Keep as comment" }
@@ -57,6 +59,7 @@ export function useBook() {
   const [corpus, setCorpus] = useState<Corpus>(() => buildCorpus([]))
   const [userWords, setUserWords] = useState<ReadonlySet<string>>(new Set())
   const [glossary, setGlossary] = useState<GlossaryTerm[]>([])
+  const [relations, setRelations] = useState<Relation[]>([])
   const [annotations, setAnnotations] = useState<Annotations>({ comments: [], notes: [] })
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   /** Claude's runs on chapters, by task and chapter ("review:3"). */
@@ -135,6 +138,10 @@ export function useBook() {
       api.listGlossary(bookId).then((g) => { setGlossary(g); setUserWords(new Set(g.map((t) => t.term))) }).catch(() => undefined),
     [],
   )
+  const refreshRelations = useCallback(
+    (bookId: number) => api.listRelations(bookId).then(setRelations).catch(() => undefined),
+    [],
+  )
   useEffect(() => { void loadEnglishSpeller().then(setSpeller) }, [])
 
   const refreshNotes = useCallback(
@@ -152,9 +159,10 @@ export function useBook() {
         setChapterId((cur) => cur ?? cs[0]?.id ?? null)
         void refreshCorpus()
         void refreshWords(b.id)
+        void refreshRelations(b.id)
       })
       .catch((e: Error) => setError(e.message))
-  }, [refreshCorpus, refreshWords])  // both stable: this still runs once, on load
+  }, [refreshCorpus, refreshWords, refreshRelations])  // all stable: this still runs once, on load
 
   useEffect(() => {
     if (chapterId !== null) { void refreshSegments(chapterId); void refreshAnnotations(chapterId); void refreshSuggestions(chapterId) }
@@ -215,6 +223,24 @@ export function useBook() {
       }),
     [mutate, book, refreshWords],
   )
+
+  /** Relations (docs/relations.md): the translator's own, drawn from a selection or removed from the graph; undoable. */
+  const relate = useMemo(() => ({
+    add: (input: { fromTerm: string; toTerm: string; label: string; segmentId: number; quote: string | null }) =>
+      mutate("Relation", async () => {
+        if (!book) return null
+        const r = await api.addRelation({ bookId: book.id, ...input })
+        await refreshRelations(book.id)
+        return r
+      }),
+    remove: (id: number) =>
+      mutate("Remove relation", async () => {
+        if (!book) return null
+        const r = await api.removeRelation(id)
+        await refreshRelations(book.id)
+        return r
+      }),
+  }), [mutate, book, refreshRelations])
 
   /** "This is a real word": add it to the book's dictionary (undoable). */
   const addWord = useCallback(
@@ -279,8 +305,8 @@ export function useBook() {
    *  Claude's suggestions, unlinked notes, the glossary. */
   const reloadShown = useCallback(async () => {
     await Promise.all([refreshChapters(), refreshNotes(), ...(chapterId !== null ? [refreshSegments(chapterId), refreshAnnotations(chapterId), refreshSuggestions(chapterId)] : [])])
-    if (book) await refreshWords(book.id)
-  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshSuggestions, refreshWords, book])
+    if (book) await Promise.all([refreshWords(book.id), refreshRelations(book.id)])
+  }, [chapterId, refreshChapters, refreshNotes, refreshSegments, refreshAnnotations, refreshSuggestions, refreshWords, refreshRelations, book])
   /** Undo/redo may touch any table, source text included, so reload everything the screen shows and the corpus. */
   const reloadAll = useCallback(async () => { await Promise.all([reloadShown(), refreshCorpus()]) }, [reloadShown, refreshCorpus])
 
@@ -357,6 +383,6 @@ export function useBook() {
     chapters, pages, chapter, chapterId, setChapterId, segments, error,
     refreshChapters, refreshSegments, updateSegment, splitSegment, mergeWithNext,
     unanchoredNotes, anchorNote, undo, redo, saveState, book, drafts, addCaption, replaceAll,
-    spell, annotations, annotate, suggestions, suggest,
+    spell, annotations, annotate, suggestions, suggest, relations, relate,
   }
 }
