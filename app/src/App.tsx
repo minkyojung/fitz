@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { Suspense, lazy, useCallback, useMemo, useRef, useState } from "react"
 import { IconArrowBackUp, IconArrowForwardUp } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -27,6 +27,10 @@ import { useTranslate } from "@/features/translate/TranslateView"
 import { Toggle } from "@/components/ui/toggle"
 import { ReferenceColumn, type Reference } from "@/features/reference/ReferenceColumn"
 import { GlossaryList } from "@/features/reference/GlossaryList"
+import { RelationsContext } from "@/features/reference/RelationsContext"
+
+// the graph's libraries (React Flow, ELK) load when the Relations tab is first opened, not with the editor
+const RelationsGraph = lazy(() => import("@/features/reference/RelationsGraph").then((m) => ({ default: m.RelationsGraph })))
 import { formatSheets, sheets } from "@/lib/manuscript"
 import { useBook, type SaveState } from "@/data/useBook"
 import { useClaude } from "@/data/useClaude"
@@ -111,6 +115,11 @@ export function App() {
     () => ({ suggestions: book.suggestions.filter((s) => s.task === task), selected: suggestionSelected, select: selectSuggestion }),
     [book.suggestions, task, suggestionSelected, selectSuggestion],
   )
+  // the relations (docs/relations.md): the graph lights those resting on the selected paragraph; a paragraph's mark opens the tab
+  const relationState = useMemo(
+    () => ({ relations: book.relations, selectedSegmentId: panelSelected?.id ?? null, show: () => showTab("relations"), actions: book.relate }),
+    [book.relations, panelSelected?.id, showTab, book.relate],
+  )
   const chapterSheets = useMemo(() => sheets(book.segments.map((s) => s.targetText).join("\n")), [book.segments])
   // the whole book's progress in each stage, for the stage's badge in the sidebar
   const stageProgress = useMemo(() => {
@@ -153,6 +162,7 @@ export function App() {
     <AnnotationsContext value={annotationState}>
     <SuggestionsContext value={suggestionState}>
     <SelectionContext value={selectionState}>
+    <RelationsContext value={relationState}>
     <FloatingToolbar blockText={blockText} onAsk={askClaude} />
     <AppShell
       mode={mode}
@@ -172,7 +182,7 @@ export function App() {
       crumb={wholeBook ? null : <ChapterMenu chapters={book.chapters} selectedId={book.chapterId} onSelect={book.setChapterId} progress={translating ? "confirmed" : "verified"} />}
       main={mode === "session" ? <SessionPage day={session.day} error={session.error} chapters={book.chapters} reload={session.reload} onJump={openInTranslate} onDiscuss={discussInTranslate} />
         : undefined}
-      left={reference[mode] && <ReferenceColumn tab={reference[mode]} onTab={showTab} scan={review.left} glossary={<GlossaryList onJump={jumpTo} />} pendingTerms={pendingTerms} />}
+      left={reference[mode] && <ReferenceColumn tab={reference[mode]} onTab={showTab} scan={review.left} glossary={<GlossaryList onJump={jumpTo} />} relations={<Suspense fallback={<p className="p-3 text-xs text-muted-foreground">Loading…</p>}><RelationsGraph onJump={jumpTo} /></Suspense>} pendingTerms={pendingTerms} />}
       right={translating ? translate.view : review.right}
       panel={
         <ClaudeTab
@@ -233,6 +243,7 @@ export function App() {
       }
     />
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} chapters={book.chapters} />
+    </RelationsContext>
     </SelectionContext>
     </SuggestionsContext>
     </AnnotationsContext>

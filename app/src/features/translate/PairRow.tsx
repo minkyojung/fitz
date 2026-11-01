@@ -7,6 +7,7 @@ import { EditedDot } from "@/features/review/EditedDot"
 import { HistoryButton } from "@/features/review/History"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
 import { Footnotes } from "@/features/notes/Footnotes"
+import { RelationMark } from "@/features/reference/RelationMark"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
 import { useSelectionState } from "@/features/selection/SelectionContext"
 import { SegmentEditor } from "@/features/review/SegmentEditor"
@@ -148,6 +149,7 @@ export function PairRow({ segment: s, selected, editing, caretEdge, dim, markers
         <span className={cn("block size-2 rounded-full", STATUS_DOT[s.status])} title={STATUS_LABEL[s.status]} data-status={s.status} />
         {/* the selected pair has its History button instead, which shows the same and more */}
         {selected ? <HistoryButton segment={s} /> : <EditedDot ocr={s.ocrText} text={s.sourceText} />}
+        <RelationMark segmentId={s.id} onSelect={onSelect} />
         {missing.length > 0 && (
           <Tooltip>
             <TooltipTrigger render={<span data-term-missing className="block size-2 rounded-full bg-mark-warning ring-1 ring-mark-warning-ink/60" />} />

@@ -11,6 +11,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { SourceText } from "./SourceText"
 import { EditedDot } from "./EditedDot"
+import { RelationMark } from "@/features/reference/RelationMark"
 import { HistoryButton } from "./History"
 import { AnnotatedText } from "@/features/notes/AnnotatedText"
 import { useSuggestions } from "@/features/suggestions/SuggestionsContext"
@@ -228,6 +229,7 @@ export function SegmentRow({ segment: s, selected, editing, hasNext, onSelect, o
         {suspects.length > 0 && <span data-suspects className="text-muted-foreground tabular-nums">Suspects {suspects.length}</span>}
         {/* the selected paragraph has its History button instead, which shows the same and more */}
         {!selected && <EditedDot ocr={s.ocrText} text={s.sourceText} />}
+        <RelationMark segmentId={s.id} onSelect={onSelect} />
         {draft && (
           <span data-unsaved className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Badge variant="destructive">Unsaved</Badge>

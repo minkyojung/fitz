@@ -155,7 +155,7 @@ export function AppShell({
                 <IconLayoutSidebar />
                 {!referenceOpen && pendingTerms > 0 && <span data-attention aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" />}
               </TooltipTrigger>
-              <TooltipContent side="bottom">Scan · Glossary{!referenceOpen && pendingTerms > 0 ? ` · ${pendingTerms} terms without a translation` : ""} <Kbd>⌘I</Kbd></TooltipContent>
+              <TooltipContent side="bottom">Scan · Glossary · Relations{!referenceOpen && pendingTerms > 0 ? ` · ${pendingTerms} terms without a translation` : ""} <Kbd>⌘I</Kbd></TooltipContent>
             </Tooltip>
           )}
           <Breadcrumb className="min-w-0">
