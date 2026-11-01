@@ -912,3 +912,42 @@ Octave의 Context 창(막대, 분류, Plan usage, Compact the conversation)을 C
 | 끝 | 전부 | | server·unit·types·lint·e2e |
 
 **결과**(2026-10-27): 도구 13개(읽기 5, 쓰기 8). `edit_translation`은 제안 수락과 같은 `replaceRange`로 인용한 단어만 바꾸고, 바뀌는 것이 없으면 거절한다(reviewed가 이유 없이 draft로 내려가지 않게). `set_note`는 빌드가 책의 글과 잇지 못한 저자 미주(5개, 단락이 짐작)의 자리를 정하지 않는다. 번역은 한다. 녹화된 세션의 테스트 셋(websearch, nuance·translate, review·typos)은 녹화 때 있던 도구로 확인하게 바꿨다: 녹화는 그 뒤에 생긴 도구를 모른다. 대신 실제 테스트가 지금의 도구 전부를 확인한다. 서버 293(+실제 6: 실제 대화에 fitz 도구 13개와 웹 검색이 그대로, 작업에는 읽기 5개와 답 도구만 실린다), 화면 단위 74, e2e 74 중 73(glossary는 책 데이터, §32), pipeline 37.
+
+## 35. 참조 칸 — 본문은 늘 단락, 왼쪽은 보면서 쓰는 것 (2026-11-01 계획)
+
+갤러리 `?gallery&reference`(`app/src/gallery/ReferenceGallery.tsx`, 승인). §22가 "범위가 다른 것은 각자 범위의 자리로"를 세운 뒤, 표가 커서 Glossary는 본문을 대신하는 페이지가 되었고 Session도 그랬다. 관계(`docs/relations.md`)까지 페이지로 가면 페이지가 넷이다. 페이지의 문제는 하나다: **번역자의 작업 단위는 단락인데 페이지로 가는 순간 단락이 사라진다.** 용어를 보러 갔다가 Jump로 돌아오고, 관계를 보러 갔다가 "에디터에서 열기"로 돌아온다. 코드에서도 `wholeBook` 분기와 모드별 `scanShown`이 모드마다 는다.
+
+Glossary·관계·Find는 종류가 같다 — 책 전체를 훑어 단락 하나에 도착하는 **참조**. Export는 가끔 쓰는 **동작**, Session은 별도의 **활동**. 자리를 역할 하나씩으로 고정한다.
+
+| 자리 | 역할 | 들어가는 것 |
+|---|---|---|
+| 사이드바 | 어디로 | 단계(Review·Translate), 장 목록, Find, Session |
+| 왼쪽 참조 칸 | 쓰면서 옆에 두고 보는 것 | Scan · Glossary · Relations (탭) |
+| 본문 | 단락 | Review, Translate |
+| 오른쪽 패널 | 대화 | Claude |
+
+| 있던 곳 | 간 곳 |
+|---|---|
+| 스캔(왼쪽 칸, Translate에서 접힘) | 참조 칸의 첫 탭. 기본은 Review에서 Scan, Translate에서 닫힘(지금과 같다). 상태줄의 Scan 토글은 머리줄 왼쪽의 참조 버튼(Claude의 ✦와 대칭)으로, ⌘I 그대로 |
+| Glossary 페이지(사이드바 아래, 5열 표) | 참조 칸의 탭. 세로 목록(용어·번역·언급 수), 행을 펴면 종류·별칭·첫 등장. 필터와 "번역 없음" 그대로. 미정 수는 탭의 배지, 칸이 닫혀 있으면 참조 버튼의 점 |
+| Export 페이지(사이드바의 단계) | 머리줄의 Export 버튼 → 대화상자. 내용(장 고르기, 방식, 요약, 경고, 다운로드)은 그대로 |
+| 관계(계획) | 참조 칸의 탭. 근거 패널 없음: 선을 누르면 본문의 그 단락, 단락을 고르면 그 단락이 근거인 선이 밝아진다 |
+| Review·Translate·Find·Session·Claude | 그대로 |
+
+| 정한 것 | 왜 |
+|---|---|
+| 칸은 하나, 탭으로 | 폭 예산(§22, 1280px)이 그대로다. Glossary를 열어도 스캔의 폭을 쓴다 |
+| Review에서 Glossary 탭을 열면 스캔이 가려진다 | 칸을 둘로 늘리지 않는다. 동시에 봐야 하는 일이 잦다고 드러나면 그때 나눈다 |
+| `Mode`는 review·translate·session. 참조 탭은 모드별 상태 하나(`reference`) | `wholeBook`은 Session만 남고, `place`는 장 제목 또는 Session |
+| 레이아웃 저장(`useDefaultLayout`)은 지금처럼 "칸 있음/없음" 둘 | 탭이 바뀌어도 폭은 같다 |
+| Review와 Translate는 합치지 않는다 | 단계와 진행률은 책을 끝내는 흐름(§22) |
+
+### 35.1 만드는 순서 (행 = 커밋)
+
+| # | 무엇 | 손댈 곳 | 확인 |
+|---|---|---|---|
+| 1 | 이 절, 갤러리 | `docs/agent.md`, `gallery/ReferenceGallery.tsx` | |
+| 2 | 왼쪽 칸에 탭(Scan만), 머리줄 참조 버튼, `scanShown` → `reference` | `features/reference/ReferenceColumn.tsx`, `App.tsx`, `AppShell.tsx`, `keymap.ts`(`toggleReference`) | e2e 전부 그대로(sidebar의 레이아웃 저장, review의 스캔) |
+| 3 | Glossary → 탭 | `features/reference/GlossaryList.tsx`(`GlossaryPage` 대신), `App.tsx`·`AppShell.tsx`(모드·항목 제거) | e2e glossary: 탭에서 같은 일(미정 먼저, 필터, 배지, 첫 등장으로) |
+| 4 | Export → 대화상자 | `features/export/ExportDialog.tsx`(`ExportView`를 감쌈), `App.tsx`·`AppShell.tsx` | e2e export·sidebar: 버튼으로 열어 같은 일 |
+| 5 | 관계 탭 | `docs/relations.md` §7 | |
