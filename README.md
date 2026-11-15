@@ -1,6 +1,6 @@
 # fitz — 번역 에디터
 
-영어 원서(스캔 PDF)를 한국어로 번역하기 위한 로컬 전용 도구. PDF와 페이지 이미지는 절대 외부로 나가지 않는다.
+영어 원서(스캔 PDF)를 한국어로 번역하기 위한 로컬 전용 도구. PDF와 페이지 이미지는 절대 외부로 나가지 않는다. 앞으로의 구조(혼자 쓰는 앱 → SaaS → 로컬 모델)는 `docs/architecture.md`.
 
 ## Phase 0: 정본 추출 파이프라인
 
@@ -40,7 +40,7 @@ node server/index.mjs            # http://localhost:4800, out/book.db 와 out/pa
 cd app && pnpm dev               # 화면
 ```
 
-화면은 `app/src/data/api.ts` 인터페이스만 의존한다. 지금 구현은 HTTP(`http.ts`), 나중에 Tauri 명령으로 교체.
+화면은 `app/src/data/api.ts` 인터페이스만 의존한다. 구현은 HTTP(`http.ts`)이고, 데스크톱 앱이 생기면 같은 화면을 Electron에 싣는다(`docs/architecture.md` §2).
 
 ## 화면 구성
 
