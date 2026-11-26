@@ -263,7 +263,7 @@ fitz에서 직접 잰 것 (Claude Code 2.1.302, SDK 0.3.302, 2026-10-18):
 
 | 것 | 이유 |
 |---|---|
-| 데스크톱 셸, worktree, PR, GitHub | 셸은 웹 + Electron으로 정했다(`docs/architecture.md` §2, 2026-11-15). Tauri는 맥 WebKit이 한국어 조합 이벤트를 보내지 않아 고르지 않는다. 혼자 쓰는 동안은 서버가 화면까지 주는 웹으로 충분하다. worktree·PR·GitHub는 해당 없음 |
+| 데스크톱 셸, worktree, PR, GitHub | 셸은 Electron으로 정했다(`docs/architecture.md` §2, 2026-11-26 개정). 고른 이유는 Agent SDK와 선례이고, 한국어 입력은 Tauri를 막는 이유가 아니다(Safari 26 시험으로 바로잡음). worktree·PR·GitHub는 해당 없음 |
 | 서브에이전트(`agents`), Workflow | 장 하나가 한 대화에 들어간다(825 세그먼트/26장). 커지면 단락 묶음 분배 |
 | 바이너리 fetch·sha512·codesign | SDK 동봉분으로 충분. 배포 시 재검토 |
 | 번역 스레드 영속화 | 댓글로 저장할 수 있다. 필요가 드러나면 |
