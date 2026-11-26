@@ -30,7 +30,7 @@
 ## 2. 셸: Electron. 한국어 입력이 아니라 Agent SDK와 선례로 고른다
 
 - **Agent SDK는 TypeScript와 Python뿐이다.** Electron에는 Node가 들어 있어 SDK가 그대로 돈다. Tauri, Swift, Rust 네이티브는 Node 사이드카를 따로 넣고 그 수명과 서명을 직접 맡아야 한다. 다른 언어에서 `claude -p --output-format stream-json`을 직접 띄우는 길도 있지만, 문서가 `--bare`를 `-p`의 기본값으로 바꾼다고 예고했고 bare 모드는 키체인의 구독 로그인을 읽지 않는다. 구독 방식과 부딪힌다(§4).
-- **선례**: Octave가 같은 구성으로 배포 중이다. Electron + Agent SDK 0.3.x에, 사용자 구독 로그인, 받아 온 Claude Code 바이너리의 Anthropic 서명 검증, electron-updater를 쓴다. 서버는 Electron 실행 파일 자신을 `ELECTRON_RUN_AS_NODE=1`로 띄운 자식 프로세스에서 돌아 맥에 깔린 node에 기대지 않고, 화면은 그 서버가 127.0.0.1로 준다(`electron/serverChild.js`, 2026-11-26 읽음). Octave는 `node:sqlite`를 쓰지 않으므로 그 부분은 증명하지 않는다(§7의 10). Claude 데스크톱 앱도 Electron이다(이 맥의 앱 번들에서 확인, 2026-11-26).
+- **선례**: Octave가 같은 구성으로 배포 중이다. Electron + Agent SDK 0.3.x에, 사용자 구독 로그인, 받아 온 Claude Code 바이너리의 Anthropic 서명 검증, electron-updater를 쓴다. 서버는 Electron 실행 파일 자신을 `ELECTRON_RUN_AS_NODE=1`로 띄운 자식 프로세스에서 돌아 맥에 깔린 node에 기대지 않고, 화면은 그 서버가 127.0.0.1로 준다(`electron/serverChild.js`, 2026-11-26 읽음). Octave는 `node:sqlite`를 쓰지 않아 그 부분은 따로 확인했다(§7의 10, 통과). Claude 데스크톱 앱도 Electron이다(이 맥의 앱 번들에서 확인, 2026-11-26).
 - **WebKit과 한국어 (바로잡음)**: 맥 WebKit은 한국어 시스템 입력기에서 `compositionstart/update/end`를 보내지 않는다(WebKit 274700, 2024-05부터 열려 있음). Apple의 답은 "입력기가 인라인 입력 세션을 만들지 않으니 예상된 동작"이다. 대신 글자를 `insertText`로 넣고, 같은 자리를 `insertReplacementText`로 고쳐 쓴다. 깨지는 것은 조합 이벤트에 기대는 코드다. "안녕하세요"가 "ㅇ, ㄴ, ㅎ, 세, 요"로 들어온 것은 xterm.js의 버그다(xterm.js #6284, 2026-11-02, Safari 26.2와 Tauri 2). 2026-11-26 Safari 26에서 지금 에디터를 두벌식으로 시험했다. 입력, 조합 중 Enter·Backspace, 자동 저장, 표시(댓글·용어) 안의 입력, Claude 입력창과 댓글의 Enter 전송, ⌘Z가 모두 정상이었다. 남은 위험은 `isComposing`에 기대는 Enter 전송 두 곳(`app/src/features/agent/Composer.tsx`, `app/src/features/notes/CommentThread.tsx`)이다. WebKit에서는 이 값이 늘 false다. 한자 변환과 긴 목록은 시험하지 않았다.
 - **Tauri**: 한국어 입력은 막는 이유가 아니다. 고르지 않는 이유는 Node 사이드카다. 단일 바이너리로 컴파일하고, 앱이 꺼질 때 정리하고, 따로 서명해야 한다. 그리고 같은 SDK를 사이드카로 쓰는 성숙한 선례가 없다. 이점은 크기다. 같은 앱으로 잰 번들은 Tauri 57MB, Electron 323MB다. 대기 메모리는 109MB와 128MB로 비슷하다. 화면은 같은 React라 나중에 옮기는 비용이 크지 않다.
 - **Tauri + Bun**: Bun으로 서버를 단일 바이너리로 묶어 사이드카로 넣기 쉽다(Bun 1.4 `--no-orphans`). Anthropic이 2025-12에 Bun을 인수했고, Claude Code가 Bun 실행 파일로 배포된다(이 맥의 Claude Code 2.1.322 실행 파일에서 Bun v1.4.4 확인). 그러나 이 맥의 Bun 1.3.13은 `node:sqlite`를 불러오지 못한다(직접 확인, 2026-11-15). Bun 1.4는 Zig→Rust로 다시 쓴 지 석 달이다.
@@ -101,7 +101,7 @@
 | 7 | 한국어의 Claude 토큰 수 | 책 한 권 비용 추정 | 실제 문단으로 `count_tokens` |
 | 8 | AI 기본법의 "생성 결과물" 범위, 배포 앱의 해당 여부 | 내보내기 표시 범위 | 한국 변호사 |
 | 9 | PyMuPDF(AGPL)를 배포 빌드에서 빼기 | 소스를 공개하지 않고 배포하면 라이선스 위반 | Rust 엔진(§3)으로 바꾸기 전까지 배포 빌드에 넣지 않는다 |
-| 10 | Electron 안의 Node 24에서 `node:sqlite`가 도는가 | 앱 로직이 쓴다 | 1단계 첫 작업에서 시험 |
+| 10 | ~~Electron 안의 Node 24에서 `node:sqlite`가 도는가~~ **확인됨(2026-11-26)** | 앱 로직이 쓴다 | Octave.app의 Electron 44.2.0(Node 24.20.0, SQLite 3.53.4)을 `ELECTRON_RUN_AS_NODE=1`로 띄워, 커밋된 코드의 임시 사본에서 서버 테스트 304개: 통과 298, 실패 0, 건너뜀 6 — Node 26.9.0과 같다. 한글 읽기·쓰기와 `backup()`도 정상. 실제로 넣을 Electron 버전에서는 첫 빌드 때 다시 돌린다 |
 
 ## 8. 로드맵
 
@@ -109,7 +109,7 @@
 
 | 단계 | 할 일 | 끝났다는 기준 |
 |---|---|---|
-| 1. Electron 앱 (먼저) | Electron 셸에 지금 화면과 앱 로직을 싣는다. 앱 로직은 Octave처럼 `ELECTRON_RUN_AS_NODE` 자식 프로세스에서 돌고, 화면은 그 서버가 127.0.0.1로 준다. 첫 작업에서 Electron의 Node로 `node:sqlite`(§7의 10)와 구독 로그인 Claude 한 턴을 확인한다. 데이터를 개발 폴더 밖 `~/.fitz/`로(책 DB, 쪽 이미지, 매일 백업 14개). 구독 로그인 화면(Octave 방식)과 API 키 대안. Claude Code 바이너리를 받아 서명 확인. 서명·공증, 자동 업데이트(electron-updater). 업데이트 때 백업 → 마이그레이션 → 확인 → 실패면 되돌림. 21:00 Session은 앱이 꺼져 있었으면 다음 실행 때 한다. 계획 메모: `.context/local-app-plan.md`(웹 기준으로 쓰여 있어 고쳐 써야 한다) | `.dmg`로 설치해 터미널 없이 쓴다. 다른 맥에서 처음 설치 → 로그인 → 책 열기가 된다. 업데이트가 실패해도 책이 남는다. 기존 테스트 통과 |
+| 1. Electron 앱 (먼저) | Electron 셸에 지금 화면과 앱 로직을 싣는다. 앱 로직은 Octave처럼 `ELECTRON_RUN_AS_NODE` 자식 프로세스에서 돌고, 화면은 그 서버가 127.0.0.1로 준다. `node:sqlite`는 Electron의 Node에서 확인했다(§7의 10). 첫 빌드에서 넣을 Electron 버전으로 서버 테스트를 다시 돌린다. 데이터를 개발 폴더 밖 `~/.fitz/`로(책 DB, 쪽 이미지, 매일 백업 14개). 구독 로그인 화면(Octave 방식)과 API 키 대안. Claude Code 바이너리를 받아 서명 확인. 서명·공증, 자동 업데이트(electron-updater). 업데이트 때 백업 → 마이그레이션 → 확인 → 실패면 되돌림. 21:00 Session은 앱이 꺼져 있었으면 다음 실행 때 한다. 계획 메모: `.context/local-app-plan.md`(웹 기준으로 쓰여 있어 고쳐 써야 한다) | `.dmg`로 설치해 터미널 없이 쓴다. 다른 맥에서 처음 설치 → 로그인 → 책 열기가 된다. 업데이트가 실패해도 책이 남는다. 기존 테스트 통과 |
 | 0. AI 출구 (첫 배포의 조건) | `docs/agent.md` §36 | 책 내용이 나가는 모든 길이 기록되고, 이미지·문서 블록은 나갈 길이 없음을 테스트가 단언한다. 기존 테스트 통과. 이것이 끝나야 다른 번역가에게 첫 배포 |
 | 2. 가져오기 | Rust PDF 엔진(§3). 책 목록과 새 책 만들기. 가져오기 → 구조 미리보기에서 틀린 곳 고치기 → Review 검수. 다른 형식(EPUB 등)은 미정 | 지금 책으로 기존 파이프라인과 같은 결과(회귀 테스트). Python 없이 앱 안에서 새 책을 만든다. 배포 빌드에 AGPL 코드가 없다 |
 | 3. 로컬 모델 (후보) | Electron에 llama-server(빌드 고정, 서명·공증), 첫 실행 때 모델 내려받기(SHA-256, 이어받기), RAM 등급별 모델, 책 정책 `local_only`, 초벌·용어 검사·QE, 번역 메모리 검색 | `local_only` 책에서 외부로 나간 요청 0건, 16GB 맥에서 쓸 만한 속도, 블라인드 비교로 등급별 품질 확인 |
