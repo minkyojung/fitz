@@ -16,12 +16,13 @@ const gone = async (pid: number, what: string) => {
   await expect.poll(() => alive(pid), { message: `${what} (pid ${pid}) has ended`, timeout: 10_000 }).toBe(false)
 }
 
-/** The app launched, with what it printed and a way to wait for a line of it. */
-async function launch() {
+/** The app launched, with what it printed and a way to wait for a line of it. `again` launches it on the profile
+ *  and the book of an earlier launch: the same person opening the app once more. */
+async function launch(again?: { profile: string; book: { path: string; backupDir: string } }) {
   if (!existsSync(join(ROOT, "app/dist/index.html"))) throw new Error("no built page — build it with: pnpm --dir app build")
-  const profile = mkdtempSync(join(tmpdir(), "fitz-app-"))
+  const profile = again?.profile ?? mkdtempSync(join(tmpdir(), "fitz-app-"))
   // a book of its own, as the prototype left it: the app migrates it on opening, as it will the real one
-  const book = await bookCopy(join(profile, "book"), "prototype")
+  const book = again?.book ?? (await bookCopy(join(profile, "book"), "prototype"))
   const app = await electron.launch({ args: [ROOT, `--user-data-dir=${profile}`], env: { ...process.env, FITZ_DB: book.path, FITZ_PORT: "0" } })
   let output = ""
   app.process().stdout?.on("data", (d) => { output += d })
@@ -134,4 +135,64 @@ test("killing the app outright stops its server too", async () => {
   const [server] = await launched.serverPids()
   process.kill(launched.pid, "SIGKILL")
   await gone(server!, "the server")
+})
+
+test("what was saved and what was being typed are both there when the app is opened again, even after it was killed", async () => {
+  const first = await launch()
+  running = first
+  const page = await first.app.firstWindow()
+  const sql = new DatabaseSync(first.book.path, { readOnly: true })
+  try {
+    const rows = sql.prepare("SELECT id, chapter_id FROM segment WHERE target_doc IS NULL ORDER BY chapter_id, idx LIMIT 2").all()
+    const [saved, typing] = rows.map((r) => ({ id: Number(r.id), chapterId: Number(r.chapter_id) }))
+    const target = (id: number, on = page) => on.locator(`[data-segment-id="${id}"] [data-side=target]`)
+    const editor = (id: number, on = page) => on.locator(`[data-segment-id="${id}"] [contenteditable=true]`)
+    await page.locator(`[data-chapter-id="${saved!.chapterId}"] button`).click()
+
+    // one translation saved by leaving it…
+    await target(saved!.id).click()
+    await expect(editor(saved!.id)).toBeFocused()
+    await page.keyboard.insertText("앱에서 저장한 번역")
+    await page.keyboard.press("Tab")
+    await expect.poll(() => sql.prepare("SELECT target_text FROM segment WHERE id = ?").get(saved!.id)?.target_text).toBe("앱에서 저장한 번역")
+    // …and the next still being typed when the app dies
+    await expect(editor(typing!.id)).toBeFocused()
+    await page.keyboard.insertText("치던 중에 앱이 죽었다")
+    await expect.poll(() => sql.prepare("SELECT count(*) n FROM draft WHERE segment_id = ?").get(typing!.id)?.n).toBe(1)
+    const [server] = await first.serverPids()
+    process.kill(first.pid, "SIGKILL")
+    await gone(server!, "the server")
+
+    // opened again: another launch, another port, the same book
+    const second = await launch({ profile: first.profile, book: first.book })
+    running = second
+    const reopened = await second.app.firstWindow()
+    expect(new URL(reopened.url()).port).not.toBe(new URL(page.url()).port)
+    await reopened.locator(`[data-chapter-id="${saved!.chapterId}"] button`).click()
+    await expect(target(saved!.id, reopened)).toHaveText("앱에서 저장한 번역")
+    await expect(target(typing!.id, reopened)).toHaveText("Not translated")
+    const notice = reopened.locator(`[data-segment-id="${typing!.id}"] [data-draft]`)
+    await expect(notice).toContainText("Unsaved draft")
+    await notice.getByRole("button", { name: "Resume" }).click()
+    await expect(editor(typing!.id, reopened)).toBeFocused()
+    await expect(editor(typing!.id, reopened)).toHaveText("치던 중에 앱이 죽었다")
+    await reopened.keyboard.press("Tab")
+    await expect.poll(() => sql.prepare("SELECT target_text FROM segment WHERE id = ?").get(typing!.id)?.target_text).toBe("치던 중에 앱이 죽었다")
+    // the book was migrated once, on the first opening; the second found nothing to do
+    expect(readdirSync(first.book.backupDir)).toHaveLength(1)
+
+    // ⌘Z in the app takes back that last save, and the one before it, and no more
+    await reopened.keyboard.press("Escape")
+    await reopened.locator("header").click()
+    await reopened.keyboard.press("ControlOrMeta+z")
+    await expect(target(typing!.id, reopened)).toHaveText("Not translated")
+    await reopened.keyboard.press("ControlOrMeta+z")
+    await expect(target(saved!.id, reopened)).toHaveText("Not translated")
+    const floor = Number(sql.prepare("SELECT value FROM meta WHERE key = 'undo_floor'").get()?.value)
+    await reopened.keyboard.press("ControlOrMeta+z")
+    await reopened.waitForTimeout(300)
+    expect({ ...sql.prepare("SELECT count(*) n, sum(undone) undone FROM ops WHERE id <= ?").get(floor) }).toEqual({ n: floor, undone: 0 })
+  } finally {
+    sql.close()
+  }
 })
