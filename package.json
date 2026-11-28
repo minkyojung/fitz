@@ -3,8 +3,10 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "main": "electron/main.ts",
   "packageManager": "pnpm@10.17.1",
   "scripts": {
+    "dev": "pnpm --dir app build && electron .",
     "check": "pnpm typecheck && pnpm --dir app lint && pnpm --dir app build && pnpm test && pnpm test:electron && pnpm test:e2e",
     "server": "node server/main.ts",
     "typecheck": "tsc --noEmit",
