@@ -9,6 +9,8 @@ import { migrate } from "./migrate.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
 export const COPY = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
+/** The development copy's scanned pages. Tests only read them. */
+export const PAGES = process.env.FITZ_PAGES_DIR ?? join(ROOT, "dev-data/out/pages")
 
 /** A copy of the book in `dir` (made if missing): as the prototype left it (version 0), or migrated to this app's version. */
 export async function bookCopy(dir: string, as: "prototype" | "migrated"): Promise<{ path: string; backupDir: string }> {

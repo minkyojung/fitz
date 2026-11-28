@@ -27,6 +27,8 @@ export function answer({ book, writer }: Library, name: string, params: unknown)
       return book.listChapters()
     case "listSegments":
       return book.listSegments(sent(name).chapterId)
+    case "listPages":
+      return book.listPages()
     case "updateSegment": {
       const { id, patch, expectVersion } = sent(name)
       const saved = writer.execute("updateSegment", { id, text: patch.sourceText, doc: patch.sourceDoc, kind: patch.kind, verified: patch.verified, targetDoc: patch.targetDoc, status: patch.status, expectVersion }) as Segment

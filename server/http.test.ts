@@ -1,6 +1,6 @@
 // The server as a page meets it: over real HTTP on 127.0.0.1, against the development copy of the book.
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { request, type IncomingHttpHeaders, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -11,7 +11,7 @@ import { Hello, PROTOCOL_VERSION } from "../shared/protocol.ts"
 import { openBook, type BookReader } from "./book.ts"
 import { openWriter, type Writer } from "./commands.ts"
 import { COOKIE, createBookServer } from "./http.ts"
-import { bookCopy } from "./testing.ts"
+import { PAGES, bookCopy } from "./testing.ts"
 
 const TOKEN = "t".repeat(48)
 const BOOT = "boot-under-test"
@@ -56,7 +56,7 @@ describe("the server over HTTP", () => {
     writeFileSync(join(dir, "secret.txt"), "outside the page folder")
     book = openBook(COPY)
     writer = openWriter(COPY)
-    server = createBookServer({ book, writer, token: TOKEN, clientDir: join(dir, "client"), bootId: BOOT })
+    server = createBookServer({ book, writer, pagesDir: PAGES, token: TOKEN, clientDir: join(dir, "client"), bootId: BOOT })
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
     port = (server.address() as AddressInfo).port
   })
@@ -239,6 +239,23 @@ describe("the server over HTTP", () => {
     assert.equal((await api("saveDraft", { segmentId: was.id, doc: { type: "doc", content: [] }, baseVersion: 0 })).status, 400)
     // leave the book as the other tests expect it
     while ((await api("undo", {})).json()) { /* take back this test's saves */ }
+  })
+
+  test("a scanned page's picture is given to the page and to nobody else, and nothing but a page", async () => {
+    const [first] = book.listPages()
+    assert.ok(first)
+    const name = first.image.slice("/pages/".length)
+    const picture = await call(first.image)
+    assert.equal(picture.status, 200)
+    assert.equal(picture.headers["content-type"], "image/png")
+    assert.equal(picture.headers["cache-control"], "private, max-age=86400")
+    assert.equal(Number(picture.headers["content-length"]), readFileSync(join(PAGES, name)).length)
+    assert.equal((await call(first.image, { auth: false })).status, 401)
+    assert.equal((await call(first.image, { headers: { origin: "http://evil.example" } })).status, 403)
+    assert.equal((await call(first.image, { method: "POST" })).status, 405)
+    writeFileSync(join(dir, "secret.png"), "not a page")
+    for (const path of ["/pages/missing.png", "/pages/", "/pages/../secret.png", "/pages/..%2fsecret.png", "/pages/%2e%2e%2fsecret.png", "/pages/sub/x.png", "/pages/index.html", `/pages/${name}.txt`])
+      assert.ok([400, 404].includes((await call(path)).status), path)
   })
 
   test("the page's files are served, and nothing outside its folder", async () => {

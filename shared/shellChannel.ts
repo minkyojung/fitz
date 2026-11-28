@@ -12,6 +12,8 @@ export const ServerConfig = z.strictObject({
   dbPath: z.string().min(1),
   /** Where a backup is kept before the book is migrated. */
   backupDir: z.string().min(1),
+  /** The book's scanned pages: their pictures are given from here and from nowhere else. */
+  pagesDir: z.string().min(1),
   /** The built page (app/dist). */
   clientDir: z.string().min(1),
 })

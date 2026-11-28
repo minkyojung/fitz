@@ -38,6 +38,8 @@ const server = createServerProcess({
     token: randomBytes(32).toString("base64url"),
     dbPath,
     backupDir: join(dirname(dbPath), "backups"),
+    // the scanned pages sit beside the book, as the import left them
+    pagesDir: process.env.FITZ_PAGES_DIR ?? join(dirname(dbPath), "pages"),
     clientDir: join(ROOT, "app/dist"),
   },
   onCrash(words) {

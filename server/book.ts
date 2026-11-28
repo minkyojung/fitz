@@ -1,11 +1,12 @@
 // Reading a book's database. Nothing here writes: the file is opened read-only, and every row is checked against
 // the protocol before it leaves — a row that is not as docs/data-contract.md says is an error, never a guess.
 import { existsSync } from "node:fs"
+import { basename } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { z } from "zod"
 
-import { Book, Chapter, Segment } from "../shared/protocol.ts"
+import { Book, Chapter, Page, Segment } from "../shared/protocol.ts"
 import { LATEST } from "./migrate.ts"
 
 /** A request that cannot be answered as asked: 400 for what was sent, 404 for what is not there. */
@@ -35,20 +36,40 @@ const checked = <S extends z.ZodType>(schema: S, what: string, make: () => unkno
 }
 
 /** Paragraphs with their draft, if one is kept. Followed by a WHERE on `s`. */
-export const SEGMENT_ROWS = `
-  SELECT s.id, s.chapter_id, s.idx, s.kind, s.page_start, s.page_end, s.source_text, s.source_doc, s.target_text, s.target_doc,
-         s.status, s.verified, s.version, d.target_doc AS draft_doc, d.base_version AS draft_base, d.saved_at AS draft_saved
+const SEGMENT_ROWS = `
+  SELECT s.id, s.chapter_id, s.idx, s.kind, s.page_start, s.page_end, s.source_text, s.source_doc, s.ocr_text, s.target_text,
+         s.target_doc, s.status, s.verified, s.version, d.target_doc AS draft_doc, d.base_version AS draft_base, d.saved_at AS draft_saved
   FROM segment s LEFT JOIN draft d ON d.segment_id = s.id`
 
-/** A row of SEGMENT_ROWS as the protocol has a paragraph. */
-export const toSegment = (r: Record<string, unknown>): Segment =>
+/** A row of SEGMENT_ROWS, with its boxes, as the protocol has a paragraph. */
+const toSegment = (r: Record<string, unknown>, boxes: Record<string, unknown>[]): Segment =>
   checked(Segment, `paragraph ${r.id}`, () => ({
     id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
-    sourceText: r.source_text, sourceDoc: JSON.parse(String(r.source_doc)),
+    sourceText: r.source_text, sourceDoc: JSON.parse(String(r.source_doc)), ocrText: r.ocr_text,
+    boxes: boxes.map((b) => ({ pageNo: b.page_no, x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 })),
     targetText: r.target_text, targetDoc: r.target_doc === null ? null : JSON.parse(String(r.target_doc)),
     status: r.status, verified: r.verified === 1, version: r.version,
     draft: r.draft_doc === null ? null : { doc: JSON.parse(String(r.draft_doc)), baseVersion: r.draft_base, savedAt: r.draft_saved },
   }))
+
+const queries = new WeakMap<DatabaseSync, ReturnType<typeof prepareSegments>>()
+function prepareSegments(db: DatabaseSync) {
+  const rows = { chapter: db.prepare(`${SEGMENT_ROWS} WHERE s.chapter_id = ? ORDER BY s.idx`), one: db.prepare(`${SEGMENT_ROWS} WHERE s.id = ?`) }
+  const boxes = {
+    chapter: db.prepare("SELECT b.* FROM segment_box b JOIN segment s ON s.id = b.segment_id WHERE s.chapter_id = ? ORDER BY b.page_no"),
+    one: db.prepare("SELECT * FROM segment_box WHERE segment_id = ? ORDER BY page_no"),
+  }
+  return { rows, boxes }
+}
+
+/** Paragraphs as the page is given them — each with its boxes on the scan and its draft — by chapter (in order) or by id. */
+export function readSegments(db: DatabaseSync, by: "chapter" | "one", key: number): Segment[] {
+  let q = queries.get(db)
+  if (!q) queries.set(db, (q = prepareSegments(db)))
+  const boxes = new Map<unknown, Record<string, unknown>[]>()
+  for (const b of q.boxes[by].all(key)) boxes.set(b.segment_id, [...(boxes.get(b.segment_id) ?? []), b])
+  return q.rows[by].all(key).map((r) => toSegment(r, boxes.get(r.id) ?? []))
+}
 
 export type BookReader = ReturnType<typeof openBook>
 
@@ -78,7 +99,7 @@ export function openBook(path: string) {
        WHERE c.book_id = ? GROUP BY c.id ORDER BY c.idx`,
     )
     const chapterExists = db.prepare("SELECT 1 FROM chapter WHERE id = ? AND book_id = ?")
-    const segmentRows = db.prepare(`${SEGMENT_ROWS} WHERE s.chapter_id = ? ORDER BY s.idx`)
+    const pageRows = db.prepare("SELECT page_no, pdf_index, image_path FROM page WHERE book_id = ? ORDER BY pdf_index")
 
     return {
       getBook(): Book {
@@ -101,7 +122,15 @@ export function openBook(path: string) {
       /** A chapter's paragraphs in order. */
       listSegments(chapterId: number): Segment[] {
         if (!chapterExists.get(chapterId, bookId)) throw new RequestError(404, `chapter ${chapterId} not found`)
-        return segmentRows.all(chapterId).map(toSegment)
+        return readSegments(db, "chapter", chapterId)
+      },
+
+      /** The scanned pages in the order of the PDF. Only the file's name is kept of where the import put the picture:
+       *  the server gives it from the book's pages folder (data contract §6). */
+      listPages(): Page[] {
+        return pageRows.all(bookId).map((r) =>
+          checked(Page, `page ${r.page_no}`, () => ({ pageNo: r.page_no, pdfIndex: r.pdf_index, image: `/pages/${encodeURIComponent(basename(String(r.image_path)))}` })),
+        )
       },
 
       close(): void {

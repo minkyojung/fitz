@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite"
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test"
 
 import { LATEST } from "../server/migrate.ts"
-import { COPY, bookCopy } from "../server/testing.ts"
+import { PAGES, bookCopy } from "../server/testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
 
@@ -23,7 +23,7 @@ async function launch(again?: { profile: string; book: { path: string; backupDir
   const profile = again?.profile ?? mkdtempSync(join(tmpdir(), "fitz-app-"))
   // a book of its own, as the prototype left it: the app migrates it on opening, as it will the real one
   const book = again?.book ?? (await bookCopy(join(profile, "book"), "prototype"))
-  const app = await electron.launch({ args: [ROOT, `--user-data-dir=${profile}`], env: { ...process.env, FITZ_DB: book.path, FITZ_PORT: "0" } })
+  const app = await electron.launch({ args: [ROOT, `--user-data-dir=${profile}`], env: { ...process.env, FITZ_DB: book.path, FITZ_PAGES_DIR: PAGES, FITZ_PORT: "0" } })
   let output = ""
   app.process().stdout?.on("data", (d) => { output += d })
   app.process().stderr?.on("data", (d) => { output += d })
@@ -49,7 +49,7 @@ test("the app opens on the book, as the database holds it", async () => {
   const launched = await launch()
   running = launched
   const page = await launched.app.firstWindow()
-  const sql = new DatabaseSync(COPY, { readOnly: true })
+  const sql = new DatabaseSync(launched.book.path, { readOnly: true })
   try {
     const count = (query: string) => Number(Object.values(sql.prepare(query).get() ?? {})[0])
     const book = sql.prepare("SELECT title FROM book ORDER BY id LIMIT 1").get()!

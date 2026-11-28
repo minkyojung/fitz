@@ -41,6 +41,8 @@ const CSP = [
 const ALWAYS = { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" }
 
 export interface BookServerOptions extends Library {
+  /** The book's scanned pages. */
+  pagesDir: string
   /** This launch's secret. */
   token: string
   /** The built page. */
@@ -101,6 +103,10 @@ async function handle(o: BookServerOptions, req: IncomingMessage, res: ServerRes
   if (!holdsToken(req, o.token)) return fail(res, 401, "not signed in to this server")
 
   if (url.pathname.startsWith("/api/")) return api(o, url.pathname.slice("/api/".length), req, res)
+  if (url.pathname.startsWith("/pages/")) {
+    if (req.method !== "GET") return fail(res, 405, "only GET is answered here", { allow: "GET" })
+    return page(o.pagesDir, url.pathname.slice("/pages/".length), res)
+  }
   if (req.method === "GET") return file(o.clientDir, url.pathname, res)
   return fail(res, 405, "only GET is answered here", { allow: "GET" })
 }
@@ -142,6 +148,25 @@ async function read(req: IncomingMessage): Promise<string | null> {
     chunks.push(chunk)
   }
   return Buffer.concat(chunks).toString("utf8")
+}
+
+/** A scanned page's picture. A name and nothing else: no folder, nothing but a PNG, nothing outside the pages folder.
+ *  It is the book itself, so it is kept by this browser only (private) — and it never changes, so it is kept a day. */
+async function page(pagesDir: string, name: string, res: ServerResponse): Promise<void> {
+  let wanted: string
+  try {
+    wanted = decodeURIComponent(name)
+  } catch {
+    return fail(res, 400, "bad address")
+  }
+  if (!/^[\w.-]+\.png$/.test(wanted)) return fail(res, 404, "not found")
+  const root = resolve(pagesDir)
+  const full = resolve(root, wanted)
+  if (!full.startsWith(root + sep)) return fail(res, 404, "not found")
+  const found = await stat(full).catch(() => null)
+  if (!found?.isFile()) return fail(res, 404, "not found")
+  res.writeHead(200, { ...ALWAYS, "content-type": "image/png", "content-length": found.size, "cache-control": "private, max-age=86400" })
+  res.end(await readFile(full))
 }
 
 async function file(clientDir: string, pathname: string, res: ServerResponse): Promise<void> {

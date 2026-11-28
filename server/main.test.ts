@@ -12,7 +12,7 @@ import { after, before, describe, test } from "node:test"
 import { PROTOCOL_VERSION } from "../shared/protocol.ts"
 import { ToShell, type ServerConfig } from "../shared/shellChannel.ts"
 import { LATEST } from "./migrate.ts"
-import { bookCopy } from "./testing.ts"
+import { PAGES, bookCopy } from "./testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
 const MAIN = join(ROOT, "server/main.ts")
@@ -22,7 +22,7 @@ describe("the server as a process", () => {
   let dir: string
   let COPY: string
   let backupDir: string
-  const config = (more: Partial<ServerConfig> = {}): ServerConfig => ({ port: 0, token: TOKEN, dbPath: COPY, backupDir, clientDir: join(ROOT, "app/dist"), ...more })
+  const config = (more: Partial<ServerConfig> = {}): ServerConfig => ({ port: 0, token: TOKEN, dbPath: COPY, backupDir, pagesDir: PAGES, clientDir: join(ROOT, "app/dist"), ...more })
   const started: ChildProcess[] = []
   before(async () => {
     dir = mkdtempSync(join(tmpdir(), "fitz-main-"))

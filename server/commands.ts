@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 
 import { Doc, SEGMENT_KINDS, SEGMENT_STATUSES, type Change } from "../shared/protocol.ts"
-import { RequestError, SEGMENT_ROWS, toSegment } from "./book.ts"
+import { RequestError, readSegments } from "./book.ts"
 import { LATEST } from "./migrate.ts"
 
 /** Who made a change: known by the door it came in through — the page's requests are the translator's, Claude's tools the agent's. */
@@ -29,7 +29,7 @@ type Command = (db: DatabaseSync, params: unknown) => Done
 
 type Row = Record<string, unknown>
 /** The paragraph as the page is given it. */
-const segmentOut = (db: DatabaseSync, id: number) => toSegment(db.prepare(`${SEGMENT_ROWS} WHERE s.id = ?`).get(id) as Row)
+const segmentOut = (db: DatabaseSync, id: number) => readSegments(db, "one", id)[0]!
 
 /** What was sent, as the command expects it, or a 400 saying what is wrong with it. */
 const sent = <S extends z.ZodType>(schema: S, name: string, params: unknown): z.infer<S> => {

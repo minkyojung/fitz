@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { test as base, expect } from "@playwright/test"
 
-import { bookCopy } from "../server/testing.ts"
+import { PAGES, bookCopy } from "../server/testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
 const CLIENT = join(ROOT, "app/dist")
@@ -39,7 +39,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const port = await new Promise<number>((done, fail) => {
       child.once("message", (m: { ready: { port: number } }) => done(m.ready.port))
       child.once("exit", (code) => fail(new Error(`the server ended with ${code} before it was ready`)))
-      child.send({ start: { port: 0, token: TOKEN, dbPath: book.path, backupDir: book.backupDir, clientDir: CLIENT } })
+      child.send({ start: { port: 0, token: TOKEN, dbPath: book.path, backupDir: book.backupDir, pagesDir: PAGES, clientDir: CLIENT } })
     })
     const origin = `http://127.0.0.1:${port}`
     const sql = new DatabaseSync(book.path, { readOnly: true })

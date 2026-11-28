@@ -39,7 +39,7 @@ async function start(config: ServerConfig, listening: (port: number) => void): P
   } catch (e) {
     return die(e instanceof Error ? e.message : String(e))
   }
-  const server = createBookServer({ book, writer, token: config.token, clientDir: config.clientDir, bootId: randomUUID() })
+  const server = createBookServer({ book, writer, pagesDir: config.pagesDir, token: config.token, clientDir: config.clientDir, bootId: randomUUID() })
   server.on("error", (e) => die(`could not listen on 127.0.0.1:${config.port}: ${e.message}`))
   server.listen(config.port, "127.0.0.1", () => listening((server.address() as AddressInfo).port))
 
@@ -91,6 +91,7 @@ if (process.send) {
     token: randomBytes(32).toString("base64url"),
     dbPath,
     backupDir: process.env.FITZ_BACKUP_DIR ?? join(dirname(dbPath), "backups"),
+    pagesDir: process.env.FITZ_PAGES_DIR ?? join(dirname(dbPath), "pages"),
     clientDir: process.env.FITZ_CLIENT_DIR ?? join(root, "app/dist"),
   })
   if (!config.success) die(`the settings in the environment are not usable:\n${z.prettifyError(config.error)}`)

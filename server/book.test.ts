@@ -103,10 +103,33 @@ describe("the development copy of the book", () => {
     const found = book.listSegments(Number(row.chapter_id)).find((s) => s.id === row.id)
     assert.deepEqual(found, {
       id: row.id, chapterId: row.chapter_id, idx: row.idx, kind: row.kind, pageStart: row.page_start, pageEnd: row.page_end,
-      sourceText: row.source_text, sourceDoc: JSON.parse(String(row.source_doc)),
+      sourceText: row.source_text, sourceDoc: JSON.parse(String(row.source_doc)), ocrText: row.ocr_text,
+      boxes: sql.prepare("SELECT page_no pageNo, x0, y0, x1, y1 FROM segment_box WHERE segment_id = ? ORDER BY page_no").all(Number(row.id)).map((b) => ({ ...b })),
       targetText: row.target_text, targetDoc: JSON.parse(String(row.target_doc)),
       status: row.status, verified: row.verified === 1, version: row.version, draft: null,
     })
+  })
+
+  test("every paragraph comes with its boxes on the scan, as fractions of the page", () => {
+    const segments = book.listChapters().flatMap((c) => book.listSegments(c.id))
+    const boxes = segments.flatMap((s) => s.boxes.map((b) => ({ ...b, segmentId: s.id, pageStart: s.pageStart, pageEnd: s.pageEnd })))
+    assert.equal(boxes.length, count("SELECT count(*) FROM segment_box"))
+    for (const b of boxes) {
+      assert.ok(0 <= b.x0 && b.x0 < b.x1 && b.x1 <= 1 && 0 <= b.y0 && b.y0 < b.y1 && b.y1 <= 1, `box of paragraph ${b.segmentId} on p. ${b.pageNo}`)
+    }
+    const pages = new Set(book.listPages().map((p) => p.pageNo))
+    assert.ok(boxes.every((b) => pages.has(b.pageNo)), "every box is on a page there is a scan of")
+    assert.equal(segments.filter((s) => s.boxes.length === 0).length, count("SELECT count(*) FROM segment WHERE id NOT IN (SELECT segment_id FROM segment_box)"))
+    assert.equal(segments.filter((s) => s.ocrText === null).length, count("SELECT count(*) FROM segment WHERE ocr_text IS NULL"))
+  })
+
+  test("the pages come in the order of the PDF, each with the address of its picture", () => {
+    const pages = book.listPages()
+    const rows = sql.prepare("SELECT page_no, pdf_index, image_path FROM page ORDER BY pdf_index").all()
+    assert.equal(pages.length, rows.length)
+    assert.ok(pages.length > 0)
+    assert.deepEqual(pages, rows.map((r) => ({ pageNo: r.page_no, pdfIndex: r.pdf_index, image: `/pages/${String(r.image_path).split("/").pop()}` })))
+    assert.ok(pages.some((p) => p.pageNo <= 0), "front matter has page numbers of 0 and below")
   })
 
   test("the database is opened read-only", () => {

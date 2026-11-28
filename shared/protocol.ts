@@ -4,7 +4,7 @@
 import { z } from "zod"
 
 /** Said by both ends when they first meet; a mismatch is an error, never a guess. Raised whenever a shape here changes. */
-export const PROTOCOL_VERSION = 3
+export const PROTOCOL_VERSION = 4
 
 // A paragraph's text as the editor keeps it (ProseMirror JSON): doc → paragraph → text, nothing else.
 // A text node may carry marks (the prototype's review editor can set italic); they are passed on as they are.
@@ -13,6 +13,14 @@ const TextNode = z.strictObject({ type: z.literal("text"), text: z.string(), mar
 const ParagraphNode = z.strictObject({ type: z.literal("paragraph"), content: z.array(TextNode).optional() })
 export const Doc = z.strictObject({ type: z.literal("doc"), content: z.array(ParagraphNode).min(1) })
 export type Doc = z.infer<typeof Doc>
+
+/** Where a paragraph is on a scanned page, as fractions (0–1) of the page's width and height. One per page it is on. */
+export const Box = z.strictObject({ pageNo: z.int(), x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+export type Box = z.infer<typeof Box>
+
+/** A scanned page. `pageNo` is the number printed on it (0 or below for front matter); `pdfIndex` is its place in the PDF. */
+export const Page = z.strictObject({ pageNo: z.int(), pdfIndex: z.int(), image: z.string() })
+export type Page = z.infer<typeof Page>
 
 export const Book = z.strictObject({
   id: z.int(),
@@ -60,6 +68,10 @@ export const Segment = z.strictObject({
   pageEnd: z.int(),
   sourceText: z.string(),
   sourceDoc: Doc,
+  /** The source as the import extracted it, never changed since; null where there is none (inserted, split off). */
+  ocrText: z.string().nullable(),
+  /** Where it is on the scan. */
+  boxes: z.array(Box),
   /** null = not translated (the prototype said ""). */
   targetText: z.string().nullable(),
   targetDoc: Doc.nullable(),
@@ -101,6 +113,8 @@ export const REQUESTS = {
   getBook: { params: none, result: Book },
   listChapters: { params: none, result: z.array(Chapter) },
   listSegments: { params: z.strictObject({ chapterId: z.int() }), result: z.array(Segment) },
+  /** The scanned pages in the order of the PDF; `image` is the address of the page's picture on this server. */
+  listPages: { params: none, result: z.array(Page) },
   /** Save a paragraph. `expectVersion` is the version the page last saw: if the paragraph changed since, nothing is
    *  written (409) — the translator and Claude both write, and neither overwrites what the other wrote unseen. */
   updateSegment: { params: z.strictObject({ id: z.int(), patch: SegmentPatch, expectVersion: z.int() }), result: Segment },
