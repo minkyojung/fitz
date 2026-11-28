@@ -19,7 +19,7 @@ fitz.app
 | 셸 | Electron 45 + TypeScript. 45.5.0(Node 24.22.3, SQLite 3.54.1)에서 `node:sqlite`와 서버 테스트 통과를 확인했다(2026-11-28) | Agent SDK가 앱 안의 Node에서 그대로 돈다. Octave와 T3 Code가 같은 구성으로 배포 중이다 |
 | 서버 | Electron 실행 파일을 `ELECTRON_RUN_AS_NODE=1`로 띄운 자식 프로세스 하나. 미리 번들한 파일 하나로 둔다 | 맥에 깔린 Node에 기대지 않는다. 동기식 `node:sqlite`가 창을 멈추지 않는다. 서버가 죽어도 창이 살아서 이유를 보여 준다 |
 | 화면 | React + Vite, shadcn 디자인 시스템(Base UI, 프리셋 `b1VlJAwK`). 기본 컴포넌트(`app/src/components/ui/`)는 도구로 받아 고치지 않고, 배치는 `sidebar-08` 블록을 따른다. 빌드된 화면을 서버가 127.0.0.1로 준다 | 편집기(TipTap)가 React다. 이 흐름을 처음부터 세워 두면 편집기를 붙일 때 다시 짓지 않는다 |
-| 화면 ↔ 서버 | HTTP(조회) + WebSocket(실시간, 쓰기 기능과 함께). 메시지 규약은 파일 하나에 닫힌 목록으로 정의하고 받을 때 검증한다 | 규약이 셸과 무관하면 화면이나 셸을 바꿔도 서버는 그대로 쓴다(Codex, Zed의 ACP) |
+| 화면 ↔ 서버 | HTTP(조회와 저장) + WebSocket(실시간, 편집기와 함께). 메시지 규약은 파일 하나에 닫힌 목록으로 정의하고 받을 때 검증한다 | 규약이 셸과 무관하면 화면이나 셸을 바꿔도 서버는 그대로 쓴다(Codex, Zed의 ACP) |
 | 셸 ↔ 서버 | 자식 프로세스 IPC 채널. 역시 닫힌 메시지 목록 | Octave 방식 |
 | DB | `node:sqlite`, 책마다 SQLite 파일 하나. 서버가 책을 열기 전에 마이그레이션한다(백업 → 단계 실행 → 확인 → 실패하면 되돌림, `server/migrate.ts`). 버전 1부터 WAL이고 `synchronous = FULL`을 유지한다(원고는 사람이 치는 속도라 느려질 일이 없고, 정전에도 마지막 편집을 잃지 않는다) | T3 Code, Orca, VS Code가 WAL을 쓴다. 규칙은 `docs/data-contract.md` |
 | 모델 | Claude Agent SDK 하나. 사용자 본인 구독, 수정하지 않은 Claude Code 바이너리. 서버 안의 한 파일(모델 포트)에서만 부른다 | 구독으로 쓰면 추가 비용이 없다. 대화 루프, 세션, 권한이 이미 있다 |
@@ -27,6 +27,7 @@ fitz.app
 | 테스트 | 서버는 `node:test`(Electron의 Node로도 돌린다), 앱 실행은 Playwright의 Electron 실행 | 실제 앱이 뜨는지는 진짜 Electron을 띄워야 안다 |
 | 리포 | pnpm 작업 공간 하나(루트 + `app/`), 잠금 파일 하나 | 설치 한 번으로 전체가 준비된다 |
 | 서버·셸 코드 실행 | 개발과 테스트에서는 `.ts`를 빌드 없이 직접 실행한다(Electron의 메인 프로세스도 `electron/main.ts`를 그대로 실행한다)(지울 수 있는 타입 문법만 쓴다, `tsconfig.json`의 `erasableSyntaxOnly`). 배포용 번들은 셸을 만들 때 넣는다 | 빌드 단계가 없어 테스트가 빠르다. Node 26과 Electron 45의 Node 양쪽에서 확인했다 |
+| 쓰기 | 모든 변경은 `server/commands.ts`의 명령 하나로 지나간다: 트랜잭션으로 실행하고 역방향과 함께 `ops`에 기록한다. 연결은 둘이다. 쓰기 연결 하나와, 쓸 수 없는 읽기 연결 하나(WAL이라 서로 막지 않는다) | 번역자와 Claude의 쓰기 순서와 버전 확인이 한 곳에서 정해진다. 읽는 코드는 실수로도 쓸 수 없다 |
 | 규약 검증 | zod. `shared/protocol.ts`에 요청과 모양을 한 번 정의해 타입과 검증을 함께 얻는다. 서버는 받은 인자와 DB에서 읽은 행을 모두 검사한다 | 규약과 어긋난 데이터는 추측하지 않고 오류로 드러낸다 |
 | 검사 명령 | `pnpm check`: 루트 타입 검사, `app/` 린트와 빌드(타입 검사 포함), 일반 Node와 Electron의 Node 테스트, 브라우저 테스트 | 실제 앱은 Electron의 Node로 돌기 때문에 양쪽에서 돌린다 |
 | 테스트의 기대값 | 숫자를 박지 않고 같은 사본 DB에서 SQL로 직접 센 값과 비교한다 | 사본을 다시 떠서 번역 수가 늘어도 테스트가 깨지지 않는다 |
