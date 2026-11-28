@@ -10,7 +10,7 @@ import { useEffect, useRef } from "react"
 import { Doc } from "@shared/protocol.ts"
 
 /** How an edit ended: the focus went elsewhere, or a key said where to go next. */
-export type Leave = "blur" | "next" | "previous" | "confirm"
+export type Leave = "blur" | "done" | "next" | "previous" | "confirm"
 
 /** How long typing rests before what was typed is handed on to be kept as a draft. */
 const DRAFT_DELAY = 300

@@ -1,8 +1,10 @@
 import type { Doc, Segment } from "@shared/protocol.ts"
 
 import { DocText } from "@/components/doc-text"
-import { SegmentEditor, type Leave } from "@/components/segment-editor"
+import { SegmentEditor } from "@/components/segment-editor"
 import { Button } from "@/components/ui/button"
+import type { SideEdit } from "@/hooks/use-segment-edits"
+import { caretAt } from "@/lib/caret"
 import { cn } from "@/lib/utils"
 
 const KIND_STYLE: Record<Segment["kind"], string> = {
@@ -17,34 +19,10 @@ const STATUS_DOT: Record<Segment["status"], string> = { untranslated: "bg-border
 
 const EMPTY: Doc = { type: "doc", content: [{ type: "paragraph" }] }
 
-/** Where in the document a click on its read view landed: the editor opens with the caret there. */
-function caretAt(event: React.MouseEvent<HTMLElement>): number | "end" {
-  const range = document.caretRangeFromPoint(event.clientX, event.clientY)
-  const paragraphs = [...event.currentTarget.querySelectorAll("p")]
-  const p = range ? paragraphs.findIndex((el) => el.contains(range.startContainer)) : -1
-  if (!range || p === -1) return "end"
-  const before = document.createRange()
-  before.setStart(paragraphs[p]!, 0)
-  before.setEnd(range.startContainer, range.startOffset)
-  // a paragraph costs one position to open and one to close
-  return paragraphs.slice(0, p).reduce((pos, el) => pos + (el.textContent?.length ?? 0) + 2, 1 + before.toString().length)
-}
-
 /** One paragraph: its source, its status, its translation — which a click opens for editing. */
-export function SegmentRow({ segment, target, draft, editing, onEdit, onLeave, onCancel, onDraft, onDiscard }: {
-  segment: Segment
-  /** The translation to show: the one being saved until the save settles, else the paragraph's own. */
-  target: Doc | null
-  /** Text typed here and never saved, when there is some: it is said, and never dropped silently. */
-  draft: { changedSince: boolean } | null
-  /** Set while this paragraph is the one being edited: where the caret starts and the text the edit opens on. */
-  editing: { caret: number | "end"; doc: Doc | null } | null
-  onEdit: (caret: number | "end") => void
-  onLeave: (doc: Doc, how: Leave) => void
-  onCancel: () => void
-  onDraft: (doc: Doc) => void
-  onDiscard: () => void
-}) {
+export function SegmentRow({ segment, target: t }: { segment: Segment; target: SideEdit }) {
+  const target = t.shown
+  const { draft, editing, onEdit, onLeave, onCancel, onDraft, onDiscard } = t
   const side = cn("flex min-w-0 flex-col gap-2 text-sm leading-relaxed", KIND_STYLE[segment.kind])
   const translation = cn(side, "break-keep")
   return (
