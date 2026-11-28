@@ -272,3 +272,45 @@ test("an emptied source is refused and kept as a draft, which comes back after a
   await expect(again.locator("[data-side=source]")).toHaveText(String(was.source_text))
   complaints.length = 0 // the refused save is the point of this test
 })
+
+// ---- what was changed since the OCR
+
+test("a paragraph changed since the OCR is marked, and shows word by word what was changed", async ({ page, door, sql }) => {
+  // the copy has OCR slips fixed by hand: "winglow" became "window"
+  const fixed = sql.prepare("SELECT id, chapter_id FROM segment WHERE ocr_text LIKE '%winglow%' AND source_text LIKE '%window%'").get()
+  expect(fixed, "the copy has the winglow → window fix").toBeTruthy()
+  const chapterId = Number(fixed!.chapter_id)
+  await review(page, door, chapterId)
+  const marked = sql.prepare("SELECT id FROM segment WHERE chapter_id = ? AND ocr_text IS NOT NULL AND ocr_text <> source_text ORDER BY idx").all(chapterId).map((r) => String(r.id))
+  await expect(page.locator("[data-segment-id]:has([data-edited])")).toHaveCount(marked.length)
+  expect(await page.locator("[data-segment-id]:has([data-edited])").evaluateAll((els) => els.map((el) => el.getAttribute("data-segment-id")))).toEqual(marked)
+
+  await page.locator(`[data-segment-id="${fixed!.id}"] [data-edited]`).click()
+  const diff = page.locator("[data-diff]")
+  await expect(diff).toBeVisible()
+  await expect(diff.locator("del")).toHaveText(["winglow,"])
+  await expect(diff.locator("ins")).toHaveText(["window,"])
+  await page.keyboard.press("Escape")
+  await expect(diff).toHaveCount(0)
+})
+
+test("a paragraph fixed here gains the mark; one with no OCR text has none", async ({ page, door, sql }) => {
+  const { chapterId, rows } = fresh(sql, 5)
+  const id = rows.find((r) => { const x = rowOf(sql, r.id); return x.ocr_text !== null && x.ocr_text === x.source_text && String(x.source_text).split(" ").length > 3 })!.id
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${id}"]`)
+  await expect(row.locator("[data-edited]")).toHaveCount(0)
+  await row.locator("[data-side=source]").click({ position: { x: 1, y: 6 } })
+  await expect(row.locator("[contenteditable=true]")).toBeFocused()
+  await page.keyboard.insertText("Indeed, ")
+  await page.keyboard.press("Enter")
+  await expect(row.locator("[data-edited]")).toHaveCount(1)
+  await row.locator("[data-edited]").click()
+  await expect(page.locator("[data-diff] ins")).toHaveText(["Indeed,"])
+  await expect(page.locator("[data-diff] del")).toHaveCount(0)
+  await page.keyboard.press("Escape")
+  // ⌘Z takes the fix back, and the mark with it
+  await page.locator("header").click()
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(row.locator("[data-edited]")).toHaveCount(0)
+})

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react"
 import { SEGMENT_KINDS, type Segment } from "@shared/protocol.ts"
 
 import { DocText } from "@/components/doc-text"
+import { EditedMark } from "@/components/edited-mark"
 import { SegmentEditor } from "@/components/segment-editor"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -61,6 +62,7 @@ export function ReviewRow({ segment, selected, source, onSelect, onVerify, onKin
           <Badge variant="outline" data-kind>{KIND_LABEL[segment.kind]}</Badge>
         )}
         {segment.pageEnd !== segment.pageStart && <span>→ p. {segment.pageEnd}</span>}
+        {segment.ocrText !== null && segment.ocrText !== segment.sourceText && <EditedMark ocrText={segment.ocrText} sourceText={segment.sourceText} />}
       </div>
       {source.editing ? (
         <div data-side="source">
