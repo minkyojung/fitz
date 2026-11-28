@@ -44,6 +44,14 @@ export function answer({ book, writer }: Library, name: string, params: unknown)
       }
       return { ...saved, drafts }
     }
+    case "splitSegment": {
+      const { id, offset, expectVersion } = sent(name)
+      return writer.execute("splitSegment", { id, offset, expectVersion })
+    }
+    case "mergeWithNext": {
+      const { id, expectVersion } = sent(name)
+      return writer.execute("mergeWithNext", { id, expectVersion })
+    }
     case "saveDraft": {
       const { segmentId, side, doc, baseVersion } = sent(name)
       writer.saveDraft(segmentId, side, doc, baseVersion)

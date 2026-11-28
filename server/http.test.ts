@@ -207,6 +207,29 @@ describe("the server over HTTP", () => {
     assert.ok((await api("undo", {})).json())
   })
 
+  test("a paragraph is split and merged back over HTTP, each a change that ⌘Z takes back", async () => {
+    // a paragraph of a few words, with one after it
+    const chapter = book.listChapters().find((c) => c.segmentCount > 2)!
+    const all = book.listSegments(chapter.id)
+    const at = all.findIndex((s, i) => s.sourceText.includes(" ") && all[i + 1])
+    const [first, second] = [all[at], all[at + 1]]
+    const offset = first!.sourceText.indexOf(" ") + 1
+    const split = await api("splitSegment", { id: first!.id, offset, expectVersion: first!.version })
+    assert.equal(split.status, 200, split.text)
+    const [head, tail] = split.json()
+    assert.equal(`${head.sourceText} ${tail.sourceText}`, first!.sourceText)
+    assert.deepEqual(book.listSegments(chapter.id).map((s) => s.id).slice(at, at + 3), [first!.id, tail.id, second!.id])
+    assert.equal((await api("splitSegment", { id: first!.id, offset, expectVersion: first!.version })).status, 409)
+    assert.equal((await api("splitSegment", { id: first!.id, offset: 0, expectVersion: head.version })).status, 400)
+    const merged = await api("mergeWithNext", { id: first!.id, expectVersion: head.version })
+    assert.equal(merged.json().sourceText, first!.sourceText)
+    assert.equal((await api("mergeWithNext", { id: first!.id })).status, 400, "a merge names the version it saw")
+    assert.equal((await api("undo", {})).json().name, "mergeWithNext")
+    assert.equal((await api("undo", {})).json().name, "splitSegment")
+    assert.deepEqual(book.listSegments(chapter.id)[at]?.sourceText, first!.sourceText)
+    assert.equal(book.listSegments(chapter.id).length, chapter.segmentCount)
+  })
+
   test("a draft is kept and shown with its paragraph, and goes when the translation is saved or it is dropped", async () => {
     const chapter = book.listChapters().find((c) => c.translatedCount < c.segmentCount)!
     const was = book.listSegments(chapter.id).find((s) => s.targetDoc === null)!

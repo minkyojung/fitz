@@ -9,8 +9,10 @@ import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 
 import { Doc, SEGMENT_KINDS, SEGMENT_STATUSES, type Change, type Side } from "../shared/protocol.ts"
-import { RequestError, readSegments } from "./book.ts"
+import { RequestError } from "./book.ts"
+import { type Command, type Done, type Row, docText, segmentOut, sent, textDoc } from "./command-kit.ts"
 import { LATEST } from "./migrate.ts"
+import { STRUCTURE } from "./structure.ts"
 
 /** Who made a change: known by the door it came in through — the page's requests are the translator's, Claude's tools the agent's. */
 export interface By {
@@ -19,28 +21,6 @@ export interface By {
   toolUseId?: string
 }
 export const TRANSLATOR: By = Object.freeze({ actor: "translator" })
-
-/** What a command did: its result, itself as logged (replayable as it is), its inverse, the paragraphs it touched.
- *  Or, when it found nothing to change, only its result. */
-type Done =
-  | { result: unknown; forward: unknown; inverse: { name: string; params: unknown }; segmentIds: number[] }
-  | { result: unknown; unchanged: true }
-type Command = (db: DatabaseSync, params: unknown) => Done
-
-type Row = Record<string, unknown>
-/** The paragraph as the page is given it. */
-const segmentOut = (db: DatabaseSync, id: number) => readSegments(db, "one", id)[0]!
-
-/** What was sent, as the command expects it, or a 400 saying what is wrong with it. */
-const sent = <S extends z.ZodType>(schema: S, name: string, params: unknown): z.infer<S> => {
-  const parsed = schema.safeParse(params)
-  if (!parsed.success) throw new RequestError(400, `${name}: ${z.prettifyError(parsed.error)}`)
-  return parsed.data
-}
-
-/** Plain text of a document: text nodes joined, paragraphs joined by a newline. */
-const docText = (doc: Doc) => doc.content.map((p) => (p.content ?? []).map((n) => n.text).join("")).join("\n")
-const textDoc = (text: string): Doc => ({ type: "doc", content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }] })
 
 const UpdateSegment = z.strictObject({
   id: z.int(),
@@ -104,6 +84,7 @@ const COMMANDS: Record<string, Command> = {
       segmentIds: [p.id],
     }
   },
+  ...STRUCTURE,
 }
 
 /** What a logged change touched, as keys two changes can share. A later change to the same key stands in the way of undo. */
@@ -111,6 +92,10 @@ function touches(row: Row): string[] {
   const segmentIds = JSON.parse(String(row.segment_ids)) as number[]
   switch (row.name) {
     case "updateSegment":
+    case "splitSegment":
+    case "unsplit":
+    case "mergeWithNext":
+    case "unmerge":
       return segmentIds.map((id) => `seg:${id}`)
     default:
       // never guessed: a command added here says what it touches
