@@ -21,7 +21,7 @@ pnpm server           # 서버만 띄운다. 출력된 주소를 브라우저로
 | `electron/` | 셸. 창을 열고 서버를 띄우고 끈다 |
 | `server/` | 앱 로직. 책 DB를 읽는다 |
 | `shared/` | 화면과 서버가 함께 쓰는 메시지 규약 |
-| `app/` | 화면 (React + Vite, shadcn 디자인 시스템) |
+| `app/` | 화면 (React + Vite, shadcn 디자인 시스템, TipTap 편집기) |
 | `e2e/` | 진짜 서버와 화면을 브라우저로, 그리고 진짜 Electron 앱을 띄워 확인하는 테스트 (Playwright) |
 | `scripts/` | 개발 도구 |
 | `db/schema.sql` | 기존 책 DB의 스키마 |
