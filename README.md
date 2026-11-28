@@ -8,6 +8,7 @@
 pnpm install          # 루트와 app/ 을 함께 설치한다
 scripts/dev-data.sh   # 개발용 사본을 dev-data/ 에 만든다 (원본은 읽기만 한다)
 pnpm check            # 타입 검사와 테스트 (일반 Node, Electron의 Node)
+pnpm server           # 서버만 띄운다. 출력된 주소를 브라우저로 연다 (화면은 app/ 에서 pnpm build 한 것)
 ```
 
 ## 폴더
