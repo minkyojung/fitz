@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from "node:util"
 import { z } from "zod"
 
 import { Doc, SEGMENT_KINDS, SEGMENT_STATUSES, type Change } from "../shared/protocol.ts"
-import { RequestError, toSegment } from "./book.ts"
+import { RequestError, SEGMENT_ROWS, toSegment } from "./book.ts"
 import { LATEST } from "./migrate.ts"
 
 /** Who made a change: known by the door it came in through — the page's requests are the translator's, Claude's tools the agent's. */
@@ -28,6 +28,8 @@ type Done =
 type Command = (db: DatabaseSync, params: unknown) => Done
 
 type Row = Record<string, unknown>
+/** The paragraph as the page is given it. */
+const segmentOut = (db: DatabaseSync, id: number) => toSegment(db.prepare(`${SEGMENT_ROWS} WHERE s.id = ?`).get(id) as Row)
 
 /** What was sent, as the command expects it, or a 400 saying what is wrong with it. */
 const sent = <S extends z.ZodType>(schema: S, name: string, params: unknown): z.infer<S> => {
@@ -79,7 +81,7 @@ const COMMANDS: Record<string, Command> = {
     const nextVerified = p.verified ?? cur.verified === 1
 
     const unchanged = nextDoc === curDoc && nextTarget === curTarget && nextStatus === cur.status && nextKind === cur.kind && nextVerified === (cur.verified === 1)
-    if (unchanged) return { result: toSegment(cur), unchanged: true }
+    if (unchanged) return { result: segmentOut(db, p.id), unchanged: true }
 
     // the translation that is replaced is kept
     if (curTarget && nextTarget !== curTarget) db.prepare("INSERT INTO segment_version(segment_id, target_doc) VALUES (?, ?)").run(p.id, String(cur.target_doc))
@@ -92,7 +94,7 @@ const COMMANDS: Record<string, Command> = {
       nextTarget === curTarget ? (cur.target_doc as string | null) : JSON.stringify(nextTarget), nextTargetText, nextStatus, p.id,
     )
     return {
-      result: toSegment(db.prepare("SELECT * FROM segment WHERE id = ?").get(p.id) as Row),
+      result: segmentOut(db, p.id),
       forward: { id: p.id, doc: nextDoc, text: docText(nextDoc), kind: nextKind, verified: nextVerified, targetDoc: nextTarget, status: nextStatus },
       inverse: {
         name: "updateSegment",
@@ -206,6 +208,15 @@ export function openWriter(path: string) {
       undo: (by: By = TRANSLATOR): Change | null => step(by, 1),
       /** Do again `by`'s change taken back last. null when there is none. */
       redo: (by: By = TRANSLATOR): Change | null => step(by, 0),
+      /** Keep what is being typed into a paragraph's translation (one draft per paragraph, the latest). Not a change to
+       *  the book: nothing is logged, no version moves. */
+      saveDraft(segmentId: number, doc: Doc, baseVersion: number): void {
+        if (!db.prepare("SELECT 1 FROM segment WHERE id = ?").get(segmentId)) throw new RequestError(404, `paragraph ${segmentId} not found`)
+        db.prepare("INSERT OR REPLACE INTO draft(segment_id, target_doc, base_version, saved_at) VALUES (?, ?, ?, datetime('now'))").run(segmentId, JSON.stringify(doc), baseVersion)
+      },
+      dropDraft(segmentId: number): void {
+        db.prepare("DELETE FROM draft WHERE segment_id = ?").run(segmentId)
+      },
       /** How many changes this writer has made since it was opened: do, undo and redo each count. */
       revision: (): number => revision,
       close(): void {

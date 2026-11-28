@@ -14,7 +14,7 @@ import { answer } from "./answer.ts"
 import { RequestError, openBook, openReadOnly } from "./book.ts"
 import { openWriter, type Writer } from "./commands.ts"
 import { LATEST } from "./migrate.ts"
-import { bookCopy } from "./testing.ts"
+import { bookCopy, newBook } from "./testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
 const SCHEMA = readFileSync(join(ROOT, "db/schema.sql"), "utf8")
@@ -105,7 +105,7 @@ describe("the development copy of the book", () => {
       id: row.id, chapterId: row.chapter_id, idx: row.idx, kind: row.kind, pageStart: row.page_start, pageEnd: row.page_end,
       sourceText: row.source_text, sourceDoc: JSON.parse(String(row.source_doc)),
       targetText: row.target_text, targetDoc: JSON.parse(String(row.target_doc)),
-      status: row.status, verified: row.verified === 1, version: row.version,
+      status: row.status, verified: row.verified === 1, version: row.version, draft: null,
     })
   })
 
@@ -157,19 +157,13 @@ describe("databases that are not as the contract says", () => {
   before(() => { dir = mkdtempSync(join(tmpdir(), "fitz-book-")) })
   after(() => rmSync(dir, { recursive: true, force: true }))
 
-  /** A database made from db/schema.sql with one book, one chapter and the paragraphs given. */
-  const make = (name: string, docs: { source: string; target?: string }[]) => {
-    const path = join(dir, name)
-    const db = new DatabaseSync(path)
-    db.exec(SCHEMA)
-    db.exec(`PRAGMA user_version = ${LATEST}`)
-    db.exec("INSERT INTO book(id, title, source_pdf) VALUES (1, 'A Book', '/nowhere.pdf')")
-    db.exec("INSERT INTO chapter(id, book_id, idx, title) VALUES (1, 1, 0, 'One')")
-    const insert = db.prepare("INSERT INTO segment(chapter_id, idx, page_start, page_end, source_doc, source_text, target_doc, target_text, status) VALUES (1, ?, 1, 1, ?, 'x', ?, ?, ?)")
-    docs.forEach((d, i) => insert.run(i, d.source, d.target ?? null, d.target ? "y" : null, d.target ? "draft" : "untranslated"))
-    db.close()
-    return path
-  }
+  /** A book with one chapter and the paragraphs given, at this app's version. */
+  const make = (name: string, docs: { source: string; target?: string }[]) =>
+    newBook(join(dir, name), (db) => {
+      db.exec("INSERT INTO chapter(id, book_id, idx, title) VALUES (1, 1, 0, 'One')")
+      const insert = db.prepare("INSERT INTO segment(chapter_id, idx, page_start, page_end, source_doc, source_text, target_doc, target_text, status) VALUES (1, ?, 1, 1, ?, 'x', ?, ?, ?)")
+      docs.forEach((d, i) => insert.run(i, d.source, d.target ?? null, d.target ? "y" : null, d.target ? "draft" : "untranslated"))
+    })
 
   test("a missing file is said plainly", () => {
     const path = join(dir, "missing.db")
@@ -206,8 +200,8 @@ describe("databases that are not as the contract says", () => {
     assert.throws(() => openBook(path), /no book/)
   })
 
-  test("italic in a paragraph is passed on as it is", () => {
-    const book = openBook(make("italic.db", [{ source: pm("Moby-Dick", [{ type: "italic" }]) }]))
+  test("italic in a paragraph is passed on as it is", async () => {
+    const book = openBook(await make("italic.db", [{ source: pm("Moby-Dick", [{ type: "italic" }]) }]))
     try {
       const [s] = book.listSegments(1)
       assert.deepEqual(s?.sourceDoc.content[0]?.content?.[0], { type: "text", text: "Moby-Dick", marks: [{ type: "italic" }] })
@@ -217,14 +211,14 @@ describe("databases that are not as the contract says", () => {
     }
   })
 
-  test("a paragraph that is not doc → paragraph → text is an error, not a guess", () => {
+  test("a paragraph that is not doc → paragraph → text is an error, not a guess", async () => {
     const heading = JSON.stringify({ type: "doc", content: [{ type: "heading", content: [{ type: "text", text: "x" }] }] })
     for (const [name, docs] of [
       ["node.db", [{ source: heading }]],
       ["json.db", [{ source: "not json" }]],
       ["target.db", [{ source: pm("x"), target: heading }]],
     ] as const) {
-      const book = openBook(make(name, [...docs]))
+      const book = openBook(await make(name, [...docs]))
       try {
         assert.throws(() => book.listSegments(1), (e) => e instanceof Error && !(e instanceof RequestError) && /paragraph 1/.test(e.message), name)
       } finally {

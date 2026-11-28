@@ -2,7 +2,7 @@
 // reader or — for a change — to the writer, as the translator's.
 import { z } from "zod"
 
-import { REQUESTS, isRequestName, type Params, type RequestName, type Result } from "../shared/protocol.ts"
+import { REQUESTS, isRequestName, type Params, type RequestName, type Result, type Segment } from "../shared/protocol.ts"
 import { RequestError, type BookReader } from "./book.ts"
 import type { Writer } from "./commands.ts"
 
@@ -29,8 +29,20 @@ export function answer({ book, writer }: Library, name: string, params: unknown)
       return book.listSegments(sent(name).chapterId)
     case "updateSegment": {
       const { id, patch, expectVersion } = sent(name)
-      return writer.execute("updateSegment", { id, text: patch.sourceText, doc: patch.sourceDoc, kind: patch.kind, verified: patch.verified, targetDoc: patch.targetDoc, status: patch.status, expectVersion })
+      const saved = writer.execute("updateSegment", { id, text: patch.sourceText, doc: patch.sourceDoc, kind: patch.kind, verified: patch.verified, targetDoc: patch.targetDoc, status: patch.status, expectVersion }) as Segment
+      // the translation the translator saved stands in place of what was being typed
+      if (patch.targetDoc === undefined) return saved
+      writer.dropDraft(id)
+      return { ...saved, draft: null }
     }
+    case "saveDraft": {
+      const { segmentId, doc, baseVersion } = sent(name)
+      writer.saveDraft(segmentId, doc, baseVersion)
+      return null
+    }
+    case "dropDraft":
+      writer.dropDraft(sent(name).segmentId)
+      return null
     case "undo":
       return writer.undo()
     case "redo":

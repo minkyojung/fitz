@@ -34,13 +34,20 @@ const checked = <S extends z.ZodType>(schema: S, what: string, make: () => unkno
   }
 }
 
-/** A row of `segment` as the protocol has a paragraph. */
+/** Paragraphs with their draft, if one is kept. Followed by a WHERE on `s`. */
+export const SEGMENT_ROWS = `
+  SELECT s.id, s.chapter_id, s.idx, s.kind, s.page_start, s.page_end, s.source_text, s.source_doc, s.target_text, s.target_doc,
+         s.status, s.verified, s.version, d.target_doc AS draft_doc, d.base_version AS draft_base, d.saved_at AS draft_saved
+  FROM segment s LEFT JOIN draft d ON d.segment_id = s.id`
+
+/** A row of SEGMENT_ROWS as the protocol has a paragraph. */
 export const toSegment = (r: Record<string, unknown>): Segment =>
   checked(Segment, `paragraph ${r.id}`, () => ({
     id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
     sourceText: r.source_text, sourceDoc: JSON.parse(String(r.source_doc)),
     targetText: r.target_text, targetDoc: r.target_doc === null ? null : JSON.parse(String(r.target_doc)),
     status: r.status, verified: r.verified === 1, version: r.version,
+    draft: r.draft_doc === null ? null : { doc: JSON.parse(String(r.draft_doc)), baseVersion: r.draft_base, savedAt: r.draft_saved },
   }))
 
 export type BookReader = ReturnType<typeof openBook>
@@ -71,11 +78,7 @@ export function openBook(path: string) {
        WHERE c.book_id = ? GROUP BY c.id ORDER BY c.idx`,
     )
     const chapterExists = db.prepare("SELECT 1 FROM chapter WHERE id = ? AND book_id = ?")
-    const segmentRows = db.prepare(
-      `SELECT id, chapter_id, idx, kind, page_start, page_end, source_text, source_doc, target_text, target_doc,
-              status, verified, version
-       FROM segment WHERE chapter_id = ? ORDER BY idx`,
-    )
+    const segmentRows = db.prepare(`${SEGMENT_ROWS} WHERE s.chapter_id = ? ORDER BY s.idx`)
 
     return {
       getBook(): Book {

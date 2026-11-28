@@ -207,6 +207,40 @@ describe("the server over HTTP", () => {
     assert.ok((await api("undo", {})).json())
   })
 
+  test("a draft is kept and shown with its paragraph, and goes when the translation is saved or it is dropped", async () => {
+    const chapter = book.listChapters().find((c) => c.translatedCount < c.segmentCount)!
+    const was = book.listSegments(chapter.id).find((s) => s.targetDoc === null)!
+    const find = async () => (await api("listSegments", { chapterId: chapter.id })).json().find((s: { id: number }) => s.id === was.id)
+    const typed = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "치던 글" }] }] }
+    const revision = async () => (await api("hello", { protocol: PROTOCOL_VERSION })).json().revision as number
+    const start = await revision()
+
+    const kept = await api("saveDraft", { segmentId: was.id, doc: typed, baseVersion: was.version })
+    assert.equal(kept.status, 200)
+    assert.equal(kept.json(), null)
+    const shown = await find()
+    assert.deepEqual(shown.draft.doc, typed)
+    assert.equal(shown.draft.baseVersion, was.version)
+    assert.match(shown.draft.savedAt, /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/)
+    assert.equal(shown.targetDoc, null, "the paragraph itself is as it was")
+    assert.equal(shown.version, was.version)
+    assert.equal(await revision(), start, "a draft is not a change to the book")
+
+    assert.equal((await api("updateSegment", { id: was.id, patch: { status: "draft" }, expectVersion: was.version })).json().draft.baseVersion, was.version, "a save that leaves the translation alone leaves the draft")
+    const saved = await api("updateSegment", { id: was.id, patch: { targetDoc: typed }, expectVersion: (await find()).version })
+    assert.equal(saved.json().draft, null)
+    assert.equal((await find()).draft, null)
+
+    await api("saveDraft", { segmentId: was.id, doc: typed, baseVersion: saved.json().version })
+    assert.ok((await find()).draft)
+    assert.equal((await api("dropDraft", { segmentId: was.id })).status, 200)
+    assert.equal((await find()).draft, null)
+    assert.equal((await api("saveDraft", { segmentId: 999_999_999, doc: typed, baseVersion: 0 })).status, 404)
+    assert.equal((await api("saveDraft", { segmentId: was.id, doc: { type: "doc", content: [] }, baseVersion: 0 })).status, 400)
+    // leave the book as the other tests expect it
+    while ((await api("undo", {})).json()) { /* take back this test's saves */ }
+  })
+
   test("the page's files are served, and nothing outside its folder", async () => {
     const index = await call("/")
     assert.equal(index.status, 200)

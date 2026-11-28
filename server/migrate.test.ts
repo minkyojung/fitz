@@ -55,11 +55,10 @@ describe("migrating a book", () => {
     sql0.close()
     assert.ok(lastOp > 0, "the copy has a history of changes")
 
-    const done = await migrate(path, { backupDir })
+    const done = await migrate(path, { backupDir, migrations: MIGRATIONS.slice(0, 1) })
 
     assert.equal(done.from, 0)
     assert.equal(done.to, 1)
-    assert.equal(LATEST, 1)
     assert.deepEqual(state(path), { version: 1, journal: "wal", integrity: "ok" })
     const db = new DatabaseSync(path, { readOnly: true })
     try {
@@ -88,12 +87,32 @@ describe("migrating a book", () => {
     assert.equal(dump(done.backup), before)
   })
 
+  test("version 2 adds a table for drafts and touches nothing else; each step up keeps a backup of what was", async () => {
+    const { path, backupDir } = await fresh()
+    await migrate(path, { backupDir, migrations: MIGRATIONS.slice(0, 1) })
+    const parsed = (text: string) => JSON.parse(text) as { tables: { name: string }[]; rows: [string, unknown[]][] }
+    const was = parsed(dump(path))
+    const done = await migrate(path, { backupDir, migrations: MIGRATIONS.slice(0, 2) })
+    assert.deepEqual({ from: done.from, to: done.to }, { from: 1, to: 2 })
+    assert.deepEqual(state(path), { version: 2, journal: "wal", integrity: "ok" })
+    const is = parsed(dump(path))
+    assert.deepEqual(is.tables.map((t) => t.name).filter((name) => !was.tables.some((t) => t.name === name)), ["draft"])
+    assert.deepEqual(is.rows.find(([name]) => name === "draft")?.[1], [])
+    assert.deepEqual(is.rows.filter(([name]) => name !== "draft"), was.rows)
+    // each backup is one file: nothing of it is left in a -wal beside it, so putting it back is a plain copy
+    assert.ok(backups(backupDir).every((name) => name.endsWith(".db")), backups(backupDir).join(", "))
+    assert.deepEqual(backups(backupDir).map((name) => name.split(".")[1]).sort(), ["v0", "v1"])
+    assert.deepEqual(state(done.backup!), { version: 1, journal: "delete", integrity: "ok" })
+    assert.deepEqual(parsed(dump(done.backup!)), was, "the backup holds the book as it was at version 1")
+    assert.ok(backups(backupDir).every((name) => name.endsWith(".db")), "looking at a backup leaves nothing beside it")
+  })
+
   test("a book already migrated is left alone, and no backup is made", async () => {
     const { path, backupDir } = await fresh()
     await migrate(path, { backupDir })
     const once = dump(path)
     const again = await migrate(path, { backupDir })
-    assert.deepEqual({ from: again.from, to: again.to, backup: again.backup }, { from: 1, to: 1, backup: null })
+    assert.deepEqual({ from: again.from, to: again.to, backup: again.backup }, { from: LATEST, to: LATEST, backup: null })
     assert.equal(dump(path), once)
     assert.equal(backups(backupDir).length, 1)
   })
@@ -106,6 +125,17 @@ describe("migrating a book", () => {
     assert.deepEqual(state(path), { version: 0, journal: "delete", integrity: "ok" })
     assert.equal(dump(path), before)
     assert.ok(!existsSync(`${path}-wal`) && !existsSync(`${path}-shm`))
+  })
+
+  test("a book already in WAL is put back whole when a later step leaves it unsound", async () => {
+    const { path, backupDir } = await fresh()
+    await migrate(path, { backupDir, migrations: MIGRATIONS.slice(0, 1) })
+    const before = dump(path)
+    const losing: Migration[] = [MIGRATIONS[0]!, { to: 2, name: "loses a comment", up(db) { db.exec("DELETE FROM comment WHERE id = (SELECT min(id) FROM comment)") } }]
+    await assert.rejects(migrate(path, { backupDir, migrations: losing }), /comment/)
+    assert.equal(dump(path), before)
+    assert.equal(state(path).version, 1)
+    assert.equal(state(path).integrity, "ok")
   })
 
   test("a step that loses rows is caught, and the book is put back from the backup", async () => {

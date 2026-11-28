@@ -11,7 +11,7 @@ import type { Doc, Segment } from "../shared/protocol.ts"
 import { RequestError } from "./book.ts"
 import { openWriter, type By, type Writer } from "./commands.ts"
 import { LATEST } from "./migrate.ts"
-import { bookCopy } from "./testing.ts"
+import { bookCopy, newBook } from "./testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
 const SCHEMA = readFileSync(join(ROOT, "db/schema.sql"), "utf8")
@@ -32,18 +32,13 @@ describe("writing to a book", () => {
   })
 
   /** A small book at this app's version: four paragraphs, the second with a translation. `sql` is a second connection for looking. */
-  const fixture = () => {
-    const path = join(dir, `book-${n++}.db`)
-    const db = new DatabaseSync(path)
-    db.exec(SCHEMA)
-    db.exec(`PRAGMA user_version = ${LATEST}; PRAGMA journal_mode = WAL`)
-    db.exec("INSERT INTO meta(key, value) VALUES ('undo_floor', '0')")
-    db.exec("INSERT INTO book(id, title, source_pdf) VALUES (1, 'A Book', '/nowhere.pdf')")
-    db.exec("INSERT INTO chapter(id, book_id, idx, title) VALUES (1, 1, 0, 'One')")
-    const insert = db.prepare("INSERT INTO segment(id, chapter_id, idx, page_start, page_end, source_doc, source_text, target_doc, target_text, status) VALUES (?, 1, ?, 1, 1, ?, ?, ?, ?, ?)")
-    const texts = ["alpha", "alpha beta gamma delta", "epsilon zeta", "eta theta"]
-    texts.forEach((text, i) => insert.run(i + 1, i, JSON.stringify(doc(text)), text, i === 1 ? JSON.stringify(doc("알파 베타")) : null, i === 1 ? "알파 베타" : null, i === 1 ? "draft" : "untranslated"))
-    db.close()
+  const fixture = async () => {
+    const path = await newBook(join(dir, `book-${n++}.db`), (db) => {
+      db.exec("INSERT INTO chapter(id, book_id, idx, title) VALUES (1, 1, 0, 'One')")
+      const insert = db.prepare("INSERT INTO segment(id, chapter_id, idx, page_start, page_end, source_doc, source_text, target_doc, target_text, status) VALUES (?, 1, ?, 1, 1, ?, ?, ?, ?, ?)")
+      const texts = ["alpha", "alpha beta gamma delta", "epsilon zeta", "eta theta"]
+      texts.forEach((text, i) => insert.run(i + 1, i, JSON.stringify(doc(text)), text, i === 1 ? JSON.stringify(doc("알파 베타")) : null, i === 1 ? "알파 베타" : null, i === 1 ? "draft" : "untranslated"))
+    })
     const writer = openWriter(path)
     const sql = new DatabaseSync(path, { readOnly: true })
     open.push({ writer, sql })
@@ -55,8 +50,8 @@ describe("writing to a book", () => {
     return { path, writer, sql, row, count, update, content }
   }
 
-  test("a first translation moves the status to draft, clearing it moves back, and earlier translations are kept", () => {
-    const { update, count, writer } = fixture()
+  test("a first translation moves the status to draft, clearing it moves back, and earlier translations are kept", async () => {
+    const { update, count, writer } = await fixture()
     const r1 = update({ id: 3, targetDoc: doc("엡실론 제타") })
     assert.equal(r1.status, "draft")
     assert.equal(r1.targetText, "엡실론 제타")
@@ -75,8 +70,8 @@ describe("writing to a book", () => {
     assert.equal(count("SELECT status = 'untranslated' FROM segment WHERE id = 3"), 1)
   })
 
-  test("the translation's plain text is its paragraphs joined by a newline; the source is one paragraph", () => {
-    const { update, row } = fixture()
+  test("the translation's plain text is its paragraphs joined by a newline; the source is one paragraph", async () => {
+    const { update, row } = await fixture()
     assert.equal(update({ id: 1, targetDoc: doc("하나", "둘", "셋") }).targetText, "하나\n둘\n셋")
     assert.equal(row(1).target_text, "하나\n둘\n셋")
     const italic: Doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Moby-" }, { type: "text", text: "Dick", marks: [{ type: "italic" }] }] }] }
@@ -91,8 +86,8 @@ describe("writing to a book", () => {
     assert.throws(() => update({ id: 1, kind: "poem" }), refused(400))
   })
 
-  test("do, undo, redo: the paragraph goes forward, back to what it was, and forward again", () => {
-    const { update, content, writer } = fixture()
+  test("do, undo, redo: the paragraph goes forward, back to what it was, and forward again", async () => {
+    const { update, content, writer } = await fixture()
     const was = content(2)
     update({ id: 2, text: "changed", targetDoc: doc("바뀜"), kind: "blockquote", verified: true, status: "reviewed" })
     const is = content(2)
@@ -104,8 +99,8 @@ describe("writing to a book", () => {
     assert.deepEqual(content(2), is)
   })
 
-  test("every change gives the paragraph a new, higher version — undo and redo too", () => {
-    const { update, row, writer } = fixture()
+  test("every change gives the paragraph a new, higher version — undo and redo too", async () => {
+    const { update, row, writer } = await fixture()
     const v0 = Number(row(3).version)
     const v1 = update({ id: 3, targetDoc: doc("엡실론") }).version
     assert.ok(v1 > v0)
@@ -118,8 +113,8 @@ describe("writing to a book", () => {
     assert.equal(Number(row(4).version), 4, "another paragraph's version does not move")
   })
 
-  test("a write that expects an older version is refused and writes nothing; one that expects the current goes through", () => {
-    const { update, row, count, content } = fixture()
+  test("a write that expects an older version is refused and writes nothing; one that expects the current goes through", async () => {
+    const { update, row, count, content } = await fixture()
     const seen = Number(row(3).version)
     update({ id: 3, status: "draft" }, CLAUDE) // someone else, meanwhile
     const before = content(3)
@@ -129,8 +124,8 @@ describe("writing to a book", () => {
     assert.equal(update({ id: 3, text: "epsilon zeta!", expectVersion: Number(row(3).version) }).sourceText, "epsilon zeta!")
   })
 
-  test("redo of a write made with an expected version does not depend on that version", () => {
-    const { update, row, writer, sql } = fixture()
+  test("redo of a write made with an expected version does not depend on that version", async () => {
+    const { update, row, writer, sql } = await fixture()
     update({ id: 3, text: "first", expectVersion: Number(row(3).version) })
     assert.ok(!String(sql.prepare("SELECT params FROM ops").get()?.params).includes("expectVersion"), "it is not part of the logged command")
     writer.undo()
@@ -138,8 +133,8 @@ describe("writing to a book", () => {
     assert.equal(row(3).source_text, "first")
   })
 
-  test("a save that changes nothing is not a change: no log row, no new version", () => {
-    const { update, row, count, writer } = fixture()
+  test("a save that changes nothing is not a change: no log row, no new version", async () => {
+    const { update, row, count, writer } = await fixture()
     const v = Number(row(2).version)
     const same = update({ id: 2, text: "alpha beta gamma delta", targetDoc: doc("알파 베타"), status: "draft", kind: "paragraph", verified: false })
     assert.equal(same.version, v)
@@ -150,8 +145,8 @@ describe("writing to a book", () => {
     assert.equal(writer.undo(), null)
   })
 
-  test("a command that fails leaves no log row and no change", () => {
-    const { update, content, count, writer } = fixture()
+  test("a command that fails leaves no log row and no change", async () => {
+    const { update, content, count, writer } = await fixture()
     const before = content(2)
     assert.throws(() => update({ id: 2, text: "new", status: "done" }), refused(400))
     assert.throws(() => update({ id: 99, text: "nobody" }), refused(404, "paragraph 99 not found"))
@@ -165,19 +160,20 @@ describe("writing to a book", () => {
     assert.equal(writer.revision(), 0)
   })
 
-  test("the log row holds the command and its inverse as the prototype wrote them", () => {
-    const { update, sql } = fixture()
+  test("the log row holds the command and its inverse as the prototype wrote them", async () => {
+    const { update, sql } = await fixture()
     update({ id: 3, targetDoc: doc("엡실론") })
     const op = sql.prepare("SELECT * FROM ops").get()!
     assert.deepEqual({ name: op.name, inverse_name: op.inverse_name, segment_ids: op.segment_ids, actor: op.actor, tool_use_id: op.tool_use_id, undone: op.undone },
       { name: "updateSegment", inverse_name: "updateSegment", segment_ids: "[3]", actor: "translator", tool_use_id: null, undone: 0 })
+    assert.equal(op.id, 1)
     assert.deepEqual(JSON.parse(String(op.params)), { id: 3, doc: doc("epsilon zeta"), text: "epsilon zeta", kind: "paragraph", verified: false, targetDoc: doc("엡실론"), status: "draft" })
     assert.deepEqual(JSON.parse(String(op.inverse_params)), { id: 3, doc: doc("epsilon zeta"), text: "epsilon zeta", kind: "paragraph", verified: false, targetDoc: null, status: "untranslated" })
     assert.match(String(sql.prepare("SELECT value FROM meta WHERE key = 'last_edit_at'").get()?.value), /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/)
   })
 
-  test("a change is the translator's unless it says otherwise; Claude's carries its tool call", () => {
-    const { update, sql } = fixture()
+  test("a change is the translator's unless it says otherwise; Claude's carries its tool call", async () => {
+    const { update, sql } = await fixture()
     update({ id: 3, status: "draft" })
     update({ id: 4, status: "draft" }, { actor: "agent", toolUseId: "toolu_X" })
     assert.deepEqual(sql.prepare("SELECT actor, tool_use_id FROM ops ORDER BY id").all().map((r) => [r.actor, r.tool_use_id]), [["translator", null], ["agent", "toolu_X"]])
@@ -185,8 +181,8 @@ describe("writing to a book", () => {
     assert.equal(sql.prepare("SELECT status FROM segment WHERE id = 3").get()?.status, "draft", "the refused change wrote nothing")
   })
 
-  test("undo and redo are each writer's own, and return null when there is nothing", () => {
-    const { update, writer, row } = fixture()
+  test("undo and redo are each writer's own, and return null when there is nothing", async () => {
+    const { update, writer, row } = await fixture()
     assert.equal(writer.undo(), null)
     assert.equal(writer.redo(), null)
     update({ id: 4, status: "draft" }, CLAUDE)
@@ -199,8 +195,8 @@ describe("writing to a book", () => {
     assert.equal(row(4).status, "draft")
   })
 
-  test("a new change ends its own writer's redo, and only that", () => {
-    const { update, writer, count, row } = fixture()
+  test("a new change ends its own writer's redo, and only that", async () => {
+    const { update, writer, count, row } = await fixture()
     update({ id: 3, text: "Claude's ¶3" }, CLAUDE)
     writer.undo(CLAUDE)
     update({ id: 1, verified: true })
@@ -213,8 +209,8 @@ describe("writing to a book", () => {
     assert.equal(row(3).source_text, "Claude's ¶3")
   })
 
-  test("undo is refused when a later change, still standing, touched the same paragraph; nothing is written", () => {
-    const { update, writer, content, count, row } = fixture()
+  test("undo is refused when a later change, still standing, touched the same paragraph; nothing is written", async () => {
+    const { update, writer, content, count, row } = await fixture()
     update({ id: 2, text: "mine" })
     update({ id: 2, text: "Claude's over mine" }, CLAUDE)
     const before = content(2)
@@ -233,16 +229,16 @@ describe("writing to a book", () => {
     assert.equal(writer.undo(CLAUDE)?.segmentIds[0], 4, "a later change to another paragraph does not stand in the way")
   })
 
-  test("redo is refused over a later change to the same paragraph", () => {
-    const { update, writer } = fixture()
+  test("redo is refused over a later change to the same paragraph", async () => {
+    const { update, writer } = await fixture()
     update({ id: 2, text: "mine" })
     writer.undo()
     update({ id: 2, text: "Claude's" }, CLAUDE)
     assert.throws(() => writer.redo(), refused(409, "Claude changed ¶2 after this"))
   })
 
-  test("the revision counts changes that were made: do, undo and redo, not refusals", () => {
-    const { update, writer } = fixture()
+  test("the revision counts changes that were made: do, undo and redo, not refusals", async () => {
+    const { update, writer } = await fixture()
     assert.equal(writer.revision(), 0)
     update({ id: 3, status: "draft" })
     assert.equal(writer.revision(), 1)
@@ -255,7 +251,29 @@ describe("writing to a book", () => {
     assert.equal(writer.revision(), 3)
   })
 
-  test("a book that is not at this app's version is not written to", () => {
+  test("what is being typed is kept as a draft: the latest per paragraph, outside the book's history", async () => {
+    const { writer, sql, row, count, update } = await fixture()
+    const before = { ...row(3) }
+    writer.saveDraft(3, doc("엡실"), 3)
+    writer.saveDraft(3, doc("엡실론", "둘째 문단"), 3)
+    assert.deepEqual({ ...sql.prepare("SELECT segment_id, target_doc, base_version FROM draft").get() }, { segment_id: 3, target_doc: JSON.stringify(doc("엡실론", "둘째 문단")), base_version: 3 })
+    assert.deepEqual({ ...row(3) }, before, "the paragraph itself is not touched")
+    assert.equal(count("SELECT count(*) FROM ops"), 0)
+    assert.equal(count("SELECT count(*) FROM meta WHERE key = 'last_edit_at'"), 0, "a draft is not an edit of the book")
+    assert.equal(writer.revision(), 0)
+    assert.equal(writer.undo(), null)
+    assert.throws(() => writer.saveDraft(99, doc("x"), 0), refused(404))
+    // a change to the paragraph — Claude's, say — leaves the draft; its base version tells it is older
+    const changed = update({ id: 3, text: "epsilon zeta, revised" }, CLAUDE)
+    assert.deepEqual(changed.draft && { doc: changed.draft.doc, baseVersion: changed.draft.baseVersion }, { doc: doc("엡실론", "둘째 문단"), baseVersion: 3 })
+    assert.ok(changed.version > 3)
+    writer.dropDraft(3)
+    writer.dropDraft(3)
+    assert.equal(count("SELECT count(*) FROM draft"), 0)
+    assert.equal(update({ id: 3, status: "draft" }).draft, null)
+  })
+
+  test("a book that is not at this app's version is not written to", async () => {
     for (const version of [0, LATEST + 1]) {
       const path = join(dir, `other-v${version}.db`)
       const db = new DatabaseSync(path)

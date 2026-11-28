@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test"
 
+import { LATEST } from "../server/migrate.ts"
 import { COPY, bookCopy } from "../server/testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
@@ -70,7 +71,7 @@ test("the app opens on the book, as the database holds it", async () => {
   // the book it opened was the prototype's; it is now this app's version, with what it was kept beside it
   const opened = new DatabaseSync(launched.book.path, { readOnly: true })
   try {
-    expect(Object.values(opened.prepare("PRAGMA user_version").get() ?? {})[0]).toBe(1)
+    expect(Object.values(opened.prepare("PRAGMA user_version").get() ?? {})[0]).toBe(LATEST)
     expect(Object.values(opened.prepare("PRAGMA journal_mode").get() ?? {})[0]).toBe("wal")
   } finally {
     opened.close()

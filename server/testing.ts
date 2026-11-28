@@ -1,7 +1,7 @@
 // For tests only: throwaway copies of the development copy of the book (scripts/dev-data.sh). Tests never change
 // the copy in dev-data/ itself — running the app does (it migrates the book it opens), so a test cannot assume
 // which version that copy is at and makes its own.
-import { existsSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { DatabaseSync, backup } from "node:sqlite"
 
@@ -24,8 +24,20 @@ export async function bookCopy(dir: string, as: "prototype" | "migrated"): Promi
   }
   // whatever version the development copy is at, start from the prototype's
   const db = new DatabaseSync(path)
-  db.exec("DELETE FROM meta WHERE key = 'undo_floor'; PRAGMA journal_mode = DELETE; PRAGMA user_version = 0")
+  db.exec("DROP TABLE IF EXISTS draft; DELETE FROM meta WHERE key = 'undo_floor'; PRAGMA journal_mode = DELETE; PRAGMA user_version = 0")
   db.close()
   if (as === "migrated") await migrate(path, { backupDir })
   return { path, backupDir }
+}
+
+/** A new book at `path`: the prototype's schema (db/schema.sql) with one book in it and whatever `fill` adds, then
+ *  migrated to this app's version — the way any book gets there. */
+export async function newBook(path: string, fill?: (db: DatabaseSync) => void): Promise<string> {
+  const db = new DatabaseSync(path)
+  db.exec(readFileSync(join(ROOT, "db/schema.sql"), "utf8"))
+  db.exec("INSERT INTO book(id, title, source_pdf) VALUES (1, 'A Book', '/nowhere.pdf')")
+  fill?.(db)
+  db.close()
+  await migrate(path, { backupDir: `${path}.backups` })
+  return path
 }

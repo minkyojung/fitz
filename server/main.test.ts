@@ -129,7 +129,7 @@ describe("the server as a process", () => {
     assert.equal((await hello(port)).status, 200)
     assert.deepEqual(version(), [LATEST, "wal"])
     assert.equal(readdirSync(book.backupDir).length, 1)
-    assert.match(output.out, /book migrated from version 0 to 1/)
+    assert.match(output.out, new RegExp(`book migrated from version 0 to ${LATEST}`))
     child.kill("SIGTERM")
     assert.equal(await within(5000, "exit", exited), 0)
 

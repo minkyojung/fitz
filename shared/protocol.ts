@@ -4,7 +4,7 @@
 import { z } from "zod"
 
 /** Said by both ends when they first meet; a mismatch is an error, never a guess. Raised whenever a shape here changes. */
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 
 // A paragraph's text as the editor keeps it (ProseMirror JSON): doc → paragraph → text, nothing else.
 // A text node may carry marks (the prototype's review editor can set italic); they are passed on as they are.
@@ -40,6 +40,16 @@ export type Chapter = z.infer<typeof Chapter>
 export const SEGMENT_KINDS = ["paragraph", "heading", "blockquote", "caption", "verse"] as const
 export const SEGMENT_STATUSES = ["untranslated", "draft", "reviewed", "final"] as const
 
+/** A translation typed but not saved: kept by the server while an edit is open, so a crash or a refused save loses
+ *  nothing. Not part of the book's history. */
+export const Draft = z.strictObject({
+  doc: Doc,
+  /** The paragraph's version when the edit began; another version now means the paragraph changed since. */
+  baseVersion: z.int(),
+  savedAt: z.string(),
+})
+export type Draft = z.infer<typeof Draft>
+
 export const Segment = z.strictObject({
   id: z.int(),
   chapterId: z.int(),
@@ -56,6 +66,7 @@ export const Segment = z.strictObject({
   status: z.enum(SEGMENT_STATUSES),
   verified: z.boolean(),
   version: z.int(),
+  draft: Draft.nullable(),
 })
 export type Segment = z.infer<typeof Segment>
 
@@ -93,6 +104,9 @@ export const REQUESTS = {
   /** Save a paragraph. `expectVersion` is the version the page last saw: if the paragraph changed since, nothing is
    *  written (409) — the translator and Claude both write, and neither overwrites what the other wrote unseen. */
   updateSegment: { params: z.strictObject({ id: z.int(), patch: SegmentPatch, expectVersion: z.int() }), result: Segment },
+  /** Keep what is being typed into a paragraph's translation. Saving the translation drops it. */
+  saveDraft: { params: z.strictObject({ segmentId: z.int(), doc: Doc, baseVersion: z.int() }), result: z.null() },
+  dropDraft: { params: z.strictObject({ segmentId: z.int() }), result: z.null() },
   /** Take back the translator's last change still standing; null when there is none. Refused (409) when a later change touched the same thing. */
   undo: { params: none, result: Change.nullable() },
   /** Do again the translator's change taken back last; null when there is none. */

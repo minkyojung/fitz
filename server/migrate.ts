@@ -28,6 +28,21 @@ export const MIGRATIONS: Migration[] = [
       db.exec("INSERT INTO meta(key, value) VALUES ('undo_floor', (SELECT CAST(coalesce(max(id), 0) AS TEXT) FROM ops))")
     },
   },
+  {
+    // What is being typed into a translation, kept so that a crash or a refused save loses nothing (one per
+    // paragraph). Not a change to the book: never in `ops`, never undone.
+    to: 2,
+    name: "drafts",
+    changes: { draft: 0 },
+    up(db) {
+      db.exec(`CREATE TABLE draft (
+        segment_id   INTEGER PRIMARY KEY REFERENCES segment(id) ON DELETE CASCADE,
+        target_doc   TEXT NOT NULL,     -- ProseMirror JSON, as segment.target_doc
+        base_version INTEGER NOT NULL,  -- segment.version when the edit began
+        saved_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      )`)
+    },
+  },
 ]
 export const LATEST = MIGRATIONS.length
 
@@ -86,6 +101,15 @@ export async function migrate(
     let kept = join(backupDir, `${basename(path, ".db")}.v${from}.${stamp(now)}.db`)
     for (let i = 2; existsSync(kept); i++) kept = join(backupDir, `${basename(path, ".db")}.v${from}.${stamp(now)}-${i}.db`)
     await backup(db, kept)
+    // A backup of a WAL book is itself in WAL mode, and may hold part of itself in a -wal file beside it. It is made
+    // one whole file, so that putting it back is a plain copy of that file.
+    const whole = new DatabaseSync(kept)
+    try {
+      const mode = one(whole, "PRAGMA journal_mode = DELETE")
+      if (mode !== "delete") throw new Error(`the backup at ${kept} could not be made one file (journal mode ${mode}); the book was not touched`)
+    } finally {
+      whole.close()
+    }
     const before = tableCounts(db)
     const copy = new DatabaseSync(kept, { readOnly: true })
     try {
