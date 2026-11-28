@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useState } from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChapterView } from "@/components/chapter-view"
@@ -10,12 +10,16 @@ import { hello, request } from "@/data/api"
 import { useLoad } from "@/hooks/use-load"
 
 export function App() {
+  // The book changed (a save, an undo): everything on screen is asked for again. The server holds the book; the page
+  // holds only what it was last told.
+  const [changes, setChanges] = useState(0)
+  const bookChanged = useCallback(() => setChanges((n) => n + 1), [])
   // hello first: a server of another protocol is asked nothing else
   const loaded = useLoad("book", async (signal) => {
     await hello(signal)
     const [book, chapters] = await Promise.all([request("getBook", {}, signal), request("listChapters", {}, signal)])
     return { book, chapters }
-  })
+  }, changes)
   const [pickedId, setPickedId] = useState<number | null>(null)
 
   if (loaded.status === "loading") return <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">Opening the book…</div>
@@ -57,7 +61,7 @@ export function App() {
           </div>
         </header>
         {chapter ? (
-          <ChapterView key={chapter.id} chapter={chapter} />
+          <ChapterView key={chapter.id} chapter={chapter} changes={changes} onChanged={bookChanged} />
         ) : (
           <p className="p-4 text-sm text-muted-foreground">This book has no chapters.</p>
         )}

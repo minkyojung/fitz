@@ -7,8 +7,14 @@ import { useLoad } from "@/hooks/use-load"
 import { cn } from "@/lib/utils"
 
 /** A chapter's paragraphs: the source on the left, its translation on the right. */
-export function ChapterView({ chapter }: { chapter: Chapter }) {
-  const loaded = useLoad(chapter.id, (signal) => request("listSegments", { chapterId: chapter.id }, signal))
+export function ChapterView({ chapter, changes }: {
+  chapter: Chapter
+  /** Counts the book's changes: a new number loads the paragraphs again. */
+  changes: number
+  /** Called once this view has changed the book. */
+  onChanged: () => void
+}) {
+  const loaded = useLoad(chapter.id, (signal) => request("listSegments", { chapterId: chapter.id }, signal), changes)
 
   if (loaded.status === "loading")
     return (
