@@ -31,10 +31,11 @@ test("⌘Z outside the editor takes back the last save and ⌘⇧Z does it again
   // take back whatever earlier tests left standing, so this test starts from the floor
   await page.goto(door)
   await page.locator("header").click()
-  for (let i = 0; i < 10 && Number(one(sql, `SELECT count(*) FROM ops WHERE id > ${floor} AND undone = 0`)) > 0; i++) {
-    const standing = Number(one(sql, `SELECT count(*) FROM ops WHERE id > ${floor} AND undone = 0`))
+  // (all of them, one ⌘Z each: the tests before this one, on the same server, may have left any number)
+  const standing = () => Number(one(sql, `SELECT count(*) FROM ops WHERE id > ${floor} AND undone = 0`))
+  for (let left = standing(); left > 0; left--) {
     await page.keyboard.press("ControlOrMeta+z")
-    await expect.poll(() => Number(one(sql, `SELECT count(*) FROM ops WHERE id > ${floor} AND undone = 0`))).toBe(standing - 1)
+    await expect.poll(standing).toBe(left - 1)
   }
 
   const { id, chapterId } = untranslated(sql)
