@@ -21,7 +21,7 @@
 |---|---|
 | 원문·번역문은 ProseMirror JSON(`source_doc`/`target_doc`)과 평문(`source_text`/`target_text`)으로 함께 저장된다. 평문은 JSON에서 파생된다: 문단의 text 노드를 이어 붙이고, 문단끼리는 `\n`으로 잇는다. JSON을 쓸 때 평문을 같은 트랜잭션에서 함께 쓴다 | ✅ `commands.mjs` `docText`. 824행 모두 이 규칙과 맞는다(번역문 중 3문단짜리 1행 포함) |
 | 쓰인 노드는 `doc → paragraph → text`뿐이고 mark와 attrs는 0개다. 원문은 모두 문단 1개, 번역문은 문단 1개(163행) 또는 3개(1행)다. 프로토타입은 원문을 문단 1개로, 번역문을 문단 1개 이상으로 제한한다 | ✅ 데이터, `checkDoc` |
-| `schema.sql` 주석의 "이탤릭 mark 포함"(원문), "댓글/주석 mark 포함"(번역문)은 실제와 다르다. mark는 없다 | ✅ 데이터 |
+| 지금 데이터에 mark는 없다. 다만 프로토타입의 검수 편집기에는 기울임(italic) 기능이 있어서 원문에 mark가 생길 수 있다. **새 앱은 노드 구조는 엄격히 검사하되 text 노드의 mark는 받아서 그대로 둔다**(`shared/protocol.ts`의 `Doc`). `schema.sql` 주석의 "댓글/주석 mark 포함"(번역문)은 실제와 다르다 | ✅ 데이터, `app/src/features/review/SegmentEditor.tsx`(프로토타입) |
 | **번역됨** = `target_doc IS NOT NULL`. 지금은 세 기준이 모두 164로 같다: `target_doc`이 있음, `target_text`가 비어 있지 않음, `status <> 'untranslated'`(draft 144, reviewed 20). `target_doc = NULL`이면 `target_text`도 NULL이다 | ✅ 데이터, `schema.sql` 주석 |
 | 프로토타입의 장 목록 진행률은 "번역됨"이 아니라 `status IN ('reviewed','final')`(확정)과 `verified`(원문 대조)를 센다 | ✅ `listChapters` |
 | 장은 26개(`idx` 0~25), 단락은 824개다. 장 안의 `idx`는 0부터 빈틈없이 이어진다. `(chapter_id, idx)`는 UNIQUE라서 번호를 다시 매길 때 음수를 거쳐 옮긴다 | ✅ 데이터, `shiftIdx` |
