@@ -78,6 +78,7 @@ export function App() {
             pages={pages}
             arrivalPage={arrivalPage}
             changes={changes}
+            onChanged={bookChanged}
             onChapter={(id, pageNo) => {
               setPickedId(id)
               setArrivalPage(pageNo)

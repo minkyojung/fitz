@@ -17,11 +17,17 @@ const DRAFT_DELAY = 300
 
 /** A translation is one or more paragraphs of text, as the book stores it: nothing else can be typed into it. */
 const Paragraphs = Document.extend({ content: "paragraph+" })
+/** A source is exactly one paragraph: the schema cannot hold a second, so Enter means "done". */
+const OneParagraph = Document.extend({ content: "paragraph" })
 
-/** One translation being edited in place. It holds the text while it is open and hands it over once, when it is
- *  left; saving is the caller's. ⌘Z here takes back typing — the book's own undo is outside (App). */
-export function SegmentEditor({ doc, caret, className, onLeave, onCancel, onDraft }: {
+/** One side of a paragraph being edited in place: a translation (paragraphs; Enter makes a new one, ⌘Enter confirms)
+ *  or a source (`single`: one paragraph; Enter and ⌘Enter are done). It holds the text while it is open and hands it
+ *  over once, when it is left; saving is the caller's. ⌘Z here takes back typing — the book's own undo is outside. */
+export function SegmentEditor({ doc, caret, className, lang, single = false, onLeave, onCancel, onDraft }: {
   doc: Doc
+  lang: "en" | "ko"
+  /** One paragraph only. */
+  single?: boolean
   /** Where the caret starts: a position in the document, or its end. */
   caret: number | "end"
   /** The read view's classes, so nothing shifts when the editor takes its place. */
@@ -39,7 +45,7 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel, onDraf
   useEffect(() => () => window.clearTimeout(draftTimer.current), [])
   const editor = useEditor({
     extensions: [
-      Paragraphs,
+      single ? OneParagraph : Paragraphs,
       Paragraph,
       Text,
       Italic,
@@ -57,7 +63,8 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel, onDraf
           return {
             Tab: leave("next"),
             "Shift-Tab": leave("previous"),
-            "Mod-Enter": leave("confirm"),
+            "Mod-Enter": leave(single ? "done" : "confirm"),
+            ...(single ? { Enter: leave("done") } : {}),
             Escape: () => {
               if (!left.current) {
                 left.current = true
@@ -72,7 +79,7 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel, onDraf
     ],
     content: doc,
     autofocus: caret,
-    editorProps: { attributes: { class: className, lang: "ko", "aria-label": "Edit translation", spellcheck: "false" } },
+    editorProps: { attributes: { class: className, lang, "aria-label": lang === "ko" ? "Edit translation" : "Edit paragraph", spellcheck: "false" } },
     onUpdate: ({ editor }) => {
       window.clearTimeout(draftTimer.current)
       draftTimer.current = window.setTimeout(() => {

@@ -136,3 +136,139 @@ test("⌘I hides the scan and shows it again", async ({ page, door }) => {
   await page.keyboard.press("ControlOrMeta+i")
   await expect(scan).toBeVisible()
 })
+
+// ---- fixing what the scan shows is wrong
+
+const rowOf = (sql: DatabaseSync, id: number) => ({ ...sql.prepare("SELECT source_text, source_doc, ocr_text, kind, verified, version FROM segment WHERE id = ?").get(id) })
+const sourceDraft = (sql: DatabaseSync, id: number) => sql.prepare("SELECT doc FROM draft WHERE segment_id = ? AND side = 'source'").get(id)?.doc ?? null
+/** A chapter with a few paragraphs, none verified and none with a source draft: the edits of one test do not meet another's. */
+const fresh = (sql: DatabaseSync, after = 0) => {
+  const c = sql.prepare(
+    `SELECT chapter_id id FROM segment GROUP BY chapter_id HAVING count(*) >= 4 AND sum(verified) = 0
+       AND chapter_id NOT IN (SELECT s.chapter_id FROM draft d JOIN segment s ON s.id = d.segment_id)
+     ORDER BY chapter_id LIMIT 1 OFFSET ?`,
+  ).get(after)!
+  return { chapterId: Number(c.id), rows: segments(sql, Number(c.id)) }
+}
+
+test("a paragraph is verified with its checkbox or Space; the chapter's count follows; ⌘Z takes it back", async ({ page, door, sql }) => {
+  const { chapterId, rows } = fresh(sql)
+  const { selected } = await review(page, door, chapterId)
+  const badge = page.locator(`[data-chapter-id="${chapterId}"] [data-slot=sidebar-menu-badge]`)
+  await expect(badge).toHaveText(`0/${rows.length}`)
+  const first = page.locator(`[data-segment-id="${rows[0]!.id}"]`)
+  await first.getByRole("checkbox", { name: "Verified" }).click()
+  await expect.poll(() => rowOf(sql, rows[0]!.id).verified).toBe(1)
+  await expect(badge).toHaveText(`1/${rows.length}`)
+  await expect(first).toHaveAttribute("data-verified", "true")
+
+  // the keys: ↓ to the next, Space to verify it — three in a row
+  await page.locator("header").click()
+  for (const row of rows.slice(1, 4)) {
+    await page.keyboard.press("ArrowDown")
+    await expect(selected).toHaveAttribute("data-segment-id", String(row.id))
+    await page.keyboard.press(" ")
+    await expect.poll(() => rowOf(sql, row.id).verified).toBe(1)
+  }
+  await expect(badge).toHaveText(`4/${rows.length}`)
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect.poll(() => rowOf(sql, rows[3]!.id).verified).toBe(0)
+  await expect(badge).toHaveText(`3/${rows.length}`)
+  await expect(page.locator(`[data-segment-id="${rows[3]!.id}"]`)).toHaveAttribute("data-verified", "false")
+  // and it stays after a reload
+  await page.reload()
+  await page.locator("[data-stage=review] button").click()
+  await page.locator(`[data-chapter-id="${chapterId}"] button`).click()
+  await expect(page.locator(`[data-segment-id="${rows[2]!.id}"]`)).toHaveAttribute("data-verified", "true")
+})
+
+test("the chosen paragraph's kind is changed from its menu", async ({ page, door, sql }) => {
+  const { chapterId, rows } = fresh(sql, 1)
+  const id = rows.find((r) => rowOf(sql, r.id).kind === "paragraph")!.id
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${id}"]`)
+  await row.locator("[data-kind]").click()
+  await expect(row).toHaveAttribute("data-selected", "true")
+  await row.getByRole("combobox", { name: "Kind" }).click()
+  await page.getByRole("option", { name: "Quote" }).click()
+  await expect.poll(() => rowOf(sql, id).kind).toBe("blockquote")
+  await expect(row.getByRole("combobox", { name: "Kind" })).toHaveText("Quote")
+  await expect(page.getByRole("listbox")).toHaveCount(0)
+})
+
+test("a click on the text opens it for editing where it landed; Enter saves it, and the OCR text stays as it was", async ({ page, door, sql }) => {
+  const { chapterId, rows } = fresh(sql, 2)
+  const id = rows.find((r) => String(rowOf(sql, r.id).source_text).length > 40)!.id
+  const was = rowOf(sql, id)
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${id}"]`)
+  const editor = row.locator("[contenteditable=true]")
+  await row.locator("[data-side=source]").click({ position: { x: 1, y: 6 } })
+  await expect(editor).toBeFocused()
+  await expect(row).toHaveAttribute("data-selected", "true")
+  await page.keyboard.insertText("[fixed] ")
+  await page.keyboard.press("Enter")
+  await expect(editor).toHaveCount(0)
+  await expect.poll(() => rowOf(sql, id).source_text).toBe(`[fixed] ${was.source_text}`)
+  const now = rowOf(sql, id)
+  expect(JSON.parse(String(now.source_doc)).content).toHaveLength(1)
+  expect(now.ocr_text).toBe(was.ocr_text)
+  expect(Number(now.version)).toBeGreaterThan(Number(was.version))
+  await expect(row.locator("[data-side=source]")).toHaveText(`[fixed] ${was.source_text}`)
+})
+
+test("keyboard only: Enter opens the chosen paragraph, Space types a space, Tab saves and goes on with the scan following, Esc drops", async ({ page, door, sql }) => {
+  const { chapterId, rows } = fresh(sql, 3)
+  const { shown, selected } = await review(page, door, chapterId)
+  await page.locator("header").click()
+  await page.keyboard.press("ArrowDown")
+  const second = rows[1]!
+  const secondWas = String(rowOf(sql, second.id).source_text)
+  await expect(selected).toHaveAttribute("data-segment-id", String(second.id))
+  await page.keyboard.press("Enter")
+  const editor = page.locator(`[data-segment-id="${second.id}"] [contenteditable=true]`)
+  await expect(editor).toBeFocused()
+  await page.keyboard.press(" ")
+  await page.keyboard.insertText("[end]")
+  await page.keyboard.press("Tab")
+  await expect.poll(() => rowOf(sql, second.id).source_text).toBe(`${secondWas} [end]`)
+  expect(rowOf(sql, second.id).verified, "Space in the editor typed, it did not verify").toBe(0)
+  const third = rows[2]!
+  await expect(page.locator(`[data-segment-id="${third.id}"] [contenteditable=true]`)).toBeFocused()
+  await expect(selected).toHaveAttribute("data-segment-id", String(third.id))
+  await expect(shown).toHaveAttribute("data-page-no", String(third.pageStart))
+  const before = rowOf(sql, third.id)
+  await page.keyboard.insertText("버릴 글")
+  await page.keyboard.press("Escape")
+  await expect(page.locator("[contenteditable=true]")).toHaveCount(0)
+  await page.waitForTimeout(500)
+  expect(rowOf(sql, third.id)).toEqual(before)
+  expect(sourceDraft(sql, third.id)).toBe(null)
+})
+
+test("an emptied source is refused and kept as a draft, which comes back after a reload", async ({ page, door, sql, complaints }) => {
+  const { chapterId, rows } = fresh(sql, 4)
+  const id = rows[0]!.id
+  const was = rowOf(sql, id)
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${id}"]`)
+  await row.locator("[data-side=source]").click()
+  await expect(row.locator("[contenteditable=true]")).toBeFocused()
+  await page.keyboard.press("ControlOrMeta+a")
+  await page.keyboard.press("Backspace")
+  await page.keyboard.press("Enter")
+  await expect(page.locator("[data-sonner-toast]")).toContainText("cannot be empty")
+  expect(rowOf(sql, id).source_text).toBe(was.source_text)
+  await expect.poll(() => sourceDraft(sql, id)).not.toBe(null)
+  await expect(row.locator("[data-draft]")).toContainText("Unsaved draft")
+
+  await page.reload()
+  await page.locator("[data-stage=review] button").click()
+  await page.locator(`[data-chapter-id="${chapterId}"] button`).click()
+  const again = page.locator(`[data-segment-id="${id}"]`)
+  await expect(again.locator("[data-draft]")).toContainText("Unsaved draft")
+  await again.locator("[data-draft]").getByRole("button", { name: "Discard" }).click()
+  await expect.poll(() => sourceDraft(sql, id)).toBe(null)
+  await expect(again.locator("[data-side=source]")).toHaveText(String(was.source_text))
+  complaints.length = 0 // the refused save is the point of this test
+})

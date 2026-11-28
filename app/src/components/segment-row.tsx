@@ -37,7 +37,7 @@ export function SegmentRow({ segment, target: t }: { segment: Segment; target: S
       <span role="img" aria-label={STATUS_LABEL[segment.status]} title={STATUS_LABEL[segment.status]} className={cn("mt-2 size-1.5 rounded-full", STATUS_DOT[segment.status])} />
       {editing ? (
         <div data-side="target" data-translated={target !== null}>
-          <SegmentEditor doc={editing.doc ?? EMPTY} caret={editing.caret} className={cn(translation, "outline-none")} onLeave={onLeave} onCancel={onCancel} onDraft={onDraft} />
+          <SegmentEditor lang="ko" doc={editing.doc ?? EMPTY} caret={editing.caret} className={cn(translation, "outline-none")} onLeave={onLeave} onCancel={onCancel} onDraft={onDraft} />
         </div>
       ) : (
         <div className="flex min-w-0 flex-col gap-2">
