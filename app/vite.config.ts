@@ -9,6 +9,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "./src"),
+      // the protocol the page and the server share
+      "@shared": resolve(import.meta.dirname, "../shared"),
     },
   },
 })

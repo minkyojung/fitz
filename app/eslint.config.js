@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // what the shadcn tool wrote is kept as it came, so it is not linted here
+  globalIgnores(['dist', 'src/components/ui', 'src/hooks/use-mobile.ts']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
