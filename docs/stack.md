@@ -1,0 +1,77 @@
+# fitz 제품판 스택 (2026-11-28 결정)
+
+제품판을 무엇으로 짓는지와 그 이유를 한 장에 적는다. 방향과 근거의 원문은 `docs/architecture.md`, 기존 DB를 다루는 규칙은 `docs/data-contract.md`에 있다. 이 문서와 어긋나게 바꿀 때는 이 문서를 같은 커밋에서 고친다.
+
+## 1. 구조
+
+```
+fitz.app
+  셸 (Electron main)      창, 메뉴, 서버를 띄우고 죽이기. 데이터와 Claude는 다루지 않는다
+  서버 (Node 자식 프로세스)  DB, 모든 쓰기, Claude. 앱에 하나. 상태의 진실은 여기에만 있다
+  화면 (렌더러, React)     그리기만 한다. 사실은 서버에 묻는다
+  Claude Code (서버의 자식) 모델과 대화. DB는 서버의 도구를 거쳐서만 쓴다
+```
+
+## 2. 결정
+
+| 층 | 선택 | 이유 |
+|---|---|---|
+| 셸 | Electron 45 + TypeScript. `node:sqlite`가 안 돌면 44.2(확인된 버전)로 내린다 | Agent SDK가 앱 안의 Node에서 그대로 돈다. Octave와 T3 Code가 같은 구성으로 배포 중이다 |
+| 서버 | Electron 실행 파일을 `ELECTRON_RUN_AS_NODE=1`로 띄운 자식 프로세스 하나. 미리 번들한 파일 하나로 둔다 | 맥에 깔린 Node에 기대지 않는다. 동기식 `node:sqlite`가 창을 멈추지 않는다. 서버가 죽어도 창이 살아서 이유를 보여 준다 |
+| 화면 | React + Vite. 빌드된 화면을 서버가 127.0.0.1로 준다 | 편집기(TipTap)가 React다. 이 흐름을 처음부터 세워 두면 편집기를 붙일 때 다시 짓지 않는다 |
+| 화면 ↔ 서버 | HTTP(조회) + WebSocket(실시간, 쓰기 기능과 함께). 메시지 규약은 파일 하나에 닫힌 목록으로 정의하고 받을 때 검증한다 | 규약이 셸과 무관하면 화면이나 셸을 바꿔도 서버는 그대로 쓴다(Codex, Zed의 ACP) |
+| 셸 ↔ 서버 | 자식 프로세스 IPC 채널. 역시 닫힌 메시지 목록 | Octave 방식 |
+| DB | `node:sqlite`, 책마다 SQLite 파일 하나. 첫 마이그레이션(`user_version` 0→1)에서 WAL로 바꾼다 | T3 Code, Orca, VS Code가 WAL을 쓴다. 규칙은 `docs/data-contract.md` |
+| 모델 | Claude Agent SDK 하나. 사용자 본인 구독, 수정하지 않은 Claude Code 바이너리. 서버 안의 한 파일(모델 포트)에서만 부른다 | 구독으로 쓰면 추가 비용이 없다. 대화 루프, 세션, 권한이 이미 있다 |
+| Rust | PDF 가져오기 엔진에만. 별도 실행 파일 + 줄 단위 JSON(stdio) | 대화와 DB 층에서는 Rust로 얻는 속도가 없다. 별도 실행 파일이면 엔진이 죽어도 서버가 산다 |
+| 테스트 | 서버는 `node:test`(Electron의 Node로도 돌린다), 앱 실행은 Playwright의 Electron 실행 | 실제 앱이 뜨는지는 진짜 Electron을 띄워야 안다 |
+
+## 3. 처음부터 넣는 것 (1단계 앱)
+
+| # | 무엇 | 왜 | 본 곳 |
+|---|---|---|---|
+| 1 | 서버 접속에 실행마다 새로 만든 비밀 토큰을 요구하고 `Host`/`Origin`을 검사 | 127.0.0.1 포트는 이 맥의 다른 프로그램과 브라우저 페이지도 닿는다 | VS Code |
+| 2 | 서버 관리: 빈 포트, 준비 신호 확인, 충돌 시 횟수 제한 재시작, 종료는 요청 → 5초 → 강제, 셸이 사라지면 서버 스스로 종료 | 빈 창과 남겨진 서버를 막는다 | T3 Code, Octave, VS Code |
+| 3 | 포트·토큰·경로는 환경 변수가 아니라 전용 통로(fd 3)로 서버에 전달 | 나중에 Claude 프로세스가 환경 변수를 물려받아도 토큰이 새지 않는다 | T3 Code |
+| 4 | 화면 보안: `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, 최소 preload, CSP, 다른 주소로 이동 차단 | 처음엔 공짜, 나중엔 비싸다 | VS Code, T3 Code, Orca |
+| 5 | 규약의 첫 인사에 버전 번호. 안 맞으면 바로 오류 | 셸·서버·화면이 어긋난 것을 바로 안다 | Codex, herdr |
+| 6 | 스냅샷에 `{bootId, revision}` | 서버 재시작과 재접속을 같은 경로로 처리한다 | herdr |
+| 7 | 컴파일 캐시, 창은 배경색을 칠하고 준비되면 표시, 시작 시간 측정 지점 | 첫 실행이 빨라지고 수치로 잴 수 있다 | T3 Code, VS Code |
+| 8 | DB는 읽기 전용 옵션으로 열고, 준비된 쿼리를 재사용 | 1단계의 약속(읽기 전용)을 코드로 지킨다 | — |
+
+## 4. 나중에 넣는 것 (쓰기와 Claude가 들어올 때)
+
+| 무엇 | 본 곳 |
+|---|---|
+| DB 작업을 읽기 / 쓰기 작업 스레드로 분리 | T3 Code, Orca |
+| Claude의 글자를 서버에서 50ms 단위로 묶어 보내기 | T3 Code(50ms), Orca(60ms), VS Code(50ms) |
+| 보이는 부분만 그리는 대화 목록(가상화 + 행 메모이제이션) | T3 Code, Orca, VS Code, Zed |
+| 승인·질문 요청은 서버가 보관하고, 턴이 끝나면 취소를 알림 | Codex, ACP |
+| "턴 끝"과 "완전히 정리됨"을 다른 이벤트로 | pi |
+| 서명, 공증, 자동 업데이트, `.dmg` | `docs/architecture.md` §8 |
+
+## 5. 하지 않는 것과 다시 볼 조건
+
+| 하지 않는 것 | 이유 | 다시 볼 조건 |
+|---|---|---|
+| Tauri | 얻는 것은 앱 크기(57MB 대 323MB)뿐이고, Node 서버를 단일 실행 파일로 묶어 넣고 정리하고 서명해야 한다. opcode는 이 길에서 Agent SDK를 포기했다 | 배포해서 앱 크기가 문제가 될 때, Agent SDK를 Tauri에 붙인 검증된 사례가 생길 때 |
+| Swift 네이티브 화면 | 화면과 편집기를 전부 새로 짓는다 | 맥 앱다운 느낌이 핵심 가치가 될 때. 규약이 셸과 무관하므로 서버는 그대로 쓴다 |
+| pi | API 키 과금이 되고 세션 보관과 권한을 직접 만든다 | 로컬 모델이나 다른 회사 모델을 붙일 때 모델 포트 뒤의 두 번째 연결부 후보 |
+| Rust 코어 | Agent SDK가 TypeScript·Python뿐이고, 대화 시간은 모델 응답 대기라 속도 이득이 없다. 앱 로직을 다시 써야 한다 | Rust용 Agent SDK가 생길 때 |
+| `utilityProcess`로 서버 띄우기 | Octave와 T3 Code가 `ELECTRON_RUN_AS_NODE` 방식으로 배포 중이다. 충돌 보고와 고아 방지는 3절의 2번으로 메운다 | 서버 충돌 원인을 알기 어렵거나 남겨진 서버가 실제로 생길 때 |
+
+## 6. 참고한 것 (2026-11-28 읽음)
+
+| 프로젝트 | 라이선스 | 가져온 것 |
+|---|---|---|
+| Octave 0.0.21 (이 맥에 설치된 앱) | — | 서버 자식 프로세스, 빈 포트, 충돌 시 오류 창, 정중한 종료 |
+| T3 Code (`pingdotgg/t3code`) | MIT | 우리와 같은 구조의 배포 사례. fd 3 전달, 준비 신호, WAL, 컴파일 캐시 |
+| VS Code (`microsoft/vscode`) | MIT | 화면 보안, 종료 순서, 재시작 횟수 제한, 채팅 그리기 |
+| Orca (`stablyai/orca`) | MIT | DB 작업 스레드, 글자 묶어 보내기, 가상화 목록 |
+| Codex (`openai/codex`) | Apache-2.0 | 엔진과 화면 사이 규약, 승인 요청 흐름 |
+| Zed + ACP | GPL(Zed 해당 부분), Apache-2.0(ACP) | 구조만 참고. 외부 에이전트를 별도 프로세스로 붙이는 방식 |
+| herdr (`herdrdev/herdr`) | Apache-2.0 | 스냅샷 + 번호 붙은 변경분, 재접속 |
+| pi (`badlogic/pi-mono`) | MIT | 명령·응답·이벤트의 모양, "정리됨" 이벤트 |
+| opcode (`winfunc/opcode`) | AGPL | 구조만 참고. Tauri 길의 비용 |
+
+확인하지 못한 것: Orca에서 Claude 세션이 도는 프로세스, VS Code가 `utilityProcess`를 고른 이유(코드에 적혀 있지 않음), 1단계 앱의 실제 시작 시간과 조회 시간(만든 뒤 잰다).
