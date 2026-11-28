@@ -10,7 +10,9 @@ import { DatabaseSync } from "node:sqlite"
 import { after, before, describe, test } from "node:test"
 
 import type { Doc } from "../shared/protocol.ts"
-import { RequestError, answer, openBook, openReadOnly } from "./book.ts"
+import { answer } from "./answer.ts"
+import { RequestError, openBook, openReadOnly } from "./book.ts"
+import { openWriter, type Writer } from "./commands.ts"
 import { LATEST } from "./migrate.ts"
 import { bookCopy } from "./testing.ts"
 
@@ -28,6 +30,7 @@ describe("the development copy of the book", () => {
   let COPY: string
   let sql: DatabaseSync
   let book: ReturnType<typeof openBook>
+  let writer: Writer
   let shaBefore: string
   const count = (query: string, ...params: number[]) => Number(Object.values(sql.prepare(query).get(...params) ?? {})[0])
 
@@ -37,9 +40,11 @@ describe("the development copy of the book", () => {
     shaBefore = sha(COPY)
     sql = new DatabaseSync(COPY, { readOnly: true })
     book = openBook(COPY)
+    writer = openWriter(COPY)
   })
   after(() => {
     book?.close()
+    writer?.close()
     sql?.close()
     if (work) rmSync(work, { recursive: true, force: true })
   })
@@ -115,15 +120,16 @@ describe("the development copy of the book", () => {
   })
 
   test("requests are answered by name, with what was sent checked", () => {
-    const chapters = answer(book, "listChapters", {})
+    const library = { book, writer }
+    const chapters = answer(library, "listChapters", {})
     assert.deepEqual(chapters, book.listChapters())
-    assert.deepEqual(answer(book, "getBook", {}), book.getBook())
+    assert.deepEqual(answer(library, "getBook", {}), book.getBook())
     const first = book.listChapters()[0]
     assert.ok(first)
-    assert.deepEqual(answer(book, "listSegments", { chapterId: first.id }), book.listSegments(first.id))
+    assert.deepEqual(answer(library, "listSegments", { chapterId: first.id }), book.listSegments(first.id))
 
     const refused = (name: string, params: unknown, status: number) =>
-      assert.throws(() => answer(book, name, params), (e) => e instanceof RequestError && e.status === status, `${name} ${JSON.stringify(params)}`)
+      assert.throws(() => answer(library, name, params), (e) => e instanceof RequestError && e.status === status, `${name} ${JSON.stringify(params)}`)
     refused("listSegments", { chapterId: "1" }, 400)
     refused("listSegments", { chapterId: 1.5 }, 400)
     refused("listSegments", {}, 400)
@@ -132,6 +138,11 @@ describe("the development copy of the book", () => {
     refused("dropEverything", {}, 404)
     refused("toString", {}, 404)
     refused("listSegments", { chapterId: 999_999_999 }, 404)
+    // a save from the page says which version it saw; one that does not is not taken
+    refused("updateSegment", { id: 1, patch: { status: "draft" } }, 400)
+    refused("updateSegment", { id: 1, patch: { nonsense: 1 }, expectVersion: 0 }, 400)
+    refused("undo", { extra: 1 }, 400)
+    assert.equal(writer.revision(), 0, "nothing was written")
   })
 
   test("reading leaves the file as it was", () => {
@@ -198,7 +209,7 @@ describe("databases that are not as the contract says", () => {
   test("italic in a paragraph is passed on as it is", () => {
     const book = openBook(make("italic.db", [{ source: pm("Moby-Dick", [{ type: "italic" }]) }]))
     try {
-      const [s] = answer(book, "listSegments", { chapterId: 1 })
+      const [s] = book.listSegments(1)
       assert.deepEqual(s?.sourceDoc.content[0]?.content?.[0], { type: "text", text: "Moby-Dick", marks: [{ type: "italic" }] })
       assert.deepEqual(book.listChapters()[0], { id: 1, idx: 0, title: "One", startPage: null, segmentCount: 1, translatedCount: 0, confirmedCount: 0, verifiedCount: 0 })
     } finally {
@@ -215,7 +226,7 @@ describe("databases that are not as the contract says", () => {
     ] as const) {
       const book = openBook(make(name, [...docs]))
       try {
-        assert.throws(() => answer(book, "listSegments", { chapterId: 1 }), (e) => e instanceof Error && !(e instanceof RequestError) && /paragraph 1/.test(e.message), name)
+        assert.throws(() => book.listSegments(1), (e) => e instanceof Error && !(e instanceof RequestError) && /paragraph 1/.test(e.message), name)
       } finally {
         book.close()
       }

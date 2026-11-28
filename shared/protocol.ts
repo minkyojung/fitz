@@ -4,7 +4,7 @@
 import { z } from "zod"
 
 /** Said by both ends when they first meet; a mismatch is an error, never a guess. Raised whenever a shape here changes. */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 // A paragraph's text as the editor keeps it (ProseMirror JSON): doc → paragraph → text, nothing else.
 // A text node may carry marks (the prototype's review editor can set italic); they are passed on as they are.
@@ -59,6 +59,30 @@ export const Segment = z.strictObject({
 })
 export type Segment = z.infer<typeof Segment>
 
+/** What a save may change of a paragraph. Left out = left as it is. */
+export const SegmentPatch = z.strictObject({
+  /** The source as plain text; `sourceDoc` wins when both are sent. */
+  sourceText: z.string().optional(),
+  /** One paragraph. */
+  sourceDoc: Doc.optional(),
+  kind: z.enum(SEGMENT_KINDS).optional(),
+  verified: z.boolean().optional(),
+  /** One or more paragraphs; null takes the translation away. */
+  targetDoc: Doc.nullable().optional(),
+  status: z.enum(SEGMENT_STATUSES).optional(),
+})
+export type SegmentPatch = z.infer<typeof SegmentPatch>
+
+/** A logged change, as undo and redo name it. */
+export const Change = z.strictObject({
+  id: z.int(),
+  name: z.string(),
+  /** The paragraphs it touched. */
+  segmentIds: z.array(z.int()),
+  actor: z.enum(["translator", "agent"]),
+})
+export type Change = z.infer<typeof Change>
+
 const none = z.strictObject({})
 
 /** Every request there is: its name, what is sent with it, what comes back. */
@@ -66,6 +90,13 @@ export const REQUESTS = {
   getBook: { params: none, result: Book },
   listChapters: { params: none, result: z.array(Chapter) },
   listSegments: { params: z.strictObject({ chapterId: z.int() }), result: z.array(Segment) },
+  /** Save a paragraph. `expectVersion` is the version the page last saw: if the paragraph changed since, nothing is
+   *  written (409) — the translator and Claude both write, and neither overwrites what the other wrote unseen. */
+  updateSegment: { params: z.strictObject({ id: z.int(), patch: SegmentPatch, expectVersion: z.int() }), result: Segment },
+  /** Take back the translator's last change still standing; null when there is none. Refused (409) when a later change touched the same thing. */
+  undo: { params: none, result: Change.nullable() },
+  /** Do again the translator's change taken back last; null when there is none. */
+  redo: { params: none, result: Change.nullable() },
 } as const
 
 export type RequestName = keyof typeof REQUESTS

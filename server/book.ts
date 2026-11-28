@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { z } from "zod"
 
-import { Book, Chapter, REQUESTS, Segment, isRequestName, type RequestName, type Result } from "../shared/protocol.ts"
+import { Book, Chapter, Segment } from "../shared/protocol.ts"
 import { LATEST } from "./migrate.ts"
 
 /** A request that cannot be answered as asked: 400 for what was sent, 404 for what is not there. */
@@ -23,6 +23,25 @@ export function openReadOnly(path: string): DatabaseSync {
   if (!existsSync(path)) throw new Error(`no book database at ${path}`)
   return new DatabaseSync(path, { readOnly: true })
 }
+
+/** `what` as the protocol has it, or an error naming it: the database holds something the contract does not allow. */
+const checked = <S extends z.ZodType>(schema: S, what: string, make: () => unknown): z.infer<S> => {
+  try {
+    return schema.parse(make())
+  } catch (e) {
+    const why = e instanceof z.ZodError ? z.prettifyError(e) : e instanceof Error ? e.message : String(e)
+    throw new Error(`${what} is not as the data contract says: ${why}`, { cause: e })
+  }
+}
+
+/** A row of `segment` as the protocol has a paragraph. */
+export const toSegment = (r: Record<string, unknown>): Segment =>
+  checked(Segment, `paragraph ${r.id}`, () => ({
+    id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
+    sourceText: r.source_text, sourceDoc: JSON.parse(String(r.source_doc)),
+    targetText: r.target_text, targetDoc: r.target_doc === null ? null : JSON.parse(String(r.target_doc)),
+    status: r.status, verified: r.verified === 1, version: r.version,
+  }))
 
 export type BookReader = ReturnType<typeof openBook>
 
@@ -58,16 +77,6 @@ export function openBook(path: string) {
        FROM segment WHERE chapter_id = ? ORDER BY idx`,
     )
 
-    /** `what` as the protocol has it, or an error naming it: the database holds something the contract does not allow. */
-    const checked = <S extends z.ZodType>(schema: S, what: string, make: () => unknown): z.infer<S> => {
-      try {
-        return schema.parse(make())
-      } catch (e) {
-        const why = e instanceof z.ZodError ? z.prettifyError(e) : e instanceof Error ? e.message : String(e)
-        throw new Error(`${what} is not as the data contract says: ${why}`, { cause: e })
-      }
-    }
-
     return {
       getBook(): Book {
         return checked(Book, "the book", () => {
@@ -89,14 +98,7 @@ export function openBook(path: string) {
       /** A chapter's paragraphs in order. */
       listSegments(chapterId: number): Segment[] {
         if (!chapterExists.get(chapterId, bookId)) throw new RequestError(404, `chapter ${chapterId} not found`)
-        return segmentRows.all(chapterId).map((r) =>
-          checked(Segment, `paragraph ${r.id}`, () => ({
-            id: r.id, chapterId: r.chapter_id, idx: r.idx, kind: r.kind, pageStart: r.page_start, pageEnd: r.page_end,
-            sourceText: r.source_text, sourceDoc: JSON.parse(String(r.source_doc)),
-            targetText: r.target_text, targetDoc: r.target_doc === null ? null : JSON.parse(String(r.target_doc)),
-            status: r.status, verified: r.verified === 1, version: r.version,
-          })),
-        )
+        return segmentRows.all(chapterId).map(toSegment)
       },
 
       close(): void {
@@ -106,22 +108,5 @@ export function openBook(path: string) {
   } catch (e) {
     db.close()
     throw e
-  }
-}
-
-/** A request by its name, with what was sent checked against the protocol first. */
-export function answer<N extends RequestName>(book: BookReader, name: N, params: unknown): Result<N>
-export function answer(book: BookReader, name: string, params: unknown): unknown
-export function answer(book: BookReader, name: string, params: unknown): unknown {
-  if (!isRequestName(name)) throw new RequestError(404, `unknown request ${name}`)
-  const sent = REQUESTS[name].params.safeParse(params)
-  if (!sent.success) throw new RequestError(400, `${name}: ${z.prettifyError(sent.error)}`)
-  switch (name) {
-    case "getBook":
-      return book.getBook()
-    case "listChapters":
-      return book.listChapters()
-    case "listSegments":
-      return book.listSegments(REQUESTS.listSegments.params.parse(params).chapterId)
   }
 }

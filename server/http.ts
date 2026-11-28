@@ -15,7 +15,8 @@ import { extname, resolve, sep } from "node:path"
 import { z } from "zod"
 
 import { HelloParams, PROTOCOL_VERSION, type ErrorBody, type Hello } from "../shared/protocol.ts"
-import { RequestError, answer, type BookReader } from "./book.ts"
+import { answer, type Library } from "./answer.ts"
+import { RequestError } from "./book.ts"
 
 export const COOKIE = "fitz_token"
 /** More than any request here needs; a body past it is refused unread. */
@@ -39,8 +40,7 @@ const CSP = [
 ].join("; ")
 const ALWAYS = { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" }
 
-export interface BookServerOptions {
-  book: BookReader
+export interface BookServerOptions extends Library {
   /** This launch's secret. */
   token: string
   /** The built page. */
@@ -123,9 +123,9 @@ async function api(o: BookServerOptions, name: string, req: IncomingMessage, res
       if (!said.success) return fail(res, 400, `hello: ${z.prettifyError(said.error)}`)
       if (said.data.protocol !== PROTOCOL_VERSION)
         return fail(res, 409, `the page speaks protocol ${said.data.protocol} and the server ${PROTOCOL_VERSION}`)
-      return json(res, 200, { protocol: PROTOCOL_VERSION, bootId: o.bootId, revision: 0 } satisfies Hello)
+      return json(res, 200, { protocol: PROTOCOL_VERSION, bootId: o.bootId, revision: o.writer.revision() } satisfies Hello)
     }
-    return json(res, 200, answer(o.book, name, params))
+    return json(res, 200, answer(o, name, params))
   } catch (e) {
     if (e instanceof RequestError) return fail(res, e.status, e.message)
     throw e

@@ -9,6 +9,7 @@ import { after, before, describe, test } from "node:test"
 
 import { Hello, PROTOCOL_VERSION } from "../shared/protocol.ts"
 import { openBook, type BookReader } from "./book.ts"
+import { openWriter, type Writer } from "./commands.ts"
 import { COOKIE, createBookServer } from "./http.ts"
 import { bookCopy } from "./testing.ts"
 
@@ -21,6 +22,7 @@ interface Call { method?: string; headers?: Record<string, string>; body?: strin
 describe("the server over HTTP", () => {
   let dir: string
   let book: BookReader
+  let writer: Writer
   let server: Server
   let port: number
 
@@ -53,13 +55,15 @@ describe("the server over HTTP", () => {
     writeFileSync(join(dir, "client/assets/style-abc123.css"), "body{}")
     writeFileSync(join(dir, "secret.txt"), "outside the page folder")
     book = openBook(COPY)
-    server = createBookServer({ book, token: TOKEN, clientDir: join(dir, "client"), bootId: BOOT })
+    writer = openWriter(COPY)
+    server = createBookServer({ book, writer, token: TOKEN, clientDir: join(dir, "client"), bootId: BOOT })
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
     port = (server.address() as AddressInfo).port
   })
   after(async () => {
     await new Promise((done) => server?.close(done))
     book?.close()
+    writer?.close()
     if (dir) rmSync(dir, { recursive: true, force: true })
   })
 
@@ -164,6 +168,43 @@ describe("the server over HTTP", () => {
     await error(call("/", { method: "POST", body: "{}", headers: { "content-type": "application/json" } }), 405)
     await error(api("getBook", undefined, { body: Buffer.alloc(1_100_000, 0x20) }), 413)
     assert.equal((await api("getBook", {})).status, 200, "the server still answers after refusals")
+  })
+
+  test("a paragraph is saved, taken back and done again over HTTP, and the revision says so", async () => {
+    const revision = async () => (await api("hello", { protocol: PROTOCOL_VERSION })).json().revision as number
+    const chapter = book.listChapters().find((c) => c.translatedCount < c.segmentCount)
+    assert.ok(chapter, "the copy has a paragraph not yet translated")
+    const was = book.listSegments(chapter.id).find((s) => s.targetDoc === null)!
+    const targetDoc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "새로 옮긴 문장" }] }] }
+    const start = await revision()
+
+    const saved = await api("updateSegment", { id: was.id, patch: { targetDoc }, expectVersion: was.version })
+    assert.equal(saved.status, 200, saved.text)
+    assert.equal(saved.json().targetText, "새로 옮긴 문장")
+    assert.equal(saved.json().status, "draft")
+    assert.ok(saved.json().version > was.version)
+    assert.deepEqual((await api("listSegments", { chapterId: chapter.id })).json().find((s: { id: number }) => s.id === was.id), saved.json(), "the reader sees what the writer wrote")
+    assert.equal(await revision(), start + 1)
+
+    // the page still holds the old version: its next save is refused, and nothing is written
+    const stale = await api("updateSegment", { id: was.id, patch: { status: "final" }, expectVersion: was.version })
+    assert.equal(stale.status, 409)
+    assert.match(stale.json().error, /changed since it was read/)
+    assert.equal((await api("updateSegment", { id: was.id, patch: { status: "final" } })).status, 400, "a save without the version it saw is not taken")
+    assert.equal((await api("updateSegment", { id: 999_999_999, patch: { status: "final" }, expectVersion: 0 })).status, 404)
+    assert.equal(await revision(), start + 1)
+
+    const undone = await api("undo", {})
+    assert.equal(undone.status, 200)
+    assert.deepEqual({ name: undone.json().name, segmentIds: undone.json().segmentIds, actor: undone.json().actor }, { name: "updateSegment", segmentIds: [was.id], actor: "translator" })
+    assert.equal(book.listSegments(chapter.id).find((s) => s.id === was.id)?.targetDoc, null)
+    assert.equal((await api("undo", {})).json(), null, "nothing from before this app is taken back")
+    assert.equal((await api("redo", {})).json().name, "updateSegment")
+    assert.equal(book.listSegments(chapter.id).find((s) => s.id === was.id)?.targetText, "새로 옮긴 문장")
+    assert.equal((await api("redo", {})).json(), null)
+    assert.equal(await revision(), start + 3)
+    // leave the book as the other tests expect it
+    assert.ok((await api("undo", {})).json())
   })
 
   test("the page's files are served, and nothing outside its folder", async () => {

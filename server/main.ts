@@ -13,6 +13,7 @@ import { z } from "zod"
 import { PROTOCOL_VERSION } from "../shared/protocol.ts"
 import { ServerConfig, ToServer, type ToShell } from "../shared/shellChannel.ts"
 import { openBook } from "./book.ts"
+import { openWriter } from "./commands.ts"
 import { createBookServer } from "./http.ts"
 import { migrate } from "./migrate.ts"
 
@@ -28,14 +29,17 @@ const die = (message: string): never => {
  *  opened, or a port that cannot be had, ends the process — the book left as it was found. */
 async function start(config: ServerConfig, listening: (port: number) => void): Promise<() => void> {
   let book: ReturnType<typeof openBook>
+  let writer: ReturnType<typeof openWriter>
   try {
     const moved = await migrate(config.dbPath, { backupDir: config.backupDir })
     if (moved.backup) console.log(`book migrated from version ${moved.from} to ${moved.to}; what it was is kept at ${moved.backup}`)
+    // two connections: every change goes through the writer; the reader's cannot write
+    writer = openWriter(config.dbPath)
     book = openBook(config.dbPath)
   } catch (e) {
     return die(e instanceof Error ? e.message : String(e))
   }
-  const server = createBookServer({ book, token: config.token, clientDir: config.clientDir, bootId: randomUUID() })
+  const server = createBookServer({ book, writer, token: config.token, clientDir: config.clientDir, bootId: randomUUID() })
   server.on("error", (e) => die(`could not listen on 127.0.0.1:${config.port}: ${e.message}`))
   server.listen(config.port, "127.0.0.1", () => listening((server.address() as AddressInfo).port))
 
@@ -45,6 +49,7 @@ async function start(config: ServerConfig, listening: (port: number) => void): P
     stopping = true
     server.close(() => {
       book.close()
+      writer.close()
       process.exit(0)
     })
     server.closeAllConnections()
