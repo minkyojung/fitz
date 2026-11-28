@@ -20,7 +20,7 @@ export interface SideEdit {
   /** Set while this side is being edited: where the caret starts and the text the edit opens on. */
   editing: { caret: number | "end"; doc: Doc | null } | null
   onEdit: (caret: number | "end") => void
-  onLeave: (doc: Doc, how: Leave) => void
+  onLeave: (doc: Doc, how: Leave, caret: number) => void
   onCancel: () => void
   onDraft: (doc: Doc) => void
   onDiscard: () => void
@@ -71,10 +71,11 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
     onChanged()
   }
 
-  async function leave(segment: Segment, base: number, doc: Doc, how: Leave) {
+  async function leave(segment: Segment, base: number, doc: Doc, how: Leave, caret: number) {
     // Tab, Shift-Tab and ⌘Enter in a translation go on to a neighbour; anything else ends editing
     const at = segments.findIndex((s) => s.id === segment.id)
-    const neighbour = how === "blur" || how === "done" ? undefined : segments[at + (how === "previous" ? -1 : 1)]
+    const onward = how === "next" || how === "previous" || how === "confirm"
+    const neighbour = onward ? segments[at + (how === "previous" ? -1 : 1)] : undefined
     if (neighbour) edit(neighbour, "end")
     else setEditing(null)
 
@@ -91,7 +92,10 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
     const changesText = patch.targetDoc !== undefined || patch.sourceDoc !== undefined
     // nothing of the text to save: what was typed along the way, or left from before, goes
     if (!changesText) void dropDraft(segment)
-    if (Object.keys(patch).length === 0) return
+    if (Object.keys(patch).length === 0) {
+      if (how === "split") await split(segment, caret, base)
+      return
+    }
 
     setSaving((s) => ({ ...s, [segment.id]: next }))
     try {
@@ -100,6 +104,8 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
       // the server dropped the draft with the save
       if (changesText) drafted.current.delete(segment.id)
       setSegments(segments.map((s) => (s.id === saved.id ? saved : s)))
+      // a cut falls in the text as it was saved, so the save comes first: if it is refused, nothing is cut
+      if (how === "split") await split(saved, caret, saved.version)
     } catch (e) {
       // not saved — the paragraph changed meanwhile, or the server would not: what was typed stays as a draft
       await request("saveDraft", { segmentId: segment.id, side, doc, baseVersion: base }).catch(() => {})
@@ -110,6 +116,17 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
         delete rest[segment.id]
         return rest
       })
+      onChanged()
+    }
+  }
+
+  /** Cut the paragraph at a text offset of its source. */
+  async function split(segment: Segment, offset: number, version: number) {
+    try {
+      await request("splitSegment", { id: segment.id, offset, expectVersion: version })
+    } catch (e) {
+      toast.error("The paragraph was not split", { description: e instanceof Error ? e.message : String(e) })
+    } finally {
       onChanged()
     }
   }
@@ -127,7 +144,7 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
         draft: draft && !(segment.id in saving) ? { changedSince: draft.baseVersion !== segment.version } : null,
         editing: editing?.id === segment.id ? editing : null,
         onEdit: (caret) => edit(segment, caret),
-        onLeave: (doc, how) => void leave(segment, base, doc, how),
+        onLeave: (doc, how, caret) => void leave(segment, base, doc, how, caret),
         onCancel: () => {
           setEditing(null)
           void dropDraft(segment)

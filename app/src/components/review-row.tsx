@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react"
+import { GitMergeIcon, ScissorIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 
 import { SEGMENT_KINDS, type Segment } from "@shared/protocol.ts"
 
 import { DocText } from "@/components/doc-text"
 import { EditedMark } from "@/components/edited-mark"
-import { SegmentEditor } from "@/components/segment-editor"
+import { SegmentEditor, type EditorHandle } from "@/components/segment-editor"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -19,15 +21,19 @@ const EMPTY = { type: "doc" as const, content: [{ type: "paragraph" as const }] 
 
 /** One paragraph of the source, as the review screen shows it: whether it was checked against the scan, its kind, and
  *  its text — which a click opens for editing. The chosen one is brought into view when chosen from elsewhere. */
-export function ReviewRow({ segment, selected, source, onSelect, onVerify, onKind }: {
+export function ReviewRow({ segment, selected, source, hasNext, onSelect, onVerify, onKind, onMerge }: {
   segment: Segment
   selected: boolean
   source: SideEdit
+  /** A paragraph follows in the chapter, to merge with. */
+  hasNext: boolean
   onSelect: () => void
   onVerify: (verified: boolean) => void
   onKind: (kind: Segment["kind"]) => void
+  onMerge: () => void
 }) {
   const ref = useRef<HTMLElement>(null)
+  const editor = useRef<EditorHandle>(null)
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
   }, [selected])
@@ -63,10 +69,26 @@ export function ReviewRow({ segment, selected, source, onSelect, onVerify, onKin
         )}
         {segment.pageEnd !== segment.pageStart && <span>→ p. {segment.pageEnd}</span>}
         {segment.ocrText !== null && segment.ocrText !== segment.sourceText && <EditedMark ocrText={segment.ocrText} sourceText={segment.sourceText} />}
+        <span className="flex-1" />
+        {source.editing ? (
+          // pressed without taking the focus from the editor, which knows where the caret is
+          <Button variant="ghost" size="xs" onMouseDown={(event) => event.preventDefault()} onClick={() => editor.current?.split()}>
+            <HugeiconsIcon icon={ScissorIcon} strokeWidth={2} />
+            Split at caret
+          </Button>
+        ) : (
+          selected && (
+            <Button variant="ghost" size="xs" disabled={!hasNext} onClick={onMerge}>
+              <HugeiconsIcon icon={GitMergeIcon} strokeWidth={2} />
+              Merge with next
+            </Button>
+          )
+        )}
       </div>
       {source.editing ? (
         <div data-side="source">
           <SegmentEditor
+            ref={editor}
             single
             lang="en"
             doc={source.editing.doc ?? EMPTY}

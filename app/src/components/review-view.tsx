@@ -49,6 +49,15 @@ export function ReviewView({ chapter, chapters, pages, arrivalPage, changes, onC
   }
   // the source is edited where it is shown; an edit chooses its paragraph, so the scan follows Tab
   const edits = useSegmentEdits({ side: "source", segments, setSegments: (s) => loaded.status === "ready" && loaded.set(s), onChanged, onEditing: select })
+  async function merge(segment: Segment) {
+    try {
+      await request("mergeWithNext", { id: segment.id, expectVersion: segment.version })
+    } catch (e) {
+      toast.error("The paragraphs were not merged", { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      onChanged()
+    }
+  }
   /** Verify a paragraph or change its kind: one save, named with the version on screen. */
   async function change(segment: Segment, patch: SegmentPatch) {
     try {
@@ -119,9 +128,11 @@ export function ReviewView({ chapter, chapters, pages, arrivalPage, changes, onC
                 segment={segment}
                 selected={segment.id === selectedId}
                 source={edits.sideOf(segment)}
+                hasNext={i < segments.length - 1}
                 onSelect={() => select(segment)}
                 onVerify={(verified) => void change(segment, { verified })}
                 onKind={(kind) => void change(segment, { kind })}
+                onMerge={() => void merge(segment)}
               />
             </Fragment>
           ))}

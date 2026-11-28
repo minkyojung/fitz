@@ -314,3 +314,90 @@ test("a paragraph fixed here gains the mark; one with no OCR text has none", asy
   await page.keyboard.press("ControlOrMeta+z")
   await expect(row.locator("[data-edited]")).toHaveCount(0)
 })
+
+// ---- cutting the chapter into paragraphs differently
+
+const chapterRows = (sql: DatabaseSync, chapterId: number) =>
+  sql.prepare("SELECT id, source_text FROM segment WHERE chapter_id = ? ORDER BY idx").all(chapterId).map((r) => ({ id: Number(r.id), text: String(r.source_text) }))
+
+test("Split at caret cuts the paragraph being edited where the caret is; ⌘Z puts it back", async ({ page, door, sql }) => {
+  const { chapterId } = fresh(sql, 6)
+  const before = chapterRows(sql, chapterId)
+  const target = before.find((r) => r.text.split(" ").length > 6)!
+  const cut = target.text.indexOf(" ", 10) + 1
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${target.id}"]`)
+  // the caret at the start of the paragraph (a click on its first letter), then moved to the cut
+  await row.locator("[data-side=source]").click({ position: { x: 1, y: 6 } })
+  const editor = row.locator("[contenteditable=true]")
+  await expect(editor).toBeFocused()
+  for (let i = 0; i < cut; i++) await page.keyboard.press("ArrowRight")
+  await row.getByRole("button", { name: "Split at caret" }).click()
+
+  await expect(page.locator("[data-segment-id]")).toHaveCount(before.length + 1)
+  const after = chapterRows(sql, chapterId)
+  const at = after.findIndex((r) => r.id === target.id)
+  expect(after[at]!.text).toBe(target.text.slice(0, cut).trimEnd())
+  expect(after[at + 1]!.text).toBe(target.text.slice(cut))
+  await expect(page.locator("[data-segment-id]").nth(at + 1)).toContainText(target.text.slice(cut, cut + 20))
+  await expect(page.locator("[data-segment-id][data-selected=true]")).toHaveAttribute("data-segment-id", String(target.id))
+
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(page.locator("[data-segment-id]")).toHaveCount(before.length)
+  expect(chapterRows(sql, chapterId)).toEqual(before)
+})
+
+test("text typed before the split is saved first, and the cut falls in the saved text", async ({ page, door, sql }) => {
+  const { chapterId } = fresh(sql, 7)
+  const target = chapterRows(sql, chapterId).find((r) => r.text.split(" ").length > 6)!
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${target.id}"]`)
+  await row.locator("[data-side=source]").click({ position: { x: 1, y: 6 } })
+  await expect(row.locator("[contenteditable=true]")).toBeFocused()
+  await page.keyboard.insertText("New start. ")
+  await row.getByRole("button", { name: "Split at caret" }).click()
+  await expect.poll(() => chapterRows(sql, chapterId).find((r) => r.id === target.id)?.text).toBe("New start.")
+  const after = chapterRows(sql, chapterId)
+  expect(after[after.findIndex((r) => r.id === target.id) + 1]!.text).toBe(target.text)
+  // two changes: the edit, then the cut
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect.poll(() => chapterRows(sql, chapterId).find((r) => r.id === target.id)?.text).toBe(`New start. ${target.text}`)
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect.poll(() => chapterRows(sql, chapterId).find((r) => r.id === target.id)?.text).toBe(target.text)
+})
+
+test("Merge with next joins the chosen paragraph and the one after it; not on the last; ⌘Z takes it apart", async ({ page, door, sql }) => {
+  const { chapterId } = fresh(sql, 8)
+  const before = chapterRows(sql, chapterId)
+  await review(page, door, chapterId)
+  // the chapter opens on its first paragraph, chosen
+  const first = page.locator(`[data-segment-id="${before[0]!.id}"]`)
+  await expect(first).toHaveAttribute("data-selected", "true")
+  await first.getByRole("button", { name: "Merge with next" }).click()
+  await expect(page.locator("[data-segment-id]")).toHaveCount(before.length - 1)
+  await expect.poll(() => chapterRows(sql, chapterId)[0]?.text).toBe(`${before[0]!.text} ${before[1]!.text}`)
+  await expect(first.locator("[data-side=source]")).toHaveText(`${before[0]!.text} ${before[1]!.text}`)
+  await expect(first).toHaveAttribute("data-verified", "false")
+
+  const last = page.locator(`[data-segment-id="${before.at(-1)!.id}"]`)
+  await last.locator("[data-kind]").click()
+  await expect(last.getByRole("button", { name: "Merge with next" })).toBeDisabled()
+
+  await page.locator("header").click()
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(page.locator("[data-segment-id]")).toHaveCount(before.length)
+  expect(chapterRows(sql, chapterId)).toEqual(before)
+})
+
+test("a cut at the very start is refused and says why; nothing changes", async ({ page, door, sql, complaints }) => {
+  const { chapterId } = fresh(sql, 9)
+  const before = chapterRows(sql, chapterId)
+  await review(page, door, chapterId)
+  const row = page.locator(`[data-segment-id="${before[0]!.id}"]`)
+  await row.locator("[data-side=source]").click({ position: { x: 1, y: 6 } })
+  await expect(row.locator("[contenteditable=true]")).toBeFocused()
+  await row.getByRole("button", { name: "Split at caret" }).click()
+  await expect(page.locator("[data-sonner-toast]")).toContainText("cut must fall inside the text")
+  expect(chapterRows(sql, chapterId)).toEqual(before)
+  complaints.length = 0 // the refused split is the point of this test
+})
