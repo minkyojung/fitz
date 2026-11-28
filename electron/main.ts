@@ -86,6 +86,9 @@ function createWindow(running: RunningServer): BrowserWindow {
 }
 
 if (!app.requestSingleInstanceLock()) {
+  // one fitz at a time, on one book: this launch brings the running one forward and ends — said, so that a run that
+  // shows an older window is not taken for this code
+  console.log("[shell] fitz is already running: its window was brought forward and this launch ends. Quit it (⌘Q) to start this one.")
   app.quit()
 } else {
   // the server starts at once, beside Electron's own startup
