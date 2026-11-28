@@ -86,6 +86,17 @@ describe("writing to a book", () => {
     assert.throws(() => update({ id: 1, kind: "poem" }), refused(400))
   })
 
+  test("the source cannot be saved empty: a paragraph is removed by merging, not by emptying it", async () => {
+    const { update, content, count } = await fixture()
+    const before = content(3)
+    assert.throws(() => update({ id: 3, text: "" }), refused(400, /source cannot be empty/))
+    assert.throws(() => update({ id: 3, text: "   " }), refused(400, /source cannot be empty/))
+    assert.throws(() => update({ id: 3, doc: doc("") }), refused(400, /source cannot be empty/))
+    assert.deepEqual(content(3), before)
+    assert.equal(count("SELECT count(*) FROM ops"), 0)
+    assert.equal(update({ id: 3, text: " epsilon " }).sourceText, " epsilon ", "blanks around words are kept as typed")
+  })
+
   test("do, undo, redo: the paragraph goes forward, back to what it was, and forward again", async () => {
     const { update, content, writer } = await fixture()
     const was = content(2)

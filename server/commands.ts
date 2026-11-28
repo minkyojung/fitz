@@ -69,6 +69,7 @@ const COMMANDS: Record<string, Command> = {
     const curTarget = cur.target_doc === null ? null : (JSON.parse(String(cur.target_doc)) as Doc)
     // what is sent the same as what is there is kept as it is stored: the same text keeps its marks
     const nextDoc = p.doc !== undefined ? (isDeepStrictEqual(p.doc, curDoc) ? curDoc : p.doc) : p.text !== undefined && p.text !== cur.source_text ? textDoc(p.text) : curDoc
+    if ((p.doc !== undefined || p.text !== undefined) && !docText(nextDoc).trim()) throw new RequestError(400, `updateSegment: a paragraph's source cannot be empty (merge it instead)`)
     const nextTarget = p.targetDoc === undefined || isDeepStrictEqual(p.targetDoc, curTarget) ? curTarget : p.targetDoc
     const nextTargetText = nextTarget ? docText(nextTarget) : null
     let nextStatus = p.status ?? String(cur.status)
