@@ -107,6 +107,26 @@ describe("migrating a book", () => {
     assert.ok(backups(backupDir).every((name) => name.endsWith(".db")), "looking at a backup leaves nothing beside it")
   })
 
+  test("version 3 gives drafts a side; the translation drafts there are kept as the translation's", async () => {
+    const { path, backupDir } = await fresh()
+    await migrate(path, { backupDir, migrations: MIGRATIONS.slice(0, 2) })
+    const db = new DatabaseSync(path)
+    const segment = Number(one(db, "SELECT min(id) FROM segment"))
+    db.prepare("INSERT INTO draft(segment_id, target_doc, base_version, saved_at) VALUES (?, ?, 7, '2026-11-28 01:02:03')").run(segment, '{"type":"doc","content":[{"type":"paragraph"}]}')
+    db.close()
+    await migrate(path, { backupDir, migrations: MIGRATIONS.slice(0, 3) })
+    const after = new DatabaseSync(path, { readOnly: true })
+    try {
+      assert.equal(one(after, "PRAGMA user_version"), 3)
+      assert.deepEqual(after.prepare("SELECT * FROM draft").all().map((r) => ({ ...r })), [{ segment_id: segment, side: "target", doc: '{"type":"doc","content":[{"type":"paragraph"}]}', base_version: 7, saved_at: "2026-11-28 01:02:03" }])
+      assert.deepEqual(after.prepare("PRAGMA table_info(draft)").all().map((c) => c.name), ["segment_id", "side", "doc", "base_version", "saved_at"])
+      assert.deepEqual(after.prepare("PRAGMA foreign_key_list(draft)").all().map((f) => [f.table, f.on_delete]), [["segment", "CASCADE"]])
+      assert.equal(one(after, "SELECT count(*) FROM sqlite_master WHERE name = 'draft_new'"), 0)
+    } finally {
+      after.close()
+    }
+  })
+
   test("a book already migrated is left alone, and no backup is made", async () => {
     const { path, backupDir } = await fresh()
     await migrate(path, { backupDir })

@@ -13,7 +13,10 @@ import { useLoad } from "@/hooks/use-load"
 const docText = (doc: Doc) => doc.content.map((p) => (p.content ?? []).map((n) => n.text).join("")).join("\n")
 const sameDoc = (a: Doc | null, b: Doc | null) => JSON.stringify(a) === JSON.stringify(b)
 /** The draft kept for a paragraph, unless it says nothing the paragraph does not already say. */
-const draftOf = (segment: Segment) => (segment.draft && !sameDoc(segment.draft.doc, segment.targetDoc) ? segment.draft : null)
+const draftOf = (segment: Segment) => {
+  const draft = segment.drafts.target
+  return draft && !sameDoc(draft.doc, segment.targetDoc) ? draft : null
+}
 
 /** A chapter's paragraphs: the source on the left, its translation on the right. One translation is edited at a time;
  *  leaving it saves it — one save, one entry in the book's history. What is typed is kept by the server as a draft
@@ -62,13 +65,13 @@ export function ChapterView({ chapter, changes, onChanged }: {
   }
   const keepDraft = (segmentId: number, doc: Doc, base: number) => {
     drafted.current.add(segmentId)
-    draftQueue.current = draftQueue.current.then(() => request("saveDraft", { segmentId, doc, baseVersion: base })).catch(() => {})
+    draftQueue.current = draftQueue.current.then(() => request("saveDraft", { segmentId, side: "target", doc, baseVersion: base })).catch(() => {})
   }
   /** Once the drafts on their way have landed, drop the one for this paragraph, if this view wrote one or one was there. */
   async function dropDraft(segment: Segment) {
     await draftQueue.current
-    if (!drafted.current.delete(segment.id) && !segment.draft) return
-    await request("dropDraft", { segmentId: segment.id }).catch(() => {})
+    if (!drafted.current.delete(segment.id) && !segment.drafts.target) return
+    await request("dropDraft", { segmentId: segment.id, side: "target" }).catch(() => {})
     onChanged()
   }
 
@@ -97,7 +100,7 @@ export function ChapterView({ chapter, changes, onChanged }: {
       setSegments(segments.map((s) => (s.id === saved.id ? saved : s)))
     } catch (e) {
       // not saved — the paragraph changed meanwhile, or the server could not: what was typed stays as a draft
-      await request("saveDraft", { segmentId: segment.id, doc, baseVersion: base }).catch(() => {})
+      await request("saveDraft", { segmentId: segment.id, side: "target", doc, baseVersion: base }).catch(() => {})
       toast.error("The translation was not saved", { description: `${e instanceof Error ? e.message : String(e)}. What you typed is kept as a draft.` })
     } finally {
       setSaving((s) => {

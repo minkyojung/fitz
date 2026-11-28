@@ -254,23 +254,30 @@ describe("writing to a book", () => {
   test("what is being typed is kept as a draft: the latest per paragraph, outside the book's history", async () => {
     const { writer, sql, row, count, update } = await fixture()
     const before = { ...row(3) }
-    writer.saveDraft(3, doc("엡실"), 3)
-    writer.saveDraft(3, doc("엡실론", "둘째 문단"), 3)
-    assert.deepEqual({ ...sql.prepare("SELECT segment_id, target_doc, base_version FROM draft").get() }, { segment_id: 3, target_doc: JSON.stringify(doc("엡실론", "둘째 문단")), base_version: 3 })
+    writer.saveDraft(3, "target", doc("엡실"), 3)
+    writer.saveDraft(3, "target", doc("엡실론", "둘째 문단"), 3)
+    writer.saveDraft(3, "source", doc("epsilon zeta, fixed"), 3)
+    assert.deepEqual(sql.prepare("SELECT segment_id, side, doc, base_version FROM draft ORDER BY side").all().map((r) => ({ ...r })), [
+      { segment_id: 3, side: "source", doc: JSON.stringify(doc("epsilon zeta, fixed")), base_version: 3 },
+      { segment_id: 3, side: "target", doc: JSON.stringify(doc("엡실론", "둘째 문단")), base_version: 3 },
+    ])
     assert.deepEqual({ ...row(3) }, before, "the paragraph itself is not touched")
     assert.equal(count("SELECT count(*) FROM ops"), 0)
     assert.equal(count("SELECT count(*) FROM meta WHERE key = 'last_edit_at'"), 0, "a draft is not an edit of the book")
     assert.equal(writer.revision(), 0)
     assert.equal(writer.undo(), null)
-    assert.throws(() => writer.saveDraft(99, doc("x"), 0), refused(404))
+    assert.throws(() => writer.saveDraft(99, "target", doc("x"), 0), refused(404))
     // a change to the paragraph — Claude's, say — leaves the draft; its base version tells it is older
     const changed = update({ id: 3, text: "epsilon zeta, revised" }, CLAUDE)
-    assert.deepEqual(changed.draft && { doc: changed.draft.doc, baseVersion: changed.draft.baseVersion }, { doc: doc("엡실론", "둘째 문단"), baseVersion: 3 })
+    assert.deepEqual(changed.drafts.target && { doc: changed.drafts.target.doc, baseVersion: changed.drafts.target.baseVersion }, { doc: doc("엡실론", "둘째 문단"), baseVersion: 3 })
+    assert.deepEqual(changed.drafts.source?.doc, doc("epsilon zeta, fixed"))
     assert.ok(changed.version > 3)
-    writer.dropDraft(3)
-    writer.dropDraft(3)
+    writer.dropDraft(3, "target")
+    writer.dropDraft(3, "target")
+    assert.equal(count("SELECT count(*) FROM draft"), 1, "the source's draft stays")
+    writer.dropDraft(3, "source")
     assert.equal(count("SELECT count(*) FROM draft"), 0)
-    assert.equal(update({ id: 3, status: "draft" }).draft, null)
+    assert.deepEqual(update({ id: 3, status: "draft" }).drafts, { source: null, target: null })
   })
 
   test("a book that is not at this app's version is not written to", async () => {

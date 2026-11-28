@@ -158,7 +158,7 @@ test("what was saved and what was being typed are both there when the app is ope
     // …and the next still being typed when the app dies
     await expect(editor(typing!.id)).toBeFocused()
     await page.keyboard.insertText("치던 중에 앱이 죽었다")
-    await expect.poll(() => sql.prepare("SELECT count(*) n FROM draft WHERE segment_id = ?").get(typing!.id)?.n).toBe(1)
+    await expect.poll(() => sql.prepare("SELECT count(*) n FROM draft WHERE segment_id = ? AND side = 'target'").get(typing!.id)?.n).toBe(1)
     const [server] = await first.serverPids()
     process.kill(first.pid, "SIGKILL")
     await gone(server!, "the server")

@@ -43,6 +43,25 @@ export const MIGRATIONS: Migration[] = [
       )`)
     },
   },
+  {
+    // Drafts of the source too (the review screen edits it): one per paragraph and side. SQLite cannot change a
+    // table's key, so the table is made anew; the translation drafts there are moved over as they are.
+    to: 3,
+    name: "drafts of either side",
+    up(db) {
+      db.exec(`CREATE TABLE draft_new (
+        segment_id   INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+        side         TEXT NOT NULL CHECK (side IN ('source', 'target')),
+        doc          TEXT NOT NULL,     -- ProseMirror JSON, as segment.source_doc / target_doc
+        base_version INTEGER NOT NULL,  -- segment.version when the edit began
+        saved_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (segment_id, side)
+      );
+      INSERT INTO draft_new(segment_id, side, doc, base_version, saved_at) SELECT segment_id, 'target', target_doc, base_version, saved_at FROM draft;
+      DROP TABLE draft;
+      ALTER TABLE draft_new RENAME TO draft;`)
+    },
+  },
 ]
 export const LATEST = MIGRATIONS.length
 

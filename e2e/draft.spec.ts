@@ -6,7 +6,7 @@ import type { Page } from "@playwright/test"
 import { expect, test } from "./server.ts"
 
 const row = (sql: DatabaseSync, id: number) => ({ ...sql.prepare("SELECT target_text, status, version FROM segment WHERE id = ?").get(id) })
-const draftOf = (sql: DatabaseSync, id: number) => { const d = sql.prepare("SELECT target_doc FROM draft WHERE segment_id = ?").get(id); return d ? JSON.parse(String(d.target_doc)).content.map((p: { content?: { text: string }[] }) => (p.content ?? []).map((n) => n.text).join("")).join("\n") : null }
+const draftOf = (sql: DatabaseSync, id: number) => { const d = sql.prepare("SELECT doc FROM draft WHERE segment_id = ? AND side = 'target'").get(id); return d ? JSON.parse(String(d.doc)).content.map((p: { content?: { text: string }[] }) => (p.content ?? []).map((n) => n.text).join("")).join("\n") : null }
 const drafts = (sql: DatabaseSync) => Number(Object.values(sql.prepare("SELECT count(*) FROM draft").get() ?? {})[0])
 const untranslated = (sql: DatabaseSync) => {
   const s = sql.prepare("SELECT id, chapter_id FROM segment WHERE target_doc IS NULL AND id NOT IN (SELECT segment_id FROM draft) ORDER BY chapter_id, idx LIMIT 1").get()!
@@ -53,7 +53,7 @@ test("text typed and never left survives a reload as a draft, and is saved once 
 test("a click on a paragraph with a draft opens the draft; Discard drops it", async ({ page, door, sql, api }) => {
   const { id, chapterId } = untranslated(sql)
   const typed = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "남아 있던 초안" }] }] }
-  expect((await api("saveDraft", { segmentId: id, doc: typed, baseVersion: Number(row(sql, id).version) })).status).toBe(200)
+  expect((await api("saveDraft", { segmentId: id, side: "target", doc: typed, baseVersion: Number(row(sql, id).version) })).status).toBe(200)
   const { target, editor, edit, notice } = await open(page, door, chapterId, id)
   await expect(notice).toContainText("Unsaved draft")
   await edit()

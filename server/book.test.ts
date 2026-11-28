@@ -106,7 +106,7 @@ describe("the development copy of the book", () => {
       sourceText: row.source_text, sourceDoc: JSON.parse(String(row.source_doc)), ocrText: row.ocr_text,
       boxes: sql.prepare("SELECT page_no pageNo, x0, y0, x1, y1 FROM segment_box WHERE segment_id = ? ORDER BY page_no").all(Number(row.id)).map((b) => ({ ...b })),
       targetText: row.target_text, targetDoc: JSON.parse(String(row.target_doc)),
-      status: row.status, verified: row.verified === 1, version: row.version, draft: null,
+      status: row.status, verified: row.verified === 1, version: row.version, drafts: { source: null, target: null },
     })
   })
 

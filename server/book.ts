@@ -38,8 +38,12 @@ const checked = <S extends z.ZodType>(schema: S, what: string, make: () => unkno
 /** Paragraphs with their draft, if one is kept. Followed by a WHERE on `s`. */
 const SEGMENT_ROWS = `
   SELECT s.id, s.chapter_id, s.idx, s.kind, s.page_start, s.page_end, s.source_text, s.source_doc, s.ocr_text, s.target_text,
-         s.target_doc, s.status, s.verified, s.version, d.target_doc AS draft_doc, d.base_version AS draft_base, d.saved_at AS draft_saved
-  FROM segment s LEFT JOIN draft d ON d.segment_id = s.id`
+         s.target_doc, s.status, s.verified, s.version,
+         ds.doc AS source_draft_doc, ds.base_version AS source_draft_base, ds.saved_at AS source_draft_saved,
+         dt.doc AS target_draft_doc, dt.base_version AS target_draft_base, dt.saved_at AS target_draft_saved
+  FROM segment s
+  LEFT JOIN draft ds ON ds.segment_id = s.id AND ds.side = 'source'
+  LEFT JOIN draft dt ON dt.segment_id = s.id AND dt.side = 'target'`
 
 /** A row of SEGMENT_ROWS, with its boxes, as the protocol has a paragraph. */
 const toSegment = (r: Record<string, unknown>, boxes: Record<string, unknown>[]): Segment =>
@@ -49,8 +53,10 @@ const toSegment = (r: Record<string, unknown>, boxes: Record<string, unknown>[])
     boxes: boxes.map((b) => ({ pageNo: b.page_no, x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 })),
     targetText: r.target_text, targetDoc: r.target_doc === null ? null : JSON.parse(String(r.target_doc)),
     status: r.status, verified: r.verified === 1, version: r.version,
-    draft: r.draft_doc === null ? null : { doc: JSON.parse(String(r.draft_doc)), baseVersion: r.draft_base, savedAt: r.draft_saved },
+    drafts: { source: draftOf(r, "source"), target: draftOf(r, "target") },
   }))
+const draftOf = (r: Record<string, unknown>, side: "source" | "target") =>
+  r[`${side}_draft_doc`] === null ? null : { doc: JSON.parse(String(r[`${side}_draft_doc`])), baseVersion: r[`${side}_draft_base`], savedAt: r[`${side}_draft_saved`] }
 
 const queries = new WeakMap<DatabaseSync, ReturnType<typeof prepareSegments>>()
 function prepareSegments(db: DatabaseSync) {

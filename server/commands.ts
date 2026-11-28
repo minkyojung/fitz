@@ -8,7 +8,7 @@ import { isDeepStrictEqual } from "node:util"
 
 import { z } from "zod"
 
-import { Doc, SEGMENT_KINDS, SEGMENT_STATUSES, type Change } from "../shared/protocol.ts"
+import { Doc, SEGMENT_KINDS, SEGMENT_STATUSES, type Change, type Side } from "../shared/protocol.ts"
 import { RequestError, readSegments } from "./book.ts"
 import { LATEST } from "./migrate.ts"
 
@@ -208,14 +208,14 @@ export function openWriter(path: string) {
       undo: (by: By = TRANSLATOR): Change | null => step(by, 1),
       /** Do again `by`'s change taken back last. null when there is none. */
       redo: (by: By = TRANSLATOR): Change | null => step(by, 0),
-      /** Keep what is being typed into a paragraph's translation (one draft per paragraph, the latest). Not a change to
-       *  the book: nothing is logged, no version moves. */
-      saveDraft(segmentId: number, doc: Doc, baseVersion: number): void {
+      /** Keep what is being typed into one side of a paragraph (one draft per paragraph and side, the latest). Not a
+       *  change to the book: nothing is logged, no version moves. */
+      saveDraft(segmentId: number, side: Side, doc: Doc, baseVersion: number): void {
         if (!db.prepare("SELECT 1 FROM segment WHERE id = ?").get(segmentId)) throw new RequestError(404, `paragraph ${segmentId} not found`)
-        db.prepare("INSERT OR REPLACE INTO draft(segment_id, target_doc, base_version, saved_at) VALUES (?, ?, ?, datetime('now'))").run(segmentId, JSON.stringify(doc), baseVersion)
+        db.prepare("INSERT OR REPLACE INTO draft(segment_id, side, doc, base_version, saved_at) VALUES (?, ?, ?, ?, datetime('now'))").run(segmentId, side, JSON.stringify(doc), baseVersion)
       },
-      dropDraft(segmentId: number): void {
-        db.prepare("DELETE FROM draft WHERE segment_id = ?").run(segmentId)
+      dropDraft(segmentId: number, side: Side): void {
+        db.prepare("DELETE FROM draft WHERE segment_id = ? AND side = ?").run(segmentId, side)
       },
       /** How many changes this writer has made since it was opened: do, undo and redo each count. */
       revision: (): number => revision,

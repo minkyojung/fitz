@@ -26,7 +26,7 @@ export async function bookCopy(dir: string, as: "prototype" | "migrated"): Promi
   }
   // whatever version the development copy is at, start from the prototype's
   const db = new DatabaseSync(path)
-  db.exec("DROP TABLE IF EXISTS draft; DELETE FROM meta WHERE key = 'undo_floor'; PRAGMA journal_mode = DELETE; PRAGMA user_version = 0")
+  db.exec("DROP TABLE IF EXISTS draft; DROP TABLE IF EXISTS draft_new; DELETE FROM meta WHERE key = 'undo_floor'; PRAGMA journal_mode = DELETE; PRAGMA user_version = 0")
   db.close()
   if (as === "migrated") await migrate(path, { backupDir })
   return { path, backupDir }
