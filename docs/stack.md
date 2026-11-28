@@ -26,7 +26,7 @@ fitz.app
 | Rust | PDF 가져오기 엔진에만. 별도 실행 파일 + 줄 단위 JSON(stdio) | 대화와 DB 층에서는 Rust로 얻는 속도가 없다. 별도 실행 파일이면 엔진이 죽어도 서버가 산다 |
 | 테스트 | 서버는 `node:test`(Electron의 Node로도 돌린다), 앱 실행은 Playwright의 Electron 실행 | 실제 앱이 뜨는지는 진짜 Electron을 띄워야 안다 |
 | 리포 | pnpm 작업 공간 하나(루트 + `app/`), 잠금 파일 하나 | 설치 한 번으로 전체가 준비된다 |
-| 서버 코드 실행 | 개발과 테스트에서는 `.ts`를 빌드 없이 Node로 직접 실행한다(지울 수 있는 타입 문법만 쓴다, `tsconfig.json`의 `erasableSyntaxOnly`). 배포용 번들은 셸을 만들 때 넣는다 | 빌드 단계가 없어 테스트가 빠르다. Node 26과 Electron 45의 Node 양쪽에서 확인했다 |
+| 서버·셸 코드 실행 | 개발과 테스트에서는 `.ts`를 빌드 없이 직접 실행한다(Electron의 메인 프로세스도 `electron/main.ts`를 그대로 실행한다)(지울 수 있는 타입 문법만 쓴다, `tsconfig.json`의 `erasableSyntaxOnly`). 배포용 번들은 셸을 만들 때 넣는다 | 빌드 단계가 없어 테스트가 빠르다. Node 26과 Electron 45의 Node 양쪽에서 확인했다 |
 | 규약 검증 | zod. `shared/protocol.ts`에 요청과 모양을 한 번 정의해 타입과 검증을 함께 얻는다. 서버는 받은 인자와 DB에서 읽은 행을 모두 검사한다 | 규약과 어긋난 데이터는 추측하지 않고 오류로 드러낸다 |
 | 검사 명령 | `pnpm check`: 루트 타입 검사, `app/` 린트와 빌드(타입 검사 포함), 일반 Node와 Electron의 Node 테스트, 브라우저 테스트 | 실제 앱은 Electron의 Node로 돌기 때문에 양쪽에서 돌린다 |
 | 테스트의 기대값 | 숫자를 박지 않고 같은 사본 DB에서 SQL로 직접 센 값과 비교한다 | 사본을 다시 떠서 번역 수가 늘어도 테스트가 깨지지 않는다 |
@@ -36,9 +36,9 @@ fitz.app
 | # | 무엇 | 왜 | 본 곳 |
 |---|---|---|---|
 | 1 | 서버 접속에 실행마다 새로 만든 비밀 토큰을 요구하고 `Host`/`Origin`을 검사. 셸이 `/?token=…`을 한 번 열면 서버가 HttpOnly 쿠키로 바꾸고 주소에서 토큰을 지운다 | 127.0.0.1 포트는 이 맥의 다른 프로그램과 브라우저 페이지도 닿는다. 쿠키 방식이라 화면 코드가 토큰을 갖지 않고 WebSocket에도 그대로 실린다 | VS Code(웹 서버 모드), Jupyter |
-| 2 | 서버 관리: 빈 포트, 준비 신호 확인, 충돌 시 횟수 제한 재시작, 종료는 요청 → 5초 → 강제, 셸이 사라지면 서버 스스로 종료 | 빈 창과 남겨진 서버를 막는다 | T3 Code, Octave, VS Code |
+| 2 | 서버 관리(`electron/server-process.ts`): 빈 포트, 준비 신호 확인, 충돌 시 다시 시작(5분 안에 3번이면 오류 창을 띄우고 끝), 종료는 요청 → 5초 → 강제, 셸이 사라지면 서버 스스로 종료 | 빈 창과 남겨진 서버를 막는다 | T3 Code, Octave, VS Code |
 | 3 | 포트·토큰·경로는 환경 변수나 명령 인자가 아니라 셸과의 IPC 채널 첫 메시지로 서버에 전달(`shared/shellChannel.ts`). 처음 계획한 별도 통로(fd 3) 대신 이미 있는 채널을 쓴다 | 나중에 Claude 프로세스가 환경 변수를 물려받아도 토큰이 새지 않는다 | T3 Code(fd 3), Octave(IPC 채널) |
-| 4 | 화면 보안: `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, 최소 preload, CSP, 다른 주소로 이동 차단 | 처음엔 공짜, 나중엔 비싸다 | VS Code, T3 Code, Orca |
+| 4 | 화면 보안: `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, preload 없음(화면이 셸에 요청할 것이 아직 없다), CSP, 다른 주소로 이동과 새 창 차단, 권한 요청 거절 | 처음엔 공짜, 나중엔 비싸다 | VS Code, T3 Code, Orca |
 | 5 | 규약의 첫 인사에 버전 번호. 안 맞으면 바로 오류 | 셸·서버·화면이 어긋난 것을 바로 안다 | Codex, herdr |
 | 6 | 스냅샷에 `{bootId, revision}` | 서버 재시작과 재접속을 같은 경로로 처리한다 | herdr |
 | 7 | 컴파일 캐시, 창은 배경색을 칠하고 준비되면 표시, 시작 시간 측정 지점 | 첫 실행이 빨라지고 수치로 잴 수 있다 | T3 Code, VS Code |

@@ -1,0 +1,51 @@
+# fitz in an Octave workspace. See README.md for the same commands run by hand.
+
+[scripts]
+# Nothing is kept beside the code that `copy` could bring: there is no .env, and the book's development copy is a
+# folder made from another workspace's files, which `copy` cannot fetch. `setup` makes it instead.
+copy = []
+
+# Dependencies, then what the tests need that is not in git:
+#  - the development copy of the book in dev-data/ (scripts/dev-data.sh reads the prototype's out/ folder and never
+#    writes to it; it does nothing if the copy is already there),
+#  - Electron's binary, which is downloaded the first time it runs,
+#  - the Chromium the browser tests drive.
+setup = "pnpm install --frozen-lockfile && scripts/dev-data.sh && ELECTRON_RUN_AS_NODE=1 pnpm exec electron -e '' && pnpm exec playwright install chromium"
+
+# The app: its window opens on the book. The shell starts the server on $OCTAVE_PORT and opens the page itself.
+[scripts.run.app]
+command = "FITZ_PORT=$OCTAVE_PORT pnpm dev"
+
+# The server alone, giving the built page: open the address it prints (it carries this launch's token).
+[scripts.run.server]
+command = "pnpm --dir app build && FITZ_PORT=$OCTAVE_PORT pnpm server"
+
+[[scripts.check]]
+name = "types"
+command = "pnpm typecheck"
+description = "The server, shared protocol or browser-test code does not type-check."
+
+[[scripts.check]]
+name = "lint"
+command = "pnpm --dir app lint"
+description = "The page's code breaks a lint rule."
+
+[[scripts.check]]
+name = "build"
+command = "pnpm --dir app build"
+description = "The page does not type-check or does not build."
+
+[[scripts.check]]
+name = "server"
+command = "pnpm test"
+description = "A server test fails on Node: reading the book, the HTTP server or the server process no longer behaves as pinned down. Needs dev-data/ (scripts/dev-data.sh)."
+
+[[scripts.check]]
+name = "server-electron"
+command = "pnpm test:electron"
+description = "The same server tests fail on Electron's own Node, which is what the app runs on."
+
+[[scripts.check]]
+name = "browser"
+command = "pnpm --dir app build && pnpm test:e2e"
+description = "The page in a real browser, or the real Electron app, does not show the book as the database holds it; or the app does not start, restart or stop its server as it should. Needs dev-data/ and Playwright's Chromium."
