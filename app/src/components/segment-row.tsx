@@ -1,6 +1,7 @@
 import type { Doc, Segment } from "@shared/protocol.ts"
 
 import { SegmentEditor, type Leave } from "@/components/segment-editor"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 const KIND_STYLE: Record<Segment["kind"], string> = {
@@ -29,15 +30,19 @@ function caretAt(event: React.MouseEvent<HTMLElement>): number | "end" {
 }
 
 /** One paragraph: its source, its status, its translation — which a click opens for editing. */
-export function SegmentRow({ segment, target, editing, onEdit, onLeave, onCancel }: {
+export function SegmentRow({ segment, target, draft, editing, onEdit, onLeave, onCancel, onDraft, onDiscard }: {
   segment: Segment
   /** The translation to show: the one being saved until the save settles, else the paragraph's own. */
   target: Doc | null
-  /** Set while this paragraph is the one being edited. */
-  editing: { caret: number | "end" } | null
+  /** Text typed here and never saved, when there is some: it is said, and never dropped silently. */
+  draft: { changedSince: boolean } | null
+  /** Set while this paragraph is the one being edited: where the caret starts and the text the edit opens on. */
+  editing: { caret: number | "end"; doc: Doc | null } | null
   onEdit: (caret: number | "end") => void
   onLeave: (doc: Doc, how: Leave) => void
   onCancel: () => void
+  onDraft: (doc: Doc) => void
+  onDiscard: () => void
 }) {
   const side = cn("flex min-w-0 flex-col gap-2 text-sm leading-relaxed", KIND_STYLE[segment.kind])
   const translation = cn(side, "break-keep")
@@ -53,9 +58,10 @@ export function SegmentRow({ segment, target, editing, onEdit, onLeave, onCancel
       <span role="img" aria-label={STATUS_LABEL[segment.status]} title={STATUS_LABEL[segment.status]} className={cn("mt-2 size-1.5 rounded-full", STATUS_DOT[segment.status])} />
       {editing ? (
         <div data-side="target" data-translated={target !== null}>
-          <SegmentEditor doc={target ?? EMPTY} caret={editing.caret} className={cn(translation, "outline-none")} onLeave={onLeave} onCancel={onCancel} />
+          <SegmentEditor doc={editing.doc ?? EMPTY} caret={editing.caret} className={cn(translation, "outline-none")} onLeave={onLeave} onCancel={onCancel} onDraft={onDraft} />
         </div>
       ) : (
+        <div className="flex min-w-0 flex-col gap-2">
         <div
           data-side="target"
           data-translated={target !== null}
@@ -68,6 +74,14 @@ export function SegmentRow({ segment, target, editing, onEdit, onLeave, onCancel
           }}
         >
           {target ? <DocText doc={target} /> : "Not translated"}
+        </div>
+        {draft && (
+          <div data-draft className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Unsaved draft{draft.changedSince && " — the paragraph changed since"}</span>
+            <Button variant="outline" size="xs" onClick={() => onEdit("end")}>Resume</Button>
+            <Button variant="ghost" size="xs" onClick={onDiscard}>Discard</Button>
+          </div>
+        )}
         </div>
       )}
     </article>

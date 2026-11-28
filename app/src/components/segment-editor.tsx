@@ -5,19 +5,22 @@ import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
 import { UndoRedo } from "@tiptap/extensions"
 import { EditorContent, useEditor } from "@tiptap/react"
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 
 import { Doc } from "@shared/protocol.ts"
 
 /** How an edit ended: the focus went elsewhere, or a key said where to go next. */
 export type Leave = "blur" | "next" | "previous" | "confirm"
 
+/** How long typing rests before what was typed is handed on to be kept as a draft. */
+const DRAFT_DELAY = 300
+
 /** A translation is one or more paragraphs of text, as the book stores it: nothing else can be typed into it. */
 const Paragraphs = Document.extend({ content: "paragraph+" })
 
 /** One translation being edited in place. It holds the text while it is open and hands it over once, when it is
  *  left; saving is the caller's. ⌘Z here takes back typing — the book's own undo is outside (App). */
-export function SegmentEditor({ doc, caret, className, onLeave, onCancel }: {
+export function SegmentEditor({ doc, caret, className, onLeave, onCancel, onDraft }: {
   doc: Doc
   /** Where the caret starts: a position in the document, or its end. */
   caret: number | "end"
@@ -27,9 +30,13 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel }: {
   onLeave: (doc: Doc, how: Leave) => void
   /** Escape: the edit ended and its text is dropped. Called once. */
   onCancel: () => void
+  /** The text as it stands, a moment after typing rests: for keeping as a draft. Never called once the edit has ended. */
+  onDraft: (doc: Doc) => void
 }) {
   // an edit ends once: the blur that follows a key that already ended it says nothing more
   const left = useRef(false)
+  const draftTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(draftTimer.current), [])
   const editor = useEditor({
     extensions: [
       Paragraphs,
@@ -43,6 +50,7 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel }: {
           const leave = (how: Leave) => () => {
             if (left.current) return true
             left.current = true
+            window.clearTimeout(draftTimer.current)
             onLeave(Doc.parse(this.editor.getJSON()), how)
             return true
           }
@@ -53,6 +61,7 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel }: {
             Escape: () => {
               if (!left.current) {
                 left.current = true
+                window.clearTimeout(draftTimer.current)
                 onCancel()
               }
               return true
@@ -64,9 +73,16 @@ export function SegmentEditor({ doc, caret, className, onLeave, onCancel }: {
     content: doc,
     autofocus: caret,
     editorProps: { attributes: { class: className, lang: "ko", "aria-label": "Edit translation", spellcheck: "false" } },
+    onUpdate: ({ editor }) => {
+      window.clearTimeout(draftTimer.current)
+      draftTimer.current = window.setTimeout(() => {
+        if (!left.current) onDraft(Doc.parse(editor.getJSON()))
+      }, DRAFT_DELAY)
+    },
     onBlur: ({ editor }) => {
       if (left.current) return
       left.current = true
+      window.clearTimeout(draftTimer.current)
       onLeave(Doc.parse(editor.getJSON()), "blur")
     },
   })
