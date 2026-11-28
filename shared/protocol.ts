@@ -74,6 +74,17 @@ export type Result<N extends RequestName> = z.infer<(typeof REQUESTS)[N]["result
 
 export const isRequestName = (name: string): name is RequestName => Object.hasOwn(REQUESTS, name)
 
+/** The first thing the page says to the server, and what it hears back. A page of another protocol is refused (409). */
+export const HelloParams = z.strictObject({ protocol: z.int() })
+export const Hello = z.strictObject({
+  protocol: z.int(),
+  /** New each time the server starts: what the page holds from another boot is thrown away. */
+  bootId: z.string().min(1),
+  /** Counts the book's changes within a boot. Nothing writes yet, so it stays 0. */
+  revision: z.int(),
+})
+export type Hello = z.infer<typeof Hello>
+
 /** What a request that failed gets back. */
 export const ErrorBody = z.strictObject({ error: z.string() })
 export type ErrorBody = z.infer<typeof ErrorBody>
