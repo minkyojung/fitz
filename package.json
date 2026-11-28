@@ -5,11 +5,12 @@
   "type": "module",
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "check": "pnpm typecheck && pnpm --dir app typecheck && pnpm test && pnpm test:electron",
+    "check": "pnpm typecheck && pnpm --dir app lint && pnpm --dir app build && pnpm test && pnpm test:electron && pnpm test:e2e",
     "server": "node server/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"server/**/*.test.ts\"",
-    "test:electron": "ELECTRON_RUN_AS_NODE=1 electron --test \"server/**/*.test.ts\""
+    "test:electron": "ELECTRON_RUN_AS_NODE=1 electron --test \"server/**/*.test.ts\"",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "zod": "^4.6.7"
