@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react"
 
-import { AppSidebar } from "@/components/app-sidebar"
+import { AppSidebar, type Stage } from "@/components/app-sidebar"
 import { ChapterView } from "@/components/chapter-view"
 import { LoadError } from "@/components/load-error"
+import { ReviewView } from "@/components/review-view"
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { Separator } from "@/components/ui/separator"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
@@ -19,15 +20,18 @@ export function App() {
   // hello first: a server of another protocol is asked nothing else
   const loaded = useLoad("book", async (signal) => {
     await hello(signal)
-    const [book, chapters] = await Promise.all([request("getBook", {}, signal), request("listChapters", {}, signal)])
-    return { book, chapters }
+    const [book, chapters, pages] = await Promise.all([request("getBook", {}, signal), request("listChapters", {}, signal), request("listPages", {}, signal)])
+    return { book, chapters, pages }
   }, changes)
+  const [stage, setStage] = useState<Stage>("translate")
   const [pickedId, setPickedId] = useState<number | null>(null)
+  // the page the review screen opens on, when the chapter was reached by turning the scan past the last one's end
+  const [arrivalPage, setArrivalPage] = useState<number | null>(null)
 
   if (loaded.status === "loading") return <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">Opening the book…</div>
   if (loaded.status === "error") return <div className="flex min-h-svh items-center justify-center p-6"><LoadError what="The book could not be opened" error={loaded.error} retry={loaded.retry} /></div>
 
-  const { book, chapters } = loaded.data
+  const { book, chapters, pages } = loaded.data
   const chapter = chapters.find((c) => c.id === pickedId) ?? chapters[0]
 
   return (
@@ -35,14 +39,18 @@ export function App() {
       <title>{book.title}</title>
       <AppSidebar
         book={book}
+        stage={stage}
+        onStage={setStage}
         chapters={chapters}
         selectedId={chapter?.id ?? null}
         onPick={(id) => {
           setPickedId(id)
+          setArrivalPage(null)
           window.scrollTo({ top: 0 })
         }}
       />
-      <SidebarInset>
+      {/* in review the scan and the list scroll each on their own, within the window */}
+      <SidebarInset className={stage === "review" ? "h-svh overflow-hidden md:h-[calc(100svh-1rem)]" : undefined}>
         <header className="flex h-16 shrink-0 items-center gap-2">
           <div className="flex items-center gap-2 px-4">
             <SidebarTrigger className="-ml-1" />
@@ -62,7 +70,20 @@ export function App() {
             </Breadcrumb>
           </div>
         </header>
-        {chapter ? (
+        {chapter && stage === "review" ? (
+          <ReviewView
+            key={chapter.id}
+            chapter={chapter}
+            chapters={chapters}
+            pages={pages}
+            arrivalPage={arrivalPage}
+            changes={changes}
+            onChapter={(id, pageNo) => {
+              setPickedId(id)
+              setArrivalPage(pageNo)
+            }}
+          />
+        ) : chapter ? (
           <ChapterView key={chapter.id} chapter={chapter} changes={changes} onChanged={bookChanged} />
         ) : (
           <p className="p-4 text-sm text-muted-foreground">This book has no chapters.</p>

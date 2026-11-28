@@ -1,4 +1,4 @@
-import { Book02Icon } from "@hugeicons/core-free-icons"
+import { Book02Icon, DocumentValidationIcon, TranslateIcon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 
 import type { Book, Chapter } from "@shared/protocol.ts"
@@ -15,15 +15,27 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-/** The book and its chapters. Each chapter says how many of its paragraphs are translated. */
+/** The two stages of the work on a book: checking the source against the scan, then translating it. */
+export type Stage = "review" | "translate"
+const STAGES: { stage: Stage; label: string; icon: typeof TranslateIcon }[] = [
+  { stage: "review", label: "Review", icon: DocumentValidationIcon },
+  { stage: "translate", label: "Translate", icon: TranslateIcon },
+]
+
+/** The book, its stages, and its chapters. Each chapter counts what is done in the stage: paragraphs checked against
+ *  the scan in Review, translated in Translate. */
 export function AppSidebar({
   book,
+  stage,
+  onStage,
   chapters,
   selectedId,
   onPick,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   book: Book
+  stage: Stage
+  onStage: (stage: Stage) => void
   chapters: Chapter[]
   selectedId: number | null
   onPick: (chapterId: number) => void
@@ -43,6 +55,19 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
+          <SidebarGroupLabel>Stage</SidebarGroupLabel>
+          <SidebarMenu>
+            {STAGES.map((s) => (
+              <SidebarMenuItem key={s.stage} data-stage={s.stage}>
+                <SidebarMenuButton isActive={s.stage === stage} aria-current={s.stage === stage ? "true" : undefined} onClick={() => onStage(s.stage)}>
+                  <HugeiconsIcon icon={s.icon} strokeWidth={2} />
+                  <span>{s.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+        <SidebarGroup>
           <SidebarGroupLabel>Chapters</SidebarGroupLabel>
           <SidebarMenu>
             {chapters.map((chapter) => (
@@ -56,7 +81,7 @@ export function AppSidebar({
                   <span>{chapter.title}</span>
                 </SidebarMenuButton>
                 <SidebarMenuBadge>
-                  {chapter.translatedCount}/{chapter.segmentCount}
+                  {stage === "review" ? chapter.verifiedCount : chapter.translatedCount}/{chapter.segmentCount}
                 </SidebarMenuBadge>
               </SidebarMenuItem>
             ))}

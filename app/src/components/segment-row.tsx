@@ -1,5 +1,6 @@
 import type { Doc, Segment } from "@shared/protocol.ts"
 
+import { DocText } from "@/components/doc-text"
 import { SegmentEditor, type Leave } from "@/components/segment-editor"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -86,15 +87,4 @@ export function SegmentRow({ segment, target, draft, editing, onEdit, onLeave, o
       )}
     </article>
   )
-}
-
-/** The text as the database holds it: one block per paragraph, italic where it is marked. */
-function DocText({ doc }: { doc: Doc }) {
-  return doc.content.map((paragraph, i) => (
-    <p key={i}>
-      {(paragraph.content ?? []).map((node, j) =>
-        node.marks?.some((mark) => mark.type === "italic") ? <em key={j}>{node.text}</em> : node.text,
-      )}
-    </p>
-  ))
 }
