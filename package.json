@@ -15,6 +15,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^24",
     "electron": "^45.5.0",
     "typescript": "~6.0.2"
