@@ -8,7 +8,7 @@
 ## 1. 파일과 연결
 | 규칙 | 근거 |
 |---|---|
-| 프로토타입의 책은 `user_version = 0`이다. 새 앱은 책을 열기 전에 마이그레이션(`server/migrate.ts`)으로 최신 버전(지금 2)까지 올리고, 그 버전이 아닌 책은 읽지 않는다. 더 새 버전의 책은 건드리지 않고 거절한다 | ✅ PRAGMA, `server/migrate.test.ts` |
+| 프로토타입의 책은 `user_version = 0`이다. 새 앱은 책을 열기 전에 마이그레이션(`server/migrate.ts`)으로 최신 버전(지금 3)까지 올리고, 그 버전이 아닌 책은 읽지 않는다. 더 새 버전의 책은 건드리지 않고 거절한다 | ✅ PRAGMA, `server/migrate.test.ts` |
 | 저널은 `delete` 방식이다(WAL 아님). 사본은 `.backup`이나 `node:sqlite`의 `backup()`으로 만든다 | ✅ PRAGMA, 파일 헤더 |
 | 버전 1부터 WAL이다. 마이그레이션이 `journal_mode = WAL`로 바꾸고, 그 전까지(프로토타입이 같은 파일을 쓰는 동안)는 `delete`다. WAL에서는 DB 옆에 `-wal`, `-shm` 파일이 생기므로 사본은 파일 복사가 아니라 `backup()`으로 만든다. 쓰기 내구성은 `synchronous = FULL`(기본값)을 유지한다 | ✅ `server/migrate.ts`. T3 Code·Orca·VS Code가 WAL을 쓴다 |
 | 연결마다 `PRAGMA foreign_keys = ON`을 켠다(연결 단위 설정이라 DB에 저장되지 않는다). 지금 `foreign_key_check`의 위반은 0건이다 | ✅ `commands.mjs` `openDb`, PRAGMA |
@@ -23,6 +23,7 @@
 - **마이그레이션한 책은 프로토타입으로 열면 안 된다.** 프로토타입은 버전 번호와 `undo_floor`를 모르므로, 옛 편집을 ⌘Z로 되돌릴 수 있다. 그래서 실제 `book.db`는 번역자가 프로토타입 작업을 멈춘 뒤에 옮긴다. 그 전까지 마이그레이션은 사본에만 한다.
 - 버전 1에서 바뀌는 것은 세 가지뿐이다: `user_version` 1, WAL, `meta.undo_floor`. 스키마와 다른 행은 그대로다(테스트가 전체 내용을 비교한다).
 - 버전 2는 표 하나를 더한다: `draft`(단락마다 한 행, 치고 있는 번역문과 편집을 시작할 때의 단락 버전). 임시본은 책의 변경이 아니다. `ops`에 남지 않고, 단락 버전을 올리지 않고, ⌘Z 대상이 아니다. 번역자가 그 번역문을 저장하거나 버리면 지워진다. 다른 쪽(Claude)이 단락을 고쳐도 임시본은 남고, 저장된 버전이 지금 버전과 다르면 "그 뒤에 단락이 바뀌었다"는 뜻이다. `db/schema.sql`은 프로토타입의 스키마(버전 0) 그대로 두고, 새 표는 마이그레이션에만 적는다.
+- 버전 3은 임시본에 쪽(`side`: source / target)을 더한다. 단락마다, 쪽마다 하나다(열: `segment_id, side, doc, base_version, saved_at`). 버전 2의 번역문 임시본은 `target`으로 옮겨진다. SQLite는 표의 키를 바꿀 수 없어서 표를 새로 만들어 옮긴다.
 - 백업은 뜬 직후 파일 하나(`delete` 방식)로 만든다. WAL인 책의 백업은 내용 일부가 `-wal`에 있을 수 있는데, 되돌리기는 파일 하나를 복사하기 때문이다.
 
 ## 2. 단락(`segment`)
@@ -72,7 +73,8 @@
   - 화면에서 오는 저장은 `expectVersion`이 필수다(규약). 명령 층에서는 선택이다(undo·redo의 재실행은 버전에 기대지 않는다).
   - 아무것도 바꾸지 않는 저장은 기록하지 않고 버전도 올리지 않는다.
   - 같은 글을 다시 보내면 저장된 문서를 그대로 둔다(평문으로 같은 원문을 보내도 기울임이 지워지지 않는다).
-- 명령은 지금 `updateSegment` 하나다. 프로토타입의 나머지 명령(분할, 병합, 댓글, 주석, 용어집 등)은 해당 기능을 만들 때 옮긴다. 옛 기록에 그 이름들이 남아 있지만, 경계 아래라서 재실행되지 않는다.
+- 명령은 `updateSegment`와 구조 명령(`splitSegment`·`unsplit`·`mergeWithNext`·`unmerge`·`insertSegment`·`deleteSegment`, `server/structure.ts`)이다. 이름과 기록 모양은 프로토타입과 같다. 나머지 명령(댓글, 주석, 용어집 등)은 해당 기능을 만들 때 옮긴다. 옛 기록에 그 이름들이 남아 있지만 경계 아래라서 재실행되지 않는다.
+- **단락에 딸린 행**: 단락을 가리키는 표는 9개다(`note`, `comment`, `relation`, `segment_version`, `agent_suggestion`, `drill_card`, `drill_pick`, `segment_box`, `draft`). 합치기는 뒤 단락의 행을 모두 앞 단락으로 옮기고(상자는 쪽별로 합치고, 임시본은 지운다), 되돌리기는 옮긴 행을 원래 단락으로 돌려놓는다. 원문 쪽 위치(`note.src_*`, 원문 쪽 `comment`)는 원문과 함께 옮겨진다. 나누기는 뒤쪽 글에 있는 주석과 원문 댓글을 새 단락으로 옮긴다. 지우기는 딸린 행이 있는 단락을 거절한다. ✅ `server/structure.test.ts`(실제 책의 사본에서 해당 단락을 모두 합쳤다 되돌려 모든 표가 그대로인지 확인)
 
 ## 6. 그 밖의 표
 - ✅ `meta`에는 `built_at`, `last_edit_at` 두 키가 있다. 쓰기마다 `last_edit_at`을 갱신한다(새 앱도 그대로). `schema.sql` 주석에는 "`last_edit_at`이 있으면 빌드가 DB를 덮어쓰지 않는다"고 되어 있다. 파이프라인 쪽 동작은 ❓(코드를 읽지 않았다).
