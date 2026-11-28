@@ -7,6 +7,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbS
 import { Separator } from "@/components/ui/separator"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { hello, request } from "@/data/api"
+import { useBookUndo } from "@/hooks/use-book-undo"
 import { useLoad } from "@/hooks/use-load"
 
 export function App() {
@@ -14,6 +15,7 @@ export function App() {
   // holds only what it was last told.
   const [changes, setChanges] = useState(0)
   const bookChanged = useCallback(() => setChanges((n) => n + 1), [])
+  useBookUndo(bookChanged)
   // hello first: a server of another protocol is asked nothing else
   const loaded = useLoad("book", async (signal) => {
     await hello(signal)
