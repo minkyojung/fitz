@@ -1,5 +1,7 @@
-packages: []
+packages:
+  - app
 
 allowBuilds:
+  electron: true
   esbuild: true
   msw: false
