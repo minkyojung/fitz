@@ -5,7 +5,10 @@
   "type": "module",
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "check": "pnpm typecheck && pnpm --dir app typecheck && pnpm test && pnpm test:electron",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"server/**/*.test.ts\"",
+    "test:electron": "ELECTRON_RUN_AS_NODE=1 electron --test \"server/**/*.test.ts\""
   },
   "dependencies": {
     "zod": "^4.6.7"
