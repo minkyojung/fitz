@@ -18,8 +18,8 @@ export interface SideEdit {
   /** Text typed here and never saved, when there is some. */
   draft: { changedSince: boolean } | null
   /** Set while this side is being edited: where the caret starts and the text the edit opens on. */
-  editing: { caret: number | "end"; doc: Doc | null } | null
-  onEdit: (caret: number | "end") => void
+  editing: { caret: number | "end" | "all"; doc: Doc | null } | null
+  onEdit: (caret: number | "end" | "all") => void
   onLeave: (doc: Doc, how: Leave, caret: number) => void
   onCancel: () => void
   onDraft: (doc: Doc) => void
@@ -40,7 +40,7 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
   /** Called when an edit begins on a paragraph. */
   onEditing?: (segment: Segment) => void
 }) {
-  const [editing, setEditing] = useState<{ id: number; caret: number | "end"; doc: Doc | null; base: number } | null>(null)
+  const [editing, setEditing] = useState<{ id: number; caret: number | "end" | "all"; doc: Doc | null; base: number } | null>(null)
   // texts on their way to the server, shown until the save settles so the old text does not flash back
   const [saving, setSaving] = useState<Record<number, Doc | null>>({})
   // Drafts go to the server one after another, and a save waits for them: a draft must never land after the save that
@@ -54,7 +54,7 @@ export function useSegmentEdits({ side, segments, setSegments, onChanged, onEdit
     return draft && !sameDoc(draft.doc, docOf(segment, side)) ? draft : null
   }
   // an edit opens on the draft when there is one: text typed and never saved is not passed over
-  const edit = (segment: Segment, caret: number | "end") => {
+  const edit = (segment: Segment, caret: number | "end" | "all") => {
     const draft = draftOf(segment)
     setEditing({ id: segment.id, caret: draft ? "end" : caret, doc: draft?.doc ?? docOf(segment, side), base: segment.version })
     onEditing?.(segment)

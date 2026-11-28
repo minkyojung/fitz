@@ -46,8 +46,8 @@ export function SegmentEditor({ ref, doc, caret, className, lang, single = false
   lang: "en" | "ko"
   /** One paragraph only. */
   single?: boolean
-  /** Where the caret starts: a position in the document, or its end. */
-  caret: number | "end"
+  /** Where the caret starts: a position in the document, its end, or all of the text chosen (to be typed over). */
+  caret: number | "end" | "all"
   /** The read view's classes, so nothing shifts when the editor takes its place. */
   className: string
   /** The edit ended with this text; `caret` is where the caret was in it (a text offset). Called once. */

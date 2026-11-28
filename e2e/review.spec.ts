@@ -97,7 +97,7 @@ test("turning the page chooses its first paragraph; past the chapter's end the c
   // the pages after the chapter's last paragraph and before the next chapter are the chapter's, with nothing on them
   await nextButton.click()
   await expect(shown).toHaveAttribute("data-page-no", String(last.pageEnd + 1))
-  await expect(notice).toHaveText(`p. ${last.pageEnd + 1} · No paragraphs on this page.`)
+  await expect(notice.locator("span")).toHaveText(`p. ${last.pageEnd + 1} · No paragraphs on this page.`)
   await expect(selected).toHaveCount(0)
   await expect(page.locator("[data-slot=breadcrumb-page]")).toHaveText(prologue!.title)
   while (Number(await shown.getAttribute("data-page-no")) < next!.startPage - 1) await nextButton.click()
@@ -400,4 +400,45 @@ test("a cut at the very start is refused and says why; nothing changes", async (
   await expect(page.locator("[data-sonner-toast]")).toContainText("cut must fall inside the text")
   expect(chapterRows(sql, chapterId)).toEqual(before)
   complaints.length = 0 // the refused split is the point of this test
+})
+
+// ---- what the import left out
+
+test("an empty page gets a caption: it is put under the page and opened with its text chosen to type over; ⌘Z takes it back", async ({ page, door, sql }) => {
+  const [prologue] = chapters(sql)
+  const empty = segments(sql, prologue!.id).at(-1)!.pageEnd + 1
+  const { scan, shown, notice, selected } = await review(page, door, prologue!.id)
+  while (Number(await shown.getAttribute("data-page-no")) < empty) await scan.getByRole("button", { name: "Next page" }).click()
+  await expect(notice).toBeVisible()
+  const count = await page.locator("[data-segment-id]").count()
+  await notice.getByRole("button", { name: "Add caption" }).click()
+
+  await expect(page.locator("[data-segment-id]")).toHaveCount(count + 1)
+  const editor = selected.locator("[contenteditable=true]")
+  await expect(editor).toBeFocused()
+  await expect(editor).toHaveText("Caption")
+  await page.keyboard.insertText("The docks at Mobile")
+  await page.keyboard.press("Enter")
+  const caption = () => ({ ...sql.prepare("SELECT kind, source_text, page_start, page_end, ocr_text, idx FROM segment WHERE chapter_id = ? ORDER BY idx DESC LIMIT 1").get(prologue!.id) })
+  await expect.poll(() => caption().source_text).toBe("The docks at Mobile")
+  expect(caption()).toMatchObject({ kind: "caption", page_start: empty, page_end: empty, ocr_text: null })
+  await expect(notice).toHaveCount(0)
+  await expect(selected.locator("[data-kind]")).toHaveText("Caption")
+  await expect(page.locator("h3", { hasText: `p. ${empty}` })).toBeVisible()
+  await expect(shown).toHaveAttribute("data-page-no", String(empty))
+
+  await page.locator("header").click()
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect.poll(() => caption().source_text).toBe("Caption")
+  await page.keyboard.press("ControlOrMeta+z")
+  await expect(page.locator("[data-segment-id]")).toHaveCount(count)
+  expect(segments(sql, prologue!.id).some((s) => s.pageStart === empty)).toBe(false)
+})
+
+test("a page before the first chapter offers no caption: it belongs to no chapter", async ({ page, door, sql }) => {
+  const [prologue] = chapters(sql)
+  const { scan, notice } = await review(page, door, prologue!.id)
+  await scan.getByRole("button", { name: "Previous page" }).click()
+  await expect(notice).toBeVisible()
+  await expect(notice.getByRole("button", { name: "Add caption" })).toHaveCount(0)
 })

@@ -1,4 +1,6 @@
 import { Fragment, useState } from "react"
+import { Add01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { usePanelRef } from "react-resizable-panels"
 import { toast } from "sonner"
 
@@ -7,6 +9,7 @@ import type { Chapter, Page, Segment, SegmentPatch } from "@shared/protocol.ts"
 import { LoadError } from "@/components/load-error"
 import { PageViewer } from "@/components/page-viewer"
 import { ReviewRow } from "@/components/review-row"
+import { Button } from "@/components/ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Skeleton } from "@/components/ui/skeleton"
 import { request } from "@/data/api"
@@ -49,6 +52,21 @@ export function ReviewView({ chapter, chapters, pages, arrivalPage, changes, onC
   }
   // the source is edited where it is shown; an edit chooses its paragraph, so the scan follows Tab
   const edits = useSegmentEdits({ side: "source", segments, setSegments: (s) => loaded.status === "ready" && loaded.set(s), onChanged, onEditing: select })
+  /** A caption on a page the import left it out of: put after the page's last paragraph (or the one before the page),
+   *  and opened with its placeholder chosen, to be typed over. */
+  async function addCaption(pageNo: number) {
+    const before = segments.filter((s) => s.pageStart <= pageNo).at(-1)
+    try {
+      const caption = await request("insertSegment", { chapterId: chapter.id, afterIdx: before?.idx ?? -1, kind: "caption", text: "Caption", pageNo })
+      if (loaded.status === "ready") loaded.set(segments.toSpliced(before ? segments.indexOf(before) + 1 : 0, 0, caption))
+      select(caption)
+      edits.edit(caption, "all")
+    } catch (e) {
+      toast.error("The caption was not added", { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      onChanged()
+    }
+  }
   async function merge(segment: Segment) {
     try {
       await request("mergeWithNext", { id: segment.id, expectVersion: segment.version })
@@ -103,39 +121,49 @@ export function ReviewView({ chapter, chapters, pages, arrivalPage, changes, onC
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize="55%" minSize="30%">
-        <div className="h-full overflow-auto px-3 pb-8">
-          {loaded.status === "loading" && (
-            <div className="flex flex-col gap-3 pt-3" aria-busy="true">
-              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16" />)}
-            </div>
-          )}
-          {loaded.status === "error" && (
-            <div className="pt-3">
-              <LoadError what={`${chapter.title} could not be loaded`} error={loaded.error} retry={loaded.retry} />
-            </div>
-          )}
+        {/* the page's notice stays above the list, where the list's page headers cannot cover it */}
+        <div className="flex h-full flex-col">
           {loaded.status === "ready" && !segments.some((s) => on(s, pageNo)) && (
-            <div data-empty-page role="status" className="sticky top-0 z-10 bg-background py-2 text-sm text-muted-foreground">
-              p. {pageNo} · No paragraphs on this page.
+            <div data-empty-page role="status" className="flex shrink-0 items-center gap-3 border-b px-3 py-2 text-sm text-muted-foreground">
+              <span>p. {pageNo} · No paragraphs on this page.</span>
+              {/* only a page of this chapter: the pages before the first chapter belong to none */}
+              {chapterForPage(chapters, pageNo)?.id === chapter.id && (
+                <Button variant="outline" size="xs" onClick={() => void addCaption(pageNo)}>
+                  <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
+                  Add caption
+                </Button>
+              )}
             </div>
           )}
-          {segments.map((segment, i) => (
-            <Fragment key={segment.id}>
-              {segment.pageStart !== segments[i - 1]?.pageStart && (
-                <h3 className="sticky top-0 z-10 bg-background pt-3 pb-1 text-xs font-medium text-muted-foreground">p. {segment.pageStart}</h3>
-              )}
-              <ReviewRow
-                segment={segment}
-                selected={segment.id === selectedId}
-                source={edits.sideOf(segment)}
-                hasNext={i < segments.length - 1}
-                onSelect={() => select(segment)}
-                onVerify={(verified) => void change(segment, { verified })}
-                onKind={(kind) => void change(segment, { kind })}
-                onMerge={() => void merge(segment)}
-              />
-            </Fragment>
-          ))}
+          <div className="min-h-0 flex-1 overflow-auto px-3 pb-8">
+            {loaded.status === "loading" && (
+              <div className="flex flex-col gap-3 pt-3" aria-busy="true">
+                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16" />)}
+              </div>
+            )}
+            {loaded.status === "error" && (
+              <div className="pt-3">
+                <LoadError what={`${chapter.title} could not be loaded`} error={loaded.error} retry={loaded.retry} />
+              </div>
+            )}
+            {segments.map((segment, i) => (
+              <Fragment key={segment.id}>
+                {segment.pageStart !== segments[i - 1]?.pageStart && (
+                  <h3 className="sticky top-0 z-10 bg-background pt-3 pb-1 text-xs font-medium text-muted-foreground">p. {segment.pageStart}</h3>
+                )}
+                <ReviewRow
+                  segment={segment}
+                  selected={segment.id === selectedId}
+                  source={edits.sideOf(segment)}
+                  hasNext={i < segments.length - 1}
+                  onSelect={() => select(segment)}
+                  onVerify={(verified) => void change(segment, { verified })}
+                  onKind={(kind) => void change(segment, { kind })}
+                  onMerge={() => void merge(segment)}
+                />
+              </Fragment>
+            ))}
+          </div>
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>
