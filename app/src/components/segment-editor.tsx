@@ -1,0 +1,74 @@
+import { Extension } from "@tiptap/core"
+import Document from "@tiptap/extension-document"
+import Italic from "@tiptap/extension-italic"
+import Paragraph from "@tiptap/extension-paragraph"
+import Text from "@tiptap/extension-text"
+import { UndoRedo } from "@tiptap/extensions"
+import { EditorContent, useEditor } from "@tiptap/react"
+import { useRef } from "react"
+
+import { Doc } from "@shared/protocol.ts"
+
+/** How an edit ended: the focus went elsewhere, or a key said where to go next. */
+export type Leave = "blur" | "next" | "previous" | "confirm"
+
+/** A translation is one or more paragraphs of text, as the book stores it: nothing else can be typed into it. */
+const Paragraphs = Document.extend({ content: "paragraph+" })
+
+/** One translation being edited in place. It holds the text while it is open and hands it over once, when it is
+ *  left; saving is the caller's. ⌘Z here takes back typing — the book's own undo is outside (App). */
+export function SegmentEditor({ doc, caret, className, onLeave, onCancel }: {
+  doc: Doc
+  /** Where the caret starts: a position in the document, or its end. */
+  caret: number | "end"
+  /** The read view's classes, so nothing shifts when the editor takes its place. */
+  className: string
+  /** The edit ended with this text. Called once. */
+  onLeave: (doc: Doc, how: Leave) => void
+  /** Escape: the edit ended and its text is dropped. Called once. */
+  onCancel: () => void
+}) {
+  // an edit ends once: the blur that follows a key that already ended it says nothing more
+  const left = useRef(false)
+  const editor = useEditor({
+    extensions: [
+      Paragraphs,
+      Paragraph,
+      Text,
+      Italic,
+      UndoRedo,
+      Extension.create({
+        name: "leaveKeys",
+        addKeyboardShortcuts() {
+          const leave = (how: Leave) => () => {
+            if (left.current) return true
+            left.current = true
+            onLeave(Doc.parse(this.editor.getJSON()), how)
+            return true
+          }
+          return {
+            Tab: leave("next"),
+            "Shift-Tab": leave("previous"),
+            "Mod-Enter": leave("confirm"),
+            Escape: () => {
+              if (!left.current) {
+                left.current = true
+                onCancel()
+              }
+              return true
+            },
+          }
+        },
+      }),
+    ],
+    content: doc,
+    autofocus: caret,
+    editorProps: { attributes: { class: className, lang: "ko", "aria-label": "Edit translation", spellcheck: "false" } },
+    onBlur: ({ editor }) => {
+      if (left.current) return
+      left.current = true
+      onLeave(Doc.parse(editor.getJSON()), "blur")
+    },
+  })
+  return <EditorContent editor={editor} />
+}
