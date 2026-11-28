@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite"
 import { z } from "zod"
 
 import { Book, Chapter, REQUESTS, Segment, isRequestName, type RequestName, type Result } from "../shared/protocol.ts"
+import { LATEST } from "./migrate.ts"
 
 /** A request that cannot be answered as asked: 400 for what was sent, 404 for what is not there. */
 export class RequestError extends Error {
@@ -33,6 +34,9 @@ export function openBook(path: string) {
     // a database from before paragraph versions has no guard against one writer overwriting another: refuse it
     if (!db.prepare("PRAGMA table_info(segment)").all().some((c) => c.name === "version"))
       throw new Error(`${path} has no paragraph versions (segment.version)`)
+    // the book is brought to this app's version before it is opened (migrate.ts); anything else is not read
+    const version = Number(Object.values(db.prepare("PRAGMA user_version").get() ?? {})[0])
+    if (version !== LATEST) throw new Error(`${path} is at book version ${version}, and this app reads version ${LATEST}`)
     const bookRow = db.prepare("SELECT id, title, author FROM book ORDER BY id LIMIT 1")
     const first = bookRow.get()
     if (!first) throw new Error(`${path} has no book in it`)

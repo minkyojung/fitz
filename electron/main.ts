@@ -4,7 +4,7 @@
 // needs nothing of the shell yet), no navigation elsewhere, no new windows, no permissions.
 import { randomBytes } from "node:crypto"
 import { enableCompileCache } from "node:module"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 
 import { BrowserWindow, app, dialog, nativeTheme, session, shell } from "electron"
 
@@ -29,13 +29,15 @@ function fatal(title: string, words: string[]): void {
   app.exit(1)
 }
 
+const dbPath = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
 const server = createServerProcess({
   entry: join(ROOT, "server/main.ts"),
   config: {
     port: Number(process.env.FITZ_PORT ?? 0),
     // new on every launch; it goes to the server over the IPC channel, never in the environment or the arguments
     token: randomBytes(32).toString("base64url"),
-    dbPath: process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db"),
+    dbPath,
+    backupDir: join(dirname(dbPath), "backups"),
     clientDir: join(ROOT, "app/dist"),
   },
   onCrash(words) {

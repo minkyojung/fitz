@@ -1,15 +1,15 @@
 // Migrating a book's database, on throwaway copies of the development copy: the copy in dev-data/ is never changed here.
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { DatabaseSync, backup } from "node:sqlite"
+import { DatabaseSync } from "node:sqlite"
 import { after, before, describe, test } from "node:test"
 
 import { LATEST, MIGRATIONS, migrate, type Migration } from "./migrate.ts"
+import { bookCopy } from "./testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
-const COPY = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
 const SCHEMA = readFileSync(join(ROOT, "db/schema.sql"), "utf8")
 
 const one = (db: DatabaseSync, sql: string) => Object.values(db.prepare(sql).get() ?? {})[0]
@@ -37,28 +37,12 @@ describe("migrating a book", () => {
   let dir: string
   let n = 0
   before(() => {
-    assert.ok(existsSync(COPY), `no development copy at ${COPY} — make it with: scripts/dev-data.sh`)
     dir = mkdtempSync(join(tmpdir(), "fitz-migrate-"))
   })
   after(() => rmSync(dir, { recursive: true, force: true }))
 
   /** A fresh copy of the book as the prototype left it (version 0), in a folder of its own. */
-  const fresh = async () => {
-    const folder = join(dir, String(n++))
-    const path = join(folder, "book.db")
-    const source = new DatabaseSync(COPY, { readOnly: true })
-    try {
-      // the development copy may itself have been migrated by running the app; tests start from version 0
-      mkdirSync(folder, { recursive: true })
-      await backup(source, path)
-    } finally {
-      source.close()
-    }
-    const db = new DatabaseSync(path)
-    db.exec("DELETE FROM meta WHERE key = 'undo_floor'; PRAGMA journal_mode = DELETE; PRAGMA user_version = 0")
-    db.close()
-    return { path, backupDir: join(folder, "backups") }
-  }
+  const fresh = () => bookCopy(join(dir, String(n++)), "prototype")
   const backups = (backupDir: string) => (existsSync(backupDir) ? readdirSync(backupDir) : [])
 
   test("the book becomes version 1: WAL, with the undo floor at its last change, and nothing else touched", async () => {

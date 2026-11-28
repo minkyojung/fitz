@@ -1,18 +1,17 @@
 // The server as a page meets it: over real HTTP on 127.0.0.1, against the development copy of the book.
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { request, type IncomingHttpHeaders, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { after, before, describe, test } from "node:test"
 
 import { Hello, PROTOCOL_VERSION } from "../shared/protocol.ts"
 import { openBook, type BookReader } from "./book.ts"
 import { COOKIE, createBookServer } from "./http.ts"
+import { bookCopy } from "./testing.ts"
 
-const ROOT = resolve(import.meta.dirname, "..")
-const COPY = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
 const TOKEN = "t".repeat(48)
 const BOOT = "boot-under-test"
 
@@ -46,8 +45,8 @@ describe("the server over HTTP", () => {
     call(`/api/${name}`, { method: "POST", body: params === undefined ? undefined : JSON.stringify(params), ...more, headers: { "content-type": "application/json", ...more.headers } })
 
   before(async () => {
-    assert.ok(existsSync(COPY), `no development copy at ${COPY} — make it with: scripts/dev-data.sh`)
     dir = mkdtempSync(join(tmpdir(), "fitz-http-"))
+    const COPY = (await bookCopy(join(dir, "book"), "migrated")).path
     mkdirSync(join(dir, "client/assets"), { recursive: true })
     writeFileSync(join(dir, "client/index.html"), "<!doctype html><title>fitz</title>")
     writeFileSync(join(dir, "client/assets/app-abc123.js"), "console.log('fitz')")

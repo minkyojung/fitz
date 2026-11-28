@@ -10,6 +10,8 @@ export const ServerConfig = z.strictObject({
   token: z.string().min(32),
   /** The book's database file. */
   dbPath: z.string().min(1),
+  /** Where a backup is kept before the book is migrated. */
+  backupDir: z.string().min(1),
   /** The built page (app/dist). */
   clientDir: z.string().min(1),
 })

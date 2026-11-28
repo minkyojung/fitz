@@ -11,9 +11,10 @@ import { after, before, describe, test } from "node:test"
 
 import type { Doc } from "../shared/protocol.ts"
 import { RequestError, answer, openBook, openReadOnly } from "./book.ts"
+import { LATEST } from "./migrate.ts"
+import { bookCopy } from "./testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
-const COPY = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
 const SCHEMA = readFileSync(join(ROOT, "db/schema.sql"), "utf8")
 
 /** Plain text of a document as the data contract has it: text nodes joined, paragraphs joined by a newline. */
@@ -23,13 +24,16 @@ const pm = (text: string, marks?: { type: string }[]) =>
   JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text, ...(marks ? { marks } : {}) }] }] })
 
 describe("the development copy of the book", () => {
+  let work: string
+  let COPY: string
   let sql: DatabaseSync
   let book: ReturnType<typeof openBook>
   let shaBefore: string
   const count = (query: string, ...params: number[]) => Number(Object.values(sql.prepare(query).get(...params) ?? {})[0])
 
-  before(() => {
-    assert.ok(existsSync(COPY), `no development copy at ${COPY} — make it with: scripts/dev-data.sh`)
+  before(async () => {
+    work = mkdtempSync(join(tmpdir(), "fitz-book-copy-"))
+    COPY = (await bookCopy(work, "migrated")).path
     shaBefore = sha(COPY)
     sql = new DatabaseSync(COPY, { readOnly: true })
     book = openBook(COPY)
@@ -37,6 +41,7 @@ describe("the development copy of the book", () => {
   after(() => {
     book?.close()
     sql?.close()
+    if (work) rmSync(work, { recursive: true, force: true })
   })
 
   test("chapters, paragraphs and translated paragraphs match the database", (t) => {
@@ -131,7 +136,8 @@ describe("the development copy of the book", () => {
 
   test("reading leaves the file as it was", () => {
     assert.equal(sha(COPY), shaBefore)
-    assert.ok(!existsSync(`${COPY}-journal`) && !existsSync(`${COPY}-wal`), "no file appears beside the database")
+    // a WAL database has its -wal and -shm beside it while it is open; a rollback journal would mean a write
+    assert.ok(!existsSync(`${COPY}-journal`), "no rollback journal appears beside the database")
   })
 })
 
@@ -145,6 +151,7 @@ describe("databases that are not as the contract says", () => {
     const path = join(dir, name)
     const db = new DatabaseSync(path)
     db.exec(SCHEMA)
+    db.exec(`PRAGMA user_version = ${LATEST}`)
     db.exec("INSERT INTO book(id, title, source_pdf) VALUES (1, 'A Book', '/nowhere.pdf')")
     db.exec("INSERT INTO chapter(id, book_id, idx, title) VALUES (1, 1, 0, 'One')")
     const insert = db.prepare("INSERT INTO segment(chapter_id, idx, page_start, page_end, source_doc, source_text, target_doc, target_text, status) VALUES (1, ?, 1, 1, ?, 'x', ?, ?, ?)")
@@ -167,10 +174,23 @@ describe("databases that are not as the contract says", () => {
     assert.throws(() => openBook(path), /version/)
   })
 
+  test("a book of another version is refused: not yet migrated, or from a newer fitz", () => {
+    for (const version of [0, LATEST + 1]) {
+      const path = join(dir, `v${version}.db`)
+      const db = new DatabaseSync(path)
+      db.exec(SCHEMA)
+      db.exec(`PRAGMA user_version = ${version}`)
+      db.exec("INSERT INTO book(id, title, source_pdf) VALUES (1, 'A Book', '/nowhere.pdf')")
+      db.close()
+      assert.throws(() => openBook(path), new RegExp(`book version ${version}`))
+    }
+  })
+
   test("a book with no book row is refused", () => {
     const path = join(dir, "empty.db")
     const db = new DatabaseSync(path)
     db.exec(SCHEMA)
+    db.exec(`PRAGMA user_version = ${LATEST}`)
     db.close()
     assert.throws(() => openBook(path), /no book/)
   })

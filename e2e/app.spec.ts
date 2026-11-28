@@ -1,13 +1,14 @@
 // The real app: Electron started as a person starts it, with a profile of its own, on the development copy.
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test"
 
+import { COPY, bookCopy } from "../server/testing.ts"
+
 const ROOT = resolve(import.meta.dirname, "..")
-const COPY = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 const gone = async (pid: number, what: string) => {
@@ -16,10 +17,11 @@ const gone = async (pid: number, what: string) => {
 
 /** The app launched, with what it printed and a way to wait for a line of it. */
 async function launch() {
-  if (!existsSync(COPY)) throw new Error(`no development copy at ${COPY} — make it with: scripts/dev-data.sh`)
   if (!existsSync(join(ROOT, "app/dist/index.html"))) throw new Error("no built page — build it with: pnpm --dir app build")
   const profile = mkdtempSync(join(tmpdir(), "fitz-app-"))
-  const app = await electron.launch({ args: [ROOT, `--user-data-dir=${profile}`], env: { ...process.env, FITZ_DB: COPY, FITZ_PORT: "0" } })
+  // a book of its own, as the prototype left it: the app migrates it on opening, as it will the real one
+  const book = await bookCopy(join(profile, "book"), "prototype")
+  const app = await electron.launch({ args: [ROOT, `--user-data-dir=${profile}`], env: { ...process.env, FITZ_DB: book.path, FITZ_PORT: "0" } })
   let output = ""
   app.process().stdout?.on("data", (d) => { output += d })
   app.process().stderr?.on("data", (d) => { output += d })
@@ -29,7 +31,7 @@ async function launch() {
     return [...output.matchAll(pattern)]
   }
   const serverPids = async (n = 1) => (await printed(/\[shell\] server ready pid=(\d+)/g, n)).map((m) => Number(m[1]))
-  return { app, pid: app.process().pid!, profile, printed, serverPids }
+  return { app, pid: app.process().pid!, profile, book, printed, serverPids }
 }
 
 let running: { app: ElectronApplication; pid: number; profile: string } | null = null
@@ -64,6 +66,16 @@ test("the app opens on the book, as the database holds it", async () => {
     sql.close()
   }
   expect(new URL(page.url()).search, "the token has left the address").toBe("")
+
+  // the book it opened was the prototype's; it is now this app's version, with what it was kept beside it
+  const opened = new DatabaseSync(launched.book.path, { readOnly: true })
+  try {
+    expect(Object.values(opened.prepare("PRAGMA user_version").get() ?? {})[0]).toBe(1)
+    expect(Object.values(opened.prepare("PRAGMA journal_mode").get() ?? {})[0]).toBe("wal")
+  } finally {
+    opened.close()
+  }
+  expect(readdirSync(join(launched.book.path, "..", "backups"))).toHaveLength(1)
   const shown = await launched.printed(/\[shell\] window shown (\d+) ms after launch/g)
   test.info().annotations.push({ type: "startup", description: `window shown ${shown[0]?.[1]} ms after launch` })
 })

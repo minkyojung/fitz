@@ -2,23 +2,36 @@
 // signal or by the shell going away. Run with the same binary as the tests (node, or Electron as node).
 import assert from "node:assert/strict"
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { createServer } from "node:net"
+import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { after, describe, test } from "node:test"
+import { DatabaseSync } from "node:sqlite"
+import { after, before, describe, test } from "node:test"
 
 import { PROTOCOL_VERSION } from "../shared/protocol.ts"
 import { ToShell, type ServerConfig } from "../shared/shellChannel.ts"
+import { LATEST } from "./migrate.ts"
+import { bookCopy } from "./testing.ts"
 
 const ROOT = resolve(import.meta.dirname, "..")
-const COPY = process.env.FITZ_DB ?? join(ROOT, "dev-data/out/book.db")
 const MAIN = join(ROOT, "server/main.ts")
 const TOKEN = "s".repeat(48)
-const config = (more: Partial<ServerConfig> = {}): ServerConfig => ({ port: 0, token: TOKEN, dbPath: COPY, clientDir: join(ROOT, "app/dist"), ...more })
 
 describe("the server as a process", () => {
+  let dir: string
+  let COPY: string
+  let backupDir: string
+  const config = (more: Partial<ServerConfig> = {}): ServerConfig => ({ port: 0, token: TOKEN, dbPath: COPY, backupDir, clientDir: join(ROOT, "app/dist"), ...more })
   const started: ChildProcess[] = []
-  after(() => { for (const child of started) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL") })
+  before(async () => {
+    dir = mkdtempSync(join(tmpdir(), "fitz-main-"))
+    ;({ path: COPY, backupDir } = await bookCopy(join(dir, "book"), "migrated"))
+  })
+  after(() => {
+    for (const child of started) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  })
 
   /** The server started; `output` gathers what it prints. With `ipc` it waits to be told its settings. */
   const run = ({ ipc = true, env = {} }: { ipc?: boolean; env?: Record<string, string> } = {}) => {
@@ -39,7 +52,6 @@ describe("the server as a process", () => {
   const refusesConnections = (port: number) => assert.rejects(fetch(`http://127.0.0.1:${port}/`), "nothing listens once the server has stopped")
 
   test("told its settings, it says ready with its port and answers there", async () => {
-    assert.ok(existsSync(COPY), `no development copy at ${COPY} — make it with: scripts/dev-data.sh`)
     const { child, output, exited } = run()
     child.send({ start: config() })
     const message = await within(10_000, "ready", new Promise((done) => child.once("message", done)))
@@ -104,6 +116,45 @@ describe("the server as a process", () => {
     assert.equal(await within(5000, "exit", exited), 0)
   })
 
+  test("a book as the prototype left it is migrated before it is served, with a backup kept", async () => {
+    const book = await bookCopy(join(dir, "prototype"), "prototype")
+    const version = () => {
+      const db = new DatabaseSync(book.path, { readOnly: true })
+      try { return [Number(Object.values(db.prepare("PRAGMA user_version").get() ?? {})[0]), Object.values(db.prepare("PRAGMA journal_mode").get() ?? {})[0]] } finally { db.close() }
+    }
+    assert.deepEqual(version(), [0, "delete"])
+    const { child, output, exited } = run()
+    child.send({ start: config({ dbPath: book.path, backupDir: book.backupDir }) })
+    const port = await ready(child)
+    assert.equal((await hello(port)).status, 200)
+    assert.deepEqual(version(), [LATEST, "wal"])
+    assert.equal(readdirSync(book.backupDir).length, 1)
+    assert.match(output.out, /book migrated from version 0 to 1/)
+    child.kill("SIGTERM")
+    assert.equal(await within(5000, "exit", exited), 0)
+
+    // started again on the same book: nothing to migrate, no second backup
+    const again = run()
+    again.child.send({ start: config({ dbPath: book.path, backupDir: book.backupDir }) })
+    assert.equal((await hello(await ready(again.child))).status, 200)
+    assert.equal(readdirSync(book.backupDir).length, 1)
+    assert.ok(!again.output.out.includes("migrated"))
+    again.child.kill("SIGTERM")
+    await within(5000, "exit", again.exited)
+  })
+
+  test("a book from a newer fitz ends it, saying so, and the book is not touched", async () => {
+    const book = await bookCopy(join(dir, "newer"), "migrated")
+    const db = new DatabaseSync(book.path)
+    db.exec(`PRAGMA user_version = ${LATEST + 1}`)
+    db.close()
+    const { child, output, exited } = run()
+    child.send({ start: config({ dbPath: book.path, backupDir: book.backupDir }) })
+    assert.equal(await within(5000, "exit", exited), 1)
+    assert.match(output.err, /newer/)
+    assert.equal(readdirSync(book.backupDir).length, 1, "only the backup from when the copy was made")
+  })
+
   test("a database that is not there ends it, saying which", async () => {
     const missing = join(ROOT, "dev-data/no-such-book.db")
     const { child, output, exited } = run()
@@ -137,7 +188,7 @@ describe("the server as a process", () => {
   })
 
   test("run by hand, it takes its settings from the environment and prints where it is", async () => {
-    const { child, output, exited } = run({ ipc: false, env: { FITZ_DB: COPY, FITZ_PORT: "0" } })
+    const { child, output, exited } = run({ ipc: false, env: { FITZ_DB: COPY, FITZ_BACKUP_DIR: backupDir, FITZ_PORT: "0" } })
     const line = await within(10_000, "the address line", new Promise<string>((done) => {
       const look = () => { const m = /http:\/\/127\.0\.0\.1:\d+\/\?token=\S+/.exec(output.out); if (m) done(m[0]) }
       child.stdout?.on("data", look)
