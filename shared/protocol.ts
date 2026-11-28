@@ -4,7 +4,7 @@
 import { z } from "zod"
 
 /** Said by both ends when they first meet; a mismatch is an error, never a guess. Raised whenever a shape here changes. */
-export const PROTOCOL_VERSION = 6
+export const PROTOCOL_VERSION = 7
 
 // A paragraph's text as the editor keeps it (ProseMirror JSON): doc → paragraph → text, nothing else.
 // A text node may carry marks (the prototype's review editor can set italic); they are passed on as they are.
@@ -129,6 +129,8 @@ export const REQUESTS = {
   splitSegment: { params: z.strictObject({ id: z.int(), offset: z.int(), expectVersion: z.int() }), result: z.tuple([Segment, Segment]) },
   /** Join the chapter's next paragraph to this one: the merged paragraph. */
   mergeWithNext: { params: z.strictObject({ id: z.int(), expectVersion: z.int() }), result: Segment },
+  /** Put a new paragraph after the one at `afterIdx` (-1: first) — a caption the import left out of a page. */
+  insertSegment: { params: z.strictObject({ chapterId: z.int(), afterIdx: z.int(), kind: z.enum(SEGMENT_KINDS), text: z.string(), pageNo: z.int() }), result: Segment },
   /** Take back the translator's last change still standing; null when there is none. Refused (409) when a later change touched the same thing. */
   undo: { params: none, result: Change.nullable() },
   /** Do again the translator's change taken back last; null when there is none. */

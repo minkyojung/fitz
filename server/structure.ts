@@ -5,9 +5,9 @@ import type { DatabaseSync } from "node:sqlite"
 
 import { z } from "zod"
 
-import { Doc, SEGMENT_STATUSES } from "../shared/protocol.ts"
+import { Doc, SEGMENT_KINDS, SEGMENT_STATUSES } from "../shared/protocol.ts"
 import { RequestError } from "./book.ts"
-import { type Command, type Row, checkVersion, docText, getSegment, segmentOut, sent } from "./command-kit.ts"
+import { type Command, type Row, checkVersion, docText, getSegment, segmentOut, sent, textDoc } from "./command-kit.ts"
 
 /** Tables whose rows belong to one paragraph (each has `segment_id`). The source-side ones carry offsets into its text. */
 const BELONGING = ["note", "comment", "relation", "segment_version", "agent_suggestion", "drill_card", "drill_pick"] as const
@@ -132,6 +132,9 @@ const Unmerge = z.strictObject({
   shift: z.int(),
 })
 
+const Insert = z.strictObject({ id: z.int().optional(), chapterId: z.int(), afterIdx: z.int(), kind: z.enum(SEGMENT_KINDS), text: z.string(), pageNo: z.int() })
+const Delete = z.strictObject({ id: z.int() })
+
 export const STRUCTURE: Record<string, Command> = {
   /** Cut a paragraph at a text offset of its source. The tail is a new paragraph right after it: same kind, on the head's
    *  last page, not verified, with no OCR text and no translation (the head keeps it: dividing it is the translator's).
@@ -250,6 +253,45 @@ export const STRUCTURE: Record<string, Command> = {
       segmentIds: [p.headId, nextId],
     }
   },
+
+  /** Put a new paragraph after the one at `afterIdx` (-1: first) — a caption the import left out of a page, say. It has
+   *  no OCR text and no boxes, and is not verified. Redo puts it back under the same id (`id`). */
+  insertSegment(db, params) {
+    const p = sent(Insert, "insertSegment", params)
+    if (!p.text.trim()) throw new RequestError(400, "insertSegment: a paragraph needs some text")
+    if (!db.prepare("SELECT 1 FROM chapter WHERE id = ?").get(p.chapterId)) throw new RequestError(404, `chapter ${p.chapterId} not found`)
+    const count = Number(db.prepare("SELECT count(*) n FROM segment WHERE chapter_id = ?").get(p.chapterId)?.n)
+    if (p.afterIdx < -1 || p.afterIdx >= count) throw new RequestError(400, `insertSegment: afterIdx must be -1 to ${count - 1}`)
+    shiftIdx(db, p.chapterId, p.afterIdx, 1)
+    const id = Number(db.prepare(
+      `INSERT INTO segment(id, chapter_id, idx, kind, page_start, page_end, source_doc, source_text, ocr_text, verified, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 'untranslated')`,
+    ).run(p.id ?? null, p.chapterId, p.afterIdx + 1, p.kind, p.pageNo, p.pageNo, JSON.stringify(textDoc(p.text)), p.text).lastInsertRowid)
+    return {
+      result: segmentOut(db, id),
+      forward: { id, chapterId: p.chapterId, afterIdx: p.afterIdx, kind: p.kind, text: p.text, pageNo: p.pageNo },
+      inverse: { name: "deleteSegment", params: { id } },
+      segmentIds: [id],
+    }
+  },
+
+  /** Take a paragraph away — the way back from an insert. One that anything belongs to is refused: merge it instead. */
+  deleteSegment(db, params) {
+    const p = sent(Delete, "deleteSegment", params)
+    const cur = getSegment(db, p.id)
+    const owned = BELONGING.filter((table) => db.prepare(`SELECT 1 FROM "${table}" WHERE segment_id = ? LIMIT 1`).get(p.id))
+    if (owned.length) throw new RequestError(400, `deleteSegment: something belongs to it (${owned.join(", ")}); merge it instead`)
+    db.prepare("DELETE FROM draft WHERE segment_id = ?").run(p.id)
+    db.prepare("DELETE FROM segment WHERE id = ?").run(p.id)
+    shiftIdx(db, Number(cur.chapter_id), Number(cur.idx), -1)
+    return {
+      result: null,
+      forward: { id: p.id },
+      inverse: { name: "insertSegment", params: { id: p.id, chapterId: Number(cur.chapter_id), afterIdx: Number(cur.idx) - 1, kind: String(cur.kind), text: String(cur.source_text), pageNo: Number(cur.page_start) } },
+      segmentIds: [p.id],
+    }
+  },
 }
+
 
 const ids = (db: DatabaseSync, query: string, ...params: number[]) => db.prepare(query).all(...params).map((r) => Number(r.id))

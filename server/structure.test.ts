@@ -178,6 +178,43 @@ describe("split and merge", () => {
     writer.execute("mergeWithNext", { id: 1, expectVersion: version(1) }, { actor: "agent", toolUseId: "toolu_merge" })
     assert.throws(() => writer.undo(), refused(409, /Claude changed ¶2 after this/))
   })
+
+  test("insert puts a new paragraph after the one given — a caption on a page — and its undo takes it away", async () => {
+    const { writer, order, row, boxes, sql, version } = await fixture()
+    const before = everything(sql)
+    const others = { 1: version(1), 2: version(2), 3: version(3) }
+    const caption = writer.execute("insertSegment", { chapterId: 1, afterIdx: 1, kind: "caption", text: "A photograph", pageNo: 2 }) as Segment
+    assert.deepEqual(order(), [[1, 0], [2, 1], [caption.id, 2], [3, 3]])
+    assert.deepEqual({ kind: caption.kind, sourceText: caption.sourceText, ocrText: caption.ocrText, pageStart: caption.pageStart, pageEnd: caption.pageEnd, verified: caption.verified, status: caption.status, boxes: caption.boxes },
+      { kind: "caption", sourceText: "A photograph", ocrText: null, pageStart: 2, pageEnd: 2, verified: false, status: "untranslated", boxes: [] })
+    assert.deepEqual({ 1: version(1), 2: version(2), 3: version(3) }, others)
+    assert.deepEqual(boxes(caption.id), [])
+    const first = writer.execute("insertSegment", { chapterId: 1, afterIdx: -1, kind: "heading", text: "First", pageNo: 1 }) as Segment
+    assert.equal(order()[0]![0], first.id)
+    assert.equal(writer.undo()?.name, "insertSegment")
+    assert.equal(writer.undo()?.name, "insertSegment")
+    assert.deepEqual(everything(sql), before)
+    assert.equal(writer.redo()?.name, "insertSegment")
+    assert.equal(row(caption.id)?.source_text, "A photograph", "redo puts it back under the same id")
+  })
+
+  test("insert refuses no text, an unknown kind and a chapter that is not there; delete refuses a paragraph something belongs to", async () => {
+    const { writer, sql } = await fixture()
+    const before = everything(sql)
+    assert.throws(() => writer.execute("insertSegment", { chapterId: 1, afterIdx: 0, kind: "caption", text: "  ", pageNo: 1 }), refused(400))
+    assert.throws(() => writer.execute("insertSegment", { chapterId: 1, afterIdx: 0, kind: "poem", text: "x", pageNo: 1 }), refused(400))
+    assert.throws(() => writer.execute("insertSegment", { chapterId: 9, afterIdx: 0, kind: "caption", text: "x", pageNo: 1 }), refused(404))
+    assert.throws(() => writer.execute("insertSegment", { chapterId: 1, afterIdx: 7, kind: "caption", text: "x", pageNo: 1 }), refused(400))
+    assert.throws(() => writer.execute("deleteSegment", { id: 2 }), refused(400, /belongs to it/))
+    assert.deepEqual(everything(sql), before)
+  })
+
+  test("undo of an insert is refused once the inserted paragraph was changed after it", async () => {
+    const { writer } = await fixture()
+    const caption = writer.execute("insertSegment", { chapterId: 1, afterIdx: 0, kind: "caption", text: "Caption", pageNo: 1 }) as Segment
+    writer.execute("updateSegment", { id: caption.id, text: "A photograph of the docks", expectVersion: caption.version }, { actor: "agent", toolUseId: "toolu_c" })
+    assert.throws(() => writer.undo(), refused(409, /Claude changed/))
+  })
 })
 
 describe("split and merge on the real book: undone, nothing has changed", () => {

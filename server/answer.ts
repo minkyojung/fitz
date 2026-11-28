@@ -52,6 +52,8 @@ export function answer({ book, writer }: Library, name: string, params: unknown)
       const { id, expectVersion } = sent(name)
       return writer.execute("mergeWithNext", { id, expectVersion })
     }
+    case "insertSegment":
+      return writer.execute("insertSegment", sent(name))
     case "saveDraft": {
       const { segmentId, side, doc, baseVersion } = sent(name)
       writer.saveDraft(segmentId, side, doc, baseVersion)

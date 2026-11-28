@@ -96,6 +96,8 @@ function touches(row: Row): string[] {
     case "unsplit":
     case "mergeWithNext":
     case "unmerge":
+    case "insertSegment":
+    case "deleteSegment":
       return segmentIds.map((id) => `seg:${id}`)
     default:
       // never guessed: a command added here says what it touches
