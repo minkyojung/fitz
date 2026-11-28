@@ -21,7 +21,7 @@ fitz.app
 | 화면 | React + Vite, shadcn 디자인 시스템(Base UI, 프리셋 `b1VlJAwK`). 기본 컴포넌트(`app/src/components/ui/`)는 도구로 받아 고치지 않고, 배치는 `sidebar-08` 블록을 따른다. 빌드된 화면을 서버가 127.0.0.1로 준다 | 편집기(TipTap)가 React다. 이 흐름을 처음부터 세워 두면 편집기를 붙일 때 다시 짓지 않는다 |
 | 화면 ↔ 서버 | HTTP(조회) + WebSocket(실시간, 쓰기 기능과 함께). 메시지 규약은 파일 하나에 닫힌 목록으로 정의하고 받을 때 검증한다 | 규약이 셸과 무관하면 화면이나 셸을 바꿔도 서버는 그대로 쓴다(Codex, Zed의 ACP) |
 | 셸 ↔ 서버 | 자식 프로세스 IPC 채널. 역시 닫힌 메시지 목록 | Octave 방식 |
-| DB | `node:sqlite`, 책마다 SQLite 파일 하나. 첫 마이그레이션(`user_version` 0→1)에서 WAL로 바꾼다 | T3 Code, Orca, VS Code가 WAL을 쓴다. 규칙은 `docs/data-contract.md` |
+| DB | `node:sqlite`, 책마다 SQLite 파일 하나. 서버가 책을 열기 전에 마이그레이션한다(백업 → 단계 실행 → 확인 → 실패하면 되돌림, `server/migrate.ts`). 버전 1부터 WAL이고 `synchronous = FULL`을 유지한다(원고는 사람이 치는 속도라 느려질 일이 없고, 정전에도 마지막 편집을 잃지 않는다) | T3 Code, Orca, VS Code가 WAL을 쓴다. 규칙은 `docs/data-contract.md` |
 | 모델 | Claude Agent SDK 하나. 사용자 본인 구독, 수정하지 않은 Claude Code 바이너리. 서버 안의 한 파일(모델 포트)에서만 부른다 | 구독으로 쓰면 추가 비용이 없다. 대화 루프, 세션, 권한이 이미 있다 |
 | Rust | PDF 가져오기 엔진에만. 별도 실행 파일 + 줄 단위 JSON(stdio) | 대화와 DB 층에서는 Rust로 얻는 속도가 없다. 별도 실행 파일이면 엔진이 죽어도 서버가 산다 |
 | 테스트 | 서버는 `node:test`(Electron의 Node로도 돌린다), 앱 실행은 Playwright의 Electron 실행 | 실제 앱이 뜨는지는 진짜 Electron을 띄워야 안다 |

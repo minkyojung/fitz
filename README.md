@@ -9,7 +9,8 @@ pnpm install          # 루트와 app/ 을 함께 설치한다
 scripts/dev-data.sh   # 개발용 사본을 dev-data/ 에 만든다 (원본은 읽기만 한다)
 pnpm exec playwright install chromium   # 브라우저 테스트용 Chromium (한 번만)
 pnpm check            # 타입 검사, 린트, 화면 빌드, 테스트 (일반 Node, Electron의 Node, 브라우저)
-pnpm dev              # 앱을 띄운다 (화면을 빌드하고 Electron 창을 연다)
+pnpm dev              # 앱을 띄운다 (화면을 빌드하고 Electron 창을 연다). 처음 켜면 dev-data/ 의 사본을 마이그레이션한다
+                      # 사본을 프로토타입 상태로 되돌리려면: scripts/dev-data.sh --force
 pnpm server           # 서버만 띄운다. 출력된 주소를 브라우저로 연다 (화면은 app/ 에서 pnpm build 한 것)
 ```
 
